@@ -57,15 +57,18 @@ fn v1_svg_is_clean_and_parses() {
         assert!(!o.svg.contains(bad), "SVG contains {bad}");
     }
     assert!(o.svg.contains("viewBox=\"0 0 300 200\""));
-    // one group per colour, id = hex of the colour, fill set directly on the path
+    // 0.2.0 structure: layers Latar > Bidang warna > Garis; one sub-group per colour (id safe for XML, data-name readable);
+    // fill set directly on the path. (0.1.0 used a bare "#RRGGBB" id per colour; the check moved with the layout.)
     let ids = group_ids(&o.svg);
     let unique: BTreeSet<_> = ids.iter().collect();
     assert_eq!(ids.len(), unique.len(), "group ids must be unique");
-    assert_eq!(ids.len(), o.palette.len().min(ids.len()));
     for id in &ids {
-        assert!(id.starts_with('#') && id.len() == 7, "bad group id {id}");
-        assert!(o.svg.contains(&format!("fill=\"{id}\"")));
+        if id.starts_with("Warna_") {
+            let hexv = &id[id.len() - 6..];
+            assert!(o.svg.contains(&format!("fill=\"#{hexv}\"")), "group {id} has no matching fill");
+        }
     }
+    assert!(ids.iter().any(|i| i == "Latar") && ids.iter().any(|i| i == "Bidang_warna") && ids.iter().any(|i| i == "Garis"));
 }
 
 #[test]

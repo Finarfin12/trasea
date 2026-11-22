@@ -216,7 +216,9 @@ fn fit_cubic(d: &[P], t1: P, t2: P, err2: f64, out: &mut Vec<Bezier>, depth: usi
         out.push(b);
         return;
     }
-    let center = norm(sub(d[split - 1], d[split + 1]));
+    // a wide baseline: with +-1 px neighbours the direction is dominated by pixel noise
+    let k = 5.min(split).min(n - 1 - split).max(1);
+    let center = norm(sub(d[split - k], d[split + k]));
     fit_cubic(&d[..=split], t1, center, err2, out, depth + 1);
     fit_cubic(&d[split..], mul(center, -1.0), t2, err2, out, depth + 1);
 }

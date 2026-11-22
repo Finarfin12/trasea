@@ -306,20 +306,40 @@ fn pt(i: usize, w: usize) -> P {
     ((i % w) as f64 + 0.5, (i / w) as f64 + 0.5)
 }
 
-/// Light smoothing of an open polyline (ends stay fixed).
-fn smooth_open(p: &[P], rounds: usize) -> Vec<P> {
-    let mut cur = p.to_vec();
-    for _ in 0..rounds {
-        if cur.len() < 3 {
-            break;
-        }
-        let mut next = cur.clone();
-        for i in 1..cur.len() - 1 {
-            next[i] = ((cur[i - 1].0 + 2.0 * cur[i].0 + cur[i + 1].0) / 4.0, (cur[i - 1].1 + 2.0 * cur[i].1 + cur[i + 1].1) / 4.0);
-        }
-        cur = next;
+/// Resample an open polyline to ~1 px spacing, then Gaussian-smooth it (ends stay fixed). Skeleton pixel paths have
+/// uneven step lengths (1 or 1.41) and staircase noise; this gives the curve fit a clean input.
+fn smooth_open(p: &[P], sigma: f64) -> Vec<P> {
+    if p.len() < 3 {
+        return p.to_vec();
     }
-    cur
+    let mut dense: Vec<P> = vec![p[0]];
+    for seg in p.windows(2) {
+        let (a, b) = (seg[0], seg[1]);
+        let d = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        let k = d.ceil().max(1.0) as usize;
+        for j in 1..=k {
+            let t = j as f64 / k as f64;
+            dense.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+        }
+    }
+    let n = dense.len();
+    let r = (sigma * 3.0).ceil() as i64;
+    let kernel: Vec<f64> = (-r..=r).map(|i| (-(i * i) as f64 / (2.0 * sigma * sigma)).exp()).collect();
+    let mut out = dense.clone();
+    for i in 1..n - 1 {
+        let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
+        for (j, k) in kernel.iter().enumerate() {
+            let idx = i as i64 + j as i64 - r;
+            if idx < 0 || idx >= n as i64 {
+                continue;
+            }
+            sx += dense[idx as usize].0 * k;
+            sy += dense[idx as usize].1 * k;
+            sw += k;
+        }
+        out[i] = (sx / sw, sy / sw);
+    }
+    out
 }
 
 /// Connected components (8-neighbour) of `mask`: (labels 1-based, count).
@@ -407,9 +427,11 @@ pub fn centerline(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64) -> C
         let mean = widths.iter().sum::<f64>() / widths.len() as f64;
         let var = widths.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / widths.len() as f64;
         let cv = var.sqrt() / mean.max(1.0);
-        // area / (length x width): a uniform stroke is ~1; blobs and junction-heavy shapes are off
+        // The distance transform is exact only for odd widths (an even width reads one pixel low). The area per skeleton
+        // pixel is the better width estimate for an even line, so the edge widths are scaled to it. A ratio far from
+        // 1-2 means this is not a plain line (a blob or a tangle).
         let area_fit = pixels.len() as f64 / (skel_len as f64 * mean).max(1.0);
-        if cv > uneven || !(0.6..=1.6).contains(&area_fit) || mean > 24.0 {
+        if cv > uneven || !(0.7..=2.4).contains(&area_fit) || mean > 24.0 {
             for &i in pixels {
                 shape_mask[i] = true;
             }
@@ -429,14 +451,14 @@ pub fn centerline(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64) -> C
             if poly.len() < 2 {
                 continue;
             }
-            let sm = smooth_open(&poly, 2);
+            let sm = smooth_open(&poly, 2.0);
             // width of this edge from its own pixels
             let mut sum = 0.0;
             for &i in &e.pix {
                 let gi = (i / cw + y0 - 1) * w + (i % cw + x0 - 1);
                 sum += (2.0 * dt[gi] as f64 - 1.0).max(1.0);
             }
-            let width = ((sum / e.pix.len() as f64) / WIDTH_STEP).round() * WIDTH_STEP;
+            let width = ((sum / e.pix.len() as f64) * area_fit / WIDTH_STEP).round() * WIDTH_STEP;
             let curves = fit_polyline(&sm, tol);
             if !curves.is_empty() {
                 strokes.push(Stroke { curves, width: width.max(WIDTH_STEP * 2.0) });
