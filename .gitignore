@@ -1,0 +1,9 @@
+target
+node_modules
+dist
+bench/work
+*.log
+src-tauri/gen
+src-tauri/target
+src-tauri/binaries
+src-tauri/resources/realesrgan
