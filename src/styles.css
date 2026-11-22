@@ -66,3 +66,17 @@ button.ghost { background: transparent; }
 .modal-box pre { overflow: auto; white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; color: var(--ink); margin: 8px 0 0; }
 
 .panel select { width: 100%; font: inherit; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: #262b34; color: var(--ink); margin-top: 4px; }
+
+.modal-box { overflow: hidden; }
+.lic { overflow: auto; padding-right: 6px; margin-top: 8px; }
+.lic h3 { font-size: 14px; margin: 18px 0 8px; color: var(--ink); }
+.lic p { color: var(--muted); margin: 6px 0; }
+.lic-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; margin: 8px 0 12px; }
+.lic-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.lic-table th { text-align: left; font-weight: 600; color: var(--muted); background: #20242b; position: sticky; top: 0; }
+.lic-table th, .lic-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.lic-table tr:last-child td { border-bottom: 0; }
+.lic-url { color: var(--accent); word-break: break-all; }
+.lic-details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 14px 0; }
+.lic-details > summary { cursor: pointer; font-weight: 600; }
+.lic-details[open] > summary { margin-bottom: 8px; }

@@ -1,7 +1,8 @@
-//! Developer CLI: `vektora-cli in.jpg out.svg [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--no-ai] [--sidecar DIR]`
+//! Developer CLI: `vektora-cli in.jpg out.svg [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--ai] [--lines stroke|shape] [--trap PT] [--ase out.ase] [--sidecar DIR]`
 
 use std::path::PathBuf;
 use std::time::Instant;
+use vektora_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
 use vektora_core::{export, load, vectorize, Params};
 
 fn main() {
@@ -13,6 +14,9 @@ fn main() {
     let (input, output) = (PathBuf::from(&args[0]), PathBuf::from(&args[1]));
     let mut p = Params::default();
     let mut pdf: Option<PathBuf> = None;
+    let mut ase: Option<PathBuf> = None;
+    let mut eo = ExportOptions::default();
+    p.ai_clean = false;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
@@ -28,6 +32,19 @@ fn main() {
                 i += 1;
                 pdf = Some(PathBuf::from(&args[i]));
             }
+            "--ase" => {
+                i += 1;
+                ase = Some(PathBuf::from(&args[i]));
+            }
+            "--lines" => {
+                i += 1;
+                eo.lines_as = if args[i] == "shape" { LinesAs::Shape } else { LinesAs::Stroke };
+            }
+            "--trap" => {
+                i += 1;
+                eo.trap_pt = args[i].parse().unwrap_or(0.0);
+            }
+            "--ai" => p.ai_clean = true,
             "--sidecar" => {
                 i += 1;
                 p.sidecar_dir = Some(PathBuf::from(&args[i]));
@@ -56,9 +73,13 @@ fn main() {
             std::process::exit(1);
         }
     };
-    std::fs::write(&output, &out.svg).expect("cannot write the SVG");
+    let svg = to_svg(&out.doc, &eo);
+    std::fs::write(&output, &svg).expect("cannot write the SVG");
+    if let Some(ase) = ase {
+        std::fs::write(&ase, to_ase(&palette_of(&out.doc))).expect("cannot write the ASE");
+    }
     if let Some(pdf) = pdf {
-        match export::svg_to_pdf(&out.svg) {
+        match export::svg_to_pdf(&svg) {
             Ok(bytes) => std::fs::write(&pdf, bytes).expect("cannot write the PDF"),
             Err(e) => eprintln!("PDF: {e}"),
         }

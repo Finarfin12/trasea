@@ -4626,7 +4626,7 @@ dependencies = [
 
 [[package]]
 name = "vektora"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -4640,7 +4640,7 @@ dependencies = [
 
 [[package]]
 name = "vektora-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "lopdf",

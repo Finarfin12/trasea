@@ -305,3 +305,92 @@ pub fn fill_masked(labels: &mut [u8], mask: &[bool], w: usize, h: usize) {
         }
     }
 }
+
+/// Thin light or dark features (a 2-3 px white line on dark blue) are blends of two colours at their edges, so their
+/// pixels can land on a third palette colour (beige instead of white). For every small region, take the most extreme
+/// pixels of the region in the direction away from its surroundings (the core of the stroke) and snap the region to the
+/// palette colour nearest to that core.
+pub fn refine_thin_regions(labels: &mut [u8], img: &RgbImage, palette: &[Rgb], w: usize, h: usize, max_area: usize) {
+    let lum = |c: [u8; 3]| 0.299 * c[0] as f32 + 0.587 * c[1] as f32 + 0.114 * c[2] as f32;
+    let plum: Vec<f32> = palette.iter().map(|&c| lum(c)).collect();
+    let plab: Vec<[f32; 3]> = palette.iter().map(|&c| rgb_to_lab(c)).collect();
+    let mut comp = vec![0u32; w * h];
+    let mut next = 0u32;
+    let mut stack = Vec::new();
+    let mut changes: Vec<(Vec<usize>, u8)> = Vec::new();
+    for s in 0..w * h {
+        if comp[s] != 0 {
+            continue;
+        }
+        next += 1;
+        let l = labels[s];
+        let mut pix = vec![s];
+        comp[s] = next;
+        stack.push(s);
+        let mut big = false;
+        while let Some(i) = stack.pop() {
+            let (x, y) = (i % w, i / w);
+            let mut nb = [usize::MAX; 4];
+            if x > 0 { nb[0] = i - 1; }
+            if x + 1 < w { nb[1] = i + 1; }
+            if y > 0 { nb[2] = i - w; }
+            if y + 1 < h { nb[3] = i + w; }
+            for j in nb {
+                if j != usize::MAX && comp[j] == 0 && labels[j] == l {
+                    comp[j] = next;
+                    stack.push(j);
+                    pix.push(j);
+                }
+            }
+            if pix.len() > max_area {
+                big = true;
+                // keep flood-filling so the component is marked, but stop collecting
+                pix.truncate(1);
+            }
+        }
+        if big || pix.len() < 6 {
+            continue;
+        }
+        // surroundings: luminance of the neighbouring labels
+        let mut surround = 0.0f32;
+        let mut count = 0.0f32;
+        for &i in &pix {
+            let (x, y) = (i % w, i / w);
+            for j in [if x > 0 { i - 1 } else { i }, if x + 1 < w { i + 1 } else { i }, if y > 0 { i - w } else { i }, if y + 1 < h { i + w } else { i }] {
+                if labels[j] != l {
+                    surround += plum[labels[j] as usize];
+                    count += 1.0;
+                }
+            }
+        }
+        if count == 0.0 {
+            continue;
+        }
+        let surround = surround / count;
+        let own = plum[l as usize];
+        let lighter = own > surround;
+        // core = the 30% most extreme pixels away from the surroundings
+        let mut px: Vec<(f32, [u8; 3])> = pix.iter().map(|&i| { let c = img.get_pixel((i % w) as u32, (i / w) as u32).0; (lum(c), c) }).collect();
+        px.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let n = px.len();
+        let take = (n * 3 / 10).max(1);
+        let core = if lighter { &px[n - take..] } else { &px[..take] };
+        let mut sum = [0u32; 3];
+        for (_, c) in core {
+            for k in 0..3 {
+                sum[k] += c[k] as u32;
+            }
+        }
+        let mean = [(sum[0] / take as u32) as u8, (sum[1] / take as u32) as u8, (sum[2] / take as u32) as u8];
+        let ml = rgb_to_lab(mean);
+        let best = (0..plab.len()).min_by(|&a, &b| d2(&ml, &plab[a]).partial_cmp(&d2(&ml, &plab[b])).unwrap()).unwrap() as u8;
+        if best != l {
+            changes.push((pix, best));
+        }
+    }
+    for (pix, to) in changes {
+        for i in pix {
+            labels[i] = to;
+        }
+    }
+}

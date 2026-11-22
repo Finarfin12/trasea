@@ -6,6 +6,7 @@ use image::RgbImage;
 use std::path::PathBuf;
 use std::time::Instant;
 use vektora_core::lines::{dilate_mask, thin_mask, ThinParams};
+use vektora_core::export::{to_svg, ExportOptions, LinesAs};
 use vektora_core::stats::{compare, count_svg, render_svg};
 use vektora_core::{load, vectorize, Params};
 
@@ -131,6 +132,7 @@ fn main() {
     md.push_str("# Vektora 0.1.0 benchmark\n\n");
     md.push_str("Counting: nodes = every M, L and C segment (the same counter as the baseline benchmark). MAE = mean absolute RGB error of the render against the 1200 px source (0..255, white background). Thin-line recall = share of the original's thin-line pixels (dark strokes thinner than about 2r+1 px, found by the same detector the guard uses) that the render still shows within 1 px. Time = whole pipeline on this PC (integrated AMD GPU for Real-ESRGAN).\n\n");
     let mut json = Vec::new();
+    let mut modes: Vec<String> = Vec::new();
 
     for (title, kind) in [("Illustrations (B1, B2, B4)", Kind::Illustration), ("Logos (B3)", Kind::Logo)] {
         md.push_str(&format!("## {title}\n\n| file | variant | paths | nodes | KB | MAE | thin-line recall | time s |\n|---|---|---:|---:|---:|---:|---:|---:|\n"));
@@ -169,6 +171,13 @@ fn main() {
                     Ok(o) => {
                         let tag = if ai { "ai" } else { "noai" };
                         let _ = std::fs::write(work.join(format!("{}.{tag}.svg", it.file)), &o.svg);
+                        if !ai {
+                            let shape = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Shape, trap_pt: 0.0 });
+                            let (_, ns) = count_svg(&shape);
+                            let (_, nk) = count_svg(&o.svg);
+                            let gn = |svg: &str| svg.find("id=\"Garis\"").map_or(0, |i| count_svg(&svg[i..]).1);
+                            modes.push(format!("| {} | {} | {} | {} | {} |", it.label, nk, ns, gn(&o.svg), gn(&shape)));
+                        }
                         if let Some(r) = measure_svg(&o.svg, &orig) {
                             let note = if ai && !o.used_ai { " (AI FAILED)" } else { "" };
                             md.push_str(&format!("| {} | {}{} | {} | {} | {} | {:.2} | {:.0}% | {:.1} |\n", it.label, name, note, r.paths, r.nodes, r.kb, r.mae, r.recall * 100.0, secs));
@@ -182,7 +191,18 @@ fn main() {
         }
         md.push('\n');
     }
-    md.push_str("`*` = counted from the hand-made SVG with this counter (shapes such as rect or circle are not counted).\n");
+    md.push_str("## Garis tipis sebagai stroke vs bentuk (0.2.0, tanpa AI)
+
+| file | node total (stroke) | node total (bentuk) | node grup Garis (stroke) | node grup Garis (bentuk) |
+|---|---:|---:|---:|---:|
+");
+    for m in &modes {
+        md.push_str(m);
+        md.push_str("
+");
+    }
+    md.push_str("
+`*` = counted from the hand-made SVG with this counter (shapes such as rect or circle are not counted).\n");
     std::fs::write(out.join("RESULTS.md"), &md).unwrap();
     std::fs::write(out.join("results.json"), serde_json::to_string_pretty(&json).unwrap()).unwrap();
 }

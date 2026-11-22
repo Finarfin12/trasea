@@ -4,7 +4,7 @@ use crate::clean::clean;
 use crate::centerline::centerline;
 use crate::export::{to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
-use crate::palette::{assign, fill_masked, kmeans_palette, remove_small_regions};
+use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions};
 use crate::stats::{stats_for, Stats};
 use crate::trace::{trace_layers, trace_mask, Layer, TraceParams};
 use crate::Result;
@@ -54,6 +54,8 @@ pub type Progress<'a> = &'a dyn Fn(&str, f32);
 /// Reference size the trace thresholds are written for: thresholds are scaled by working size / this.
 const REF_LONG_SIDE: f64 = 1200.0;
 /// Low-contrast specks (JPEG residue, watermark ghosts) are removed up to this many times the normal speck size.
+/// Regions up to this many working pixels (at the reference size) are checked for a better palette colour.
+const REF_THIN_AREA: f64 = 1500.0;
 const SPECK_BOOST: f64 = 25.0;
 /// Strokes shorter than this (source px) are dropped (degenerate skeleton bits).
 const MIN_STROKE_LEN: f64 = 1.0;
@@ -126,6 +128,7 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
     let palette = kmeans_palette(&work, Some(&excl), k);
     let mut labels = assign(&work, &palette);
     fill_masked(&mut labels, &excl, ww, wh);
+    refine_thin_regions(&mut labels, &work, &palette, ww, wh, (REF_THIN_AREA * s * s) as usize);
     let min_area = ((40.0 + 200.0 * t) * s * s).round().max(8.0) as usize;
     remove_small_regions(&mut labels, ww, wh, min_area, palette.len(), &palette, SPECK_BOOST);
 

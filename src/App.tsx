@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Licenses from "./Licenses";
 import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
 
 const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false };
@@ -178,7 +179,7 @@ export default function App() {
 				<div className="modal" role="dialog" aria-modal="true" aria-label="Lisensi pihak ketiga" onClick={() => setShowLicenses(null)}>
 					<div className="modal-box" onClick={e => e.stopPropagation()}>
 						<div className="row between"><h2>Lisensi pihak ketiga</h2><button className="ghost" onClick={() => setShowLicenses(null)}>Tutup</button></div>
-						<pre>{showLicenses}</pre>
+						<Licenses markdown={showLicenses} />
 					</div>
 				</div>
 			)}
