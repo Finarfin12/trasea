@@ -2,3 +2,17 @@
 name = "vektora"
 version = "0.1.0"
 edition = "2021"
+description = "Vektora: offline raster to clean vector (SVG/PDF) converter"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+vektora-core = { path = "../crates/vektora-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22"
