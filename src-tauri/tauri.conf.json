@@ -18,7 +18,7 @@
         "minWidth": 980,
         "minHeight": 640,
         "center": true,
-        "additionalBrowserArgs": "--proxy-server=socks5://127.0.0.1:9 --disable-background-networking --disable-component-update --disable-sync --disable-domain-reliability --no-pings --disable-breakpad --disable-features=msSmartScreenProtection,msEdgeUpdate,OptimizationHints"
+        "additionalBrowserArgs": "--proxy-server=socks5://127.0.0.1:9 --host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE localhost , EXCLUDE tauri.localhost , EXCLUDE ipc.localhost\" --disable-background-networking --disable-component-update --disable-sync --disable-domain-reliability --no-pings --disable-breakpad --disable-client-side-phishing-detection --disable-default-apps --no-default-browser-check --disable-features=msSmartScreenProtection,msEdgeUpdate,OptimizationHints,msEdgeEnterpriseNTP,msUndersideMoreInfo"
       }
     ],
     "security": {
