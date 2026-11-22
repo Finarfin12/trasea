@@ -1,7 +1,7 @@
 {
   "name": "vektora",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Vektora: offline raster to clean vector (SVG/PDF) converter",
   "license": "MIT",

@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
+use vektora_core::export::{palette_of, to_ase, to_svg, Doc, ExportOptions, LinesAs};
 use vektora_core::{export, hex, load, vectorize, Params};
 
 #[derive(Default)]
 struct Last {
-    svg: Mutex<Option<String>>,
+    doc: Mutex<Option<Doc>>,
 }
 
 #[derive(Deserialize)]
@@ -71,7 +72,7 @@ fn png_data_url(img: &image::RgbImage) -> Result<String, String> {
 async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
     let sidecar = sidecar_dir(&app);
     let handle = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, String), String> {
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
         let t0 = Instant::now();
         let img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
         let p = Params {
@@ -102,24 +103,34 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             secs: t0.elapsed().as_secs_f64(),
             thin_pixels: out.thin_pixels,
         };
-        Ok((processed, out.svg))
+        Ok((processed, out.doc))
     })
     .await
     .map_err(|e| format!("the conversion stopped unexpectedly: {e}"))??;
-    *last.svg.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
     Ok(result.0)
 }
 
-/// Write the last result. `kind` is "svg" or "pdf".
+/// Export options chosen in the UI.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UiExport {
+    /// "stroke" or "shape"
+    lines_as: String,
+    /// 0, 0.25, 0.5 or 1 (points)
+    trap_pt: f64,
+}
+
+/// Write the last result. `kind` is "svg", "pdf" or "ase".
 #[tauri::command]
-fn save_file(last: State<'_, Last>, kind: String, path: String) -> Result<(), String> {
-    let svg = last.svg.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("There is nothing to export yet. Convert an image first.")?;
+fn save_file(last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
+    let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("There is nothing to export yet. Convert an image first.")?;
+    let opts = ExportOptions { lines_as: if options.lines_as == "shape" { LinesAs::Shape } else { LinesAs::Stroke }, trap_pt: options.trap_pt.clamp(0.0, 1.0) };
+    let write = |bytes: Vec<u8>| std::fs::write(&path, bytes).map_err(|e| format!("Cannot write {path}: {e}"));
     match kind.as_str() {
-        "svg" => std::fs::write(&path, svg).map_err(|e| format!("Cannot write {path}: {e}")),
-        "pdf" => {
-            let bytes = export::svg_to_pdf(&svg).map_err(|e| e.to_string())?;
-            std::fs::write(&path, bytes).map_err(|e| format!("Cannot write {path}: {e}"))
-        }
+        "svg" => write(to_svg(&doc, &opts).into_bytes()),
+        "pdf" => write(export::svg_to_pdf(&to_svg(&doc, &opts)).map_err(|e| e.to_string())?),
+        "ase" => write(to_ase(&palette_of(&doc))),
         _ => Err("unknown export format".into()),
     }
 }

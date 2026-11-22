@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type Options, type Processed } from "./api";
+import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
 
-const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: true };
+const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false };
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
 const isImage = (p: string): boolean => IMAGE_EXTENSIONS.includes((p.split(".").pop() ?? "").toLowerCase());
@@ -19,6 +19,8 @@ export default function App() {
 	const [info, setInfo] = useState("");
 	const [over, setOver] = useState(false);
 	const [split, setSplit] = useState(50);
+	const [exp, setExp] = useState<ExportOptions>({ linesAs: "stroke", trapPt: 0 });
+	const [withAse, setWithAse] = useState(true);
 	const [checker, setChecker] = useState(false);
 	const [hasSidecar, setHasSidecar] = useState(true);
 	const [showLicenses, setShowLicenses] = useState<string | null>(null);
@@ -57,15 +59,21 @@ export default function App() {
 		if (p) void run(p);
 	};
 
-	const exportAs = async (kind: "svg" | "pdf") => {
+	const exportAs = async (kind: ExportKind) => {
 		if (!path) return;
 		setError("");
 		setInfo("");
 		try {
 			const target = await pickSavePath(kind, `${baseName(path)}.${kind}`);
 			if (!target) return;
-			await saveFile(kind, target);
-			setInfo(`Tersimpan: ${target}`);
+			await saveFile(kind, target, exp);
+			let msg = `Tersimpan: ${target}`;
+			if (kind !== "ase" && withAse) {
+				const ase = target.replace(/\.[^.\\/]+$/, "") + ".ase";
+				await saveFile("ase", ase, exp);
+				msg += ` dan ${ase}`;
+			}
+			setInfo(msg);
 		} catch (e) {
 			setError(errText(e));
 		}
@@ -78,7 +86,7 @@ export default function App() {
 	return (
 		<div className={`app ${over ? "dragging" : ""}`}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">V</span> Vektora <small>0.1.0 · offline</small></div>
+				<div className="brand"><span className="logo" aria-hidden="true">V</span> Vektora <small>0.2.0 · offline</small></div>
 				<div className="row">
 					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
 					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>
@@ -122,6 +130,7 @@ export default function App() {
 					<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
 					<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
 					<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
+					<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
 					{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
 					<button className="primary" onClick={() => path && void run(path, opts)} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
 					<label className="check"><input type="checkbox" checked={checker} onChange={e => setChecker(e.target.checked)} /> Latar kotak-kotak</label>
@@ -138,9 +147,24 @@ export default function App() {
 								<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
 							</dl>
 							<div className="swatches" aria-label="Palet">{result.palette.map(c => <span key={c} title={c} style={{ background: c }} />)}</div>
-							<div className="row">
+							<h2>Ekspor</h2>
+							<label htmlFor="linesAs">Garis tipis sebagai</label>
+							<select id="linesAs" value={exp.linesAs} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
+								<option value="stroke">Stroke (tebal bisa diubah)</option>
+								<option value="shape">Bentuk isi (outline)</option>
+							</select>
+							<label htmlFor="trap">Trap untuk cetak</label>
+							<select id="trap" value={exp.trapPt} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
+								<option value={0}>Tanpa trap</option>
+								<option value={0.25}>0,25 pt</option>
+								<option value={0.5}>0,5 pt</option>
+								<option value={1}>1 pt</option>
+							</select>
+							<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> Sertakan palet .ase</label>
+							<div className="row" style={{ marginTop: 8 }}>
 								<button onClick={() => void exportAs("svg")}>Ekspor SVG</button>
 								<button onClick={() => void exportAs("pdf")}>Ekspor PDF</button>
+								<button onClick={() => void exportAs("ase")}>Palet .ase</button>
 							</div>
 						</>
 					)}

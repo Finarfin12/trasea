@@ -54,7 +54,7 @@ pub type Progress<'a> = &'a dyn Fn(&str, f32);
 /// Reference size the trace thresholds are written for: thresholds are scaled by working size / this.
 const REF_LONG_SIDE: f64 = 1200.0;
 /// Low-contrast specks (JPEG residue, watermark ghosts) are removed up to this many times the normal speck size.
-const SPECK_BOOST: f64 = 40.0;
+const SPECK_BOOST: f64 = 25.0;
 /// Strokes shorter than this (source px) are dropped (degenerate skeleton bits).
 const MIN_STROKE_LEN: f64 = 1.0;
 /// The thin-line mask holds only the dark core of a line; add half a source pixel so strokes match the original width.

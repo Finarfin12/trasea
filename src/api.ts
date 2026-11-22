@@ -30,7 +30,13 @@ export interface Processed {
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
-export const saveFile = (kind: "svg" | "pdf", path: string): Promise<void> => invoke<void>("save_file", { kind, path });
+export interface ExportOptions {
+	linesAs: "stroke" | "shape";
+	trapPt: number;
+}
+
+export type ExportKind = "svg" | "pdf" | "ase";
+export const saveFile = (kind: ExportKind, path: string, options: ExportOptions): Promise<void> => invoke<void>("save_file", { kind, path, options });
 export const sidecarAvailable = (): Promise<boolean> => invoke<boolean>("sidecar_available");
 export const licenses = (): Promise<string> => invoke<string>("third_party_licenses");
 
@@ -39,8 +45,8 @@ export async function pickImage(): Promise<string | null> {
 	return typeof r === "string" ? r : null;
 }
 
-export async function pickSavePath(kind: "svg" | "pdf", suggested: string): Promise<string | null> {
-	return save({ defaultPath: suggested, filters: [{ name: kind.toUpperCase(), extensions: [kind] }] });
+export async function pickSavePath(kind: ExportKind, suggested: string): Promise<string | null> {
+	return save({ defaultPath: suggested, filters: [{ name: kind === "ase" ? "Adobe Swatch Exchange" : kind.toUpperCase(), extensions: [kind] }] });
 }
 
 export const onProgress = (fn: (stage: string, fraction: number) => void) => listen<{ stage: string; fraction: number }>("progress", e => fn(e.payload.stage, e.payload.fraction));
