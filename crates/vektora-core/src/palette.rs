@@ -184,7 +184,11 @@ pub fn assign(img: &RgbImage, pal: &[Rgb]) -> Vec<u8> {
 }
 
 /// Reassign connected same-label regions smaller than `min_area` to their most common neighbouring label.
-pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usize, n_labels: usize) {
+/// Small regions that differ little from their surroundings (JPEG residue, watermark ghosts) are removed up to
+/// `boost` times `min_area`; clearly different ones (real details) only below `min_area`.
+pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usize, n_labels: usize, palette: &[Rgb], boost: f64) {
+    let plab: Vec<[f32; 3]> = palette.iter().map(|&c| rgb_to_lab(c)).collect();
+    let wide = ((min_area as f64) * boost.max(1.0)).ceil() as usize;
     let mut comp = vec![0u32; w * h];
     let mut stack = Vec::new();
     let mut regions: Vec<(usize, Vec<usize>)> = Vec::new(); // (label, pixels) for small ones
@@ -220,7 +224,7 @@ pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usi
                 push(i + w);
             }
         }
-        if pix.len() < min_area {
+        if pix.len() < wide {
             regions.push((l as usize, pix));
         }
     }
@@ -248,6 +252,13 @@ pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usi
             }
         }
         if let Some((best, &cnt)) = votes.iter().enumerate().max_by_key(|&(_, &c)| c) {
+            // the less the region differs from what surrounds it, the larger it may be and still be merged away
+            let de = (d2(&plab[l], &plab[best])).sqrt() as f64;
+            let t = ((30.0 - de) / 30.0).clamp(0.0, 1.0);
+            let limit = (min_area as f64) * (1.0 + (boost.max(1.0) - 1.0) * t);
+            if (pix.len() as f64) >= limit {
+                continue;
+            }
             if cnt > 0 {
                 for &i in &pix {
                     labels[i] = best as u8;

@@ -301,3 +301,19 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
     }
     curves
 }
+
+/// Fit an open polyline (a stroke centerline) with as few Beziers as `tol` allows.
+pub fn fit_polyline(pts: &[P], tol: f64) -> Vec<Bezier> {
+    if pts.len() < 2 {
+        return vec![];
+    }
+    if pts.len() == 2 {
+        let d = len(sub(pts[1], pts[0])) / 3.0;
+        let t = norm(sub(pts[1], pts[0]));
+        return vec![[pts[0], add(pts[0], mul(t, d)), sub(pts[1], mul(t, d)), pts[1]]];
+    }
+    let m = 4.min(pts.len() - 1);
+    let t1 = norm(sub(pts[m], pts[0]));
+    let t2 = norm(sub(pts[pts.len() - 1 - m], pts[pts.len() - 1]));
+    fit_open(pts, t1, t2, tol)
+}

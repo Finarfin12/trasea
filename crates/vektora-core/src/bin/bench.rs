@@ -90,6 +90,7 @@ fn main() {
     let mut out = PathBuf::from("bench");
     let mut smooth = 0.5f32;
     let mut only: Option<String> = None;
+    let mut ai_mode = "both".to_string();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -104,6 +105,10 @@ fn main() {
             "--smooth" => {
                 i += 1;
                 smooth = args[i].parse().unwrap_or(0.5);
+            }
+            "--ai" => {
+                i += 1;
+                ai_mode = args[i].clone();
             }
             "--only" => {
                 i += 1;
@@ -148,7 +153,13 @@ fn main() {
                     md.push_str(&format!("| {} | hand-made vector (owner) | {} | {} | {} | {:.2} | {:.0}% | - |\n", it.label, r.paths, nodes, r.kb, r.mae, r.recall * 100.0));
                 }
             }
-            let variants: Vec<(&str, bool)> = if have_ai { vec![("Vektora (AI clean)", true), ("Vektora (median, no AI)", false)] } else { vec![("Vektora (median, no AI)", false)] };
+            let mut variants: Vec<(&str, bool)> = vec![("Vektora (median, no AI)", false)];
+            if have_ai && ai_mode != "off" {
+                variants.insert(0, ("Vektora (AI clean)", true));
+            }
+            if ai_mode == "on" {
+                variants.retain(|v| v.1);
+            }
             for (name, ai) in variants {
                 let params = Params { smooth, ai_clean: ai, sidecar_dir: Some(sidecar.clone()), measure: false, ..Params::default() };
                 let t0 = Instant::now();

@@ -3,6 +3,7 @@
 //! Pipeline (see `pipeline::vectorize`): load -> thin-line guard (from the ORIGINAL image) -> AI clean
 //! (Real-ESRGAN sidecar, median fallback) -> palette lock -> layer tracing (visioncortex, the VTracer engine)
 //! -> thin lines stacked on top -> tidy + export.
+pub mod centerline;
 pub mod clean;
 pub mod export;
 pub mod fit;

@@ -1,7 +1,8 @@
 //! The whole pipeline: (a) thin-line guard -> (b) AI clean -> (c) palette lock + layer tracing -> (d) lines on top.
 
 use crate::clean::clean;
-use crate::export::{to_svg, Doc};
+use crate::centerline::centerline;
+use crate::export::{to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
 use crate::palette::{assign, fill_masked, kmeans_palette, remove_small_regions};
 use crate::stats::{stats_for, Stats};
@@ -31,7 +32,7 @@ pub struct Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Params { colors: 10, smooth: 0.5, keep_lines: true, ai_clean: true, sidecar_dir: None, up: 2, measure: true }
+        Params { colors: 10, smooth: 0.5, keep_lines: true, ai_clean: false, sidecar_dir: None, up: 2, measure: true }
     }
 }
 
@@ -52,22 +53,32 @@ pub type Progress<'a> = &'a dyn Fn(&str, f32);
 
 /// Reference size the trace thresholds are written for: thresholds are scaled by working size / this.
 const REF_LONG_SIDE: f64 = 1200.0;
+/// Low-contrast specks (JPEG residue, watermark ghosts) are removed up to this many times the normal speck size.
+const SPECK_BOOST: f64 = 40.0;
+/// Strokes shorter than this (source px) are dropped (degenerate skeleton bits).
+const MIN_STROKE_LEN: f64 = 1.0;
+/// The thin-line mask holds only the dark core of a line; add half a source pixel so strokes match the original width.
+const STROKE_WIDTH_BIAS: f64 = 0.5;
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
 /// Upscale a boolean mask to the working size (bilinear on the mask, then threshold at 50%).
-fn upscale_mask(mask: &[bool], w: usize, h: usize, ww: u32, wh: u32) -> BinaryImage {
+fn upscale_bool_mask(mask: &[bool], w: usize, h: usize, ww: u32, wh: u32) -> Vec<bool> {
     let mut g = GrayImage::new(w as u32, h as u32);
     for (i, &m) in mask.iter().enumerate() {
         g.put_pixel((i % w) as u32, (i / w) as u32, image::Luma([if m { 255 } else { 0 }]));
     }
     let big = image::imageops::resize(&g, ww, wh, FilterType::Triangle);
-    let mut bin = BinaryImage::new_w_h(ww as usize, wh as usize);
-    for (i, p) in big.pixels().enumerate() {
-        if p[0] >= 128 {
-            bin.set_pixel(i % ww as usize, i / ww as usize, true);
+    big.pixels().map(|p| p[0] >= 128).collect()
+}
+
+fn to_binary(mask: &[bool], w: usize, h: usize) -> BinaryImage {
+    let mut bin = BinaryImage::new_w_h(w, h);
+    for (i, &m) in mask.iter().enumerate() {
+        if m {
+            bin.set_pixel(i % w, i / w, true);
         }
     }
     bin
@@ -116,19 +127,23 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
     let mut labels = assign(&work, &palette);
     fill_masked(&mut labels, &excl, ww, wh);
     let min_area = ((40.0 + 200.0 * t) * s * s).round().max(8.0) as usize;
-    remove_small_regions(&mut labels, ww, wh, min_area, palette.len());
+    remove_small_regions(&mut labels, ww, wh, min_area, palette.len(), &palette, SPECK_BOOST);
 
     progress("Tracing colour fields", 0.7);
     let tp = TraceParams { corner_deg: lerp(50.0, 80.0, t), sigma: lerp(0.9, 1.8, t) * s, tol: lerp(0.8, 4.0, t) * s, min_area };
     let fields = trace_layers(&labels, ww, wh, &palette, &tp);
 
-    // (d) thin lines on top
+    // (d) thin lines on top: as strokes (centerline + measured width) and, for the "shapes" export, as outlines
     progress("Tracing thin lines", 0.88);
-    let mut lines: Vec<Layer> = Vec::new();
+    let mut line_shapes: Vec<Layer> = Vec::new();
+    let mut line_fallback: Vec<Layer> = Vec::new();
+    let mut strokes: Vec<StrokeLayer> = Vec::new();
+    let scale = ww as f64 / w as f64;
     if let Some(tm) = &thin {
         let (assign_c, colors) = line_colors(tm, 3);
-        // line tracing keeps more detail than the fields: shorter segments, fewer dropped pieces
-        let lp = TraceParams { sigma: lerp(0.6, 1.0, t) * s, tol: lerp(0.5, 1.5, t) * s, min_area: ((tm.comps.iter().map(|c| c.area).min().unwrap_or(8) as f64) * (up * up) as f64 * 0.5) as usize, ..tp.clone() };
+        let min_line = ((tm.comps.iter().map(|c| c.area).min().unwrap_or(8) as f64) * (up * up) as f64 * 0.5) as usize;
+        let lp = TraceParams { sigma: lerp(0.6, 1.0, t) * s, tol: lerp(0.5, 1.5, t) * s, min_area: min_line, ..tp.clone() };
+        let stroke_tol = lerp(0.7, 2.0, t) * s;
         for (ci, color) in colors.iter().enumerate() {
             let mut group = vec![false; w * h];
             for (i, &l) in tm.labels.iter().enumerate() {
@@ -136,17 +151,29 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
                     group[i] = true;
                 }
             }
-            let bin = upscale_mask(&group, w, h, ww as u32, wh as u32);
-            let contours = trace_mask(&bin, &lp);
+            let big = upscale_bool_mask(&group, w, h, ww as u32, wh as u32);
+            let contours = trace_mask(&to_binary(&big, ww, wh), &lp);
             if !contours.is_empty() {
-                lines.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false });
+                line_shapes.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false });
+            }
+            let cl = centerline(&big, ww, wh, stroke_tol, 0.5);
+            if cl.shape_mask.iter().any(|&b| b) {
+                let contours = trace_mask(&to_binary(&cl.shape_mask, ww, wh), &lp);
+                if !contours.is_empty() {
+                    line_fallback.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false });
+                }
+            }
+            let min_len = MIN_STROKE_LEN * ww as f64 / w as f64;
+            let kept: Vec<_> = cl.strokes.iter().filter(|st| { let mut l = 0.0; for cv in &st.curves { l += ((cv[3].0 - cv[0].0).powi(2) + (cv[3].1 - cv[0].1).powi(2)).sqrt(); } l >= min_len }).collect();
+            if !kept.is_empty() {
+                strokes.push(StrokeLayer { color: *color, strokes: kept.iter().map(|st| { let mut d = StrokeData::from(*st); d.width += STROKE_WIDTH_BIAS * scale; d }).collect() });
             }
         }
     }
 
     progress("Writing SVG", 0.95);
-    let doc = Doc { width: img.width(), height: img.height(), scale: ww as f64 / w as f64, fields, lines };
-    let svg = to_svg(&doc);
+    let doc = Doc { width: img.width(), height: img.height(), scale: ww as f64 / w as f64, fields, line_shapes, line_fallback, strokes };
+    let svg = to_svg(&doc, &ExportOptions::default());
     let stats = stats_for(&svg, params.measure.then_some(img));
     progress("Done", 1.0);
     Ok(Output { svg, doc, stats, palette, notes, used_ai: cleaned.used_ai, thin_pixels })
