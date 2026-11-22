@@ -201,9 +201,21 @@ fn v6_missing_sidecar_falls_back_with_a_clear_message() {
 
 #[test]
 fn v7_no_network_code_is_linked() {
-    let lock = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock")).expect("Cargo.lock");
-    for crate_name in ["reqwest", "hyper", "ureq", "curl", "isahc", "surf", "attohttpc", "tungstenite", "tokio-tungstenite", "native-tls", "openssl"] {
-        assert!(!lock.contains(&format!("name = \"{crate_name}\"")), "network crate {crate_name} is in the dependency tree");
+    // The lock file may list crates that only other platforms or dev tooling need, so ask cargo for what is really
+    // compiled into the Windows build of the core and of the app.
+    let network = ["reqwest", "hyper", "ureq", "curl", "isahc", "surf", "attohttpc", "tungstenite", "tokio-tungstenite", "native-tls", "openssl", "rustls", "h2"];
+    for pkg in ["vektora-core", "vektora"] {
+        let out = std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+            .args(["tree", "-p", pkg, "--target", "x86_64-pc-windows-gnu", "-e", "normal,build", "--prefix", "none", "--workspace"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("cargo tree");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(!text.trim().is_empty(), "cargo tree gave nothing for {pkg}: {}", String::from_utf8_lossy(&out.stderr));
+        for line in text.lines() {
+            let name = line.split_whitespace().next().unwrap_or("");
+            assert!(!network.contains(&name), "network crate {name} is in the dependency tree of {pkg}");
+        }
     }
     assert!(count_svg("<path d=\"M0,0C1,1 2,2 3,3Z\"/>").1 == 2);
 }

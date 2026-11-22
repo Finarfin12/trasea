@@ -52,7 +52,25 @@ fn fallback(img: &RgbImage, up: u32) -> RgbImage {
     median3(&big)
 }
 
+/// Remove the Windows verbatim prefix that Tauri's resource_dir() and canonicalize() add (a backslash pair, a question
+/// mark, a backslash). realesrgan-ncnn-vulkan glues paths together as text, so a path with that prefix makes it fail to
+/// open its model and crash with 0xC0000409.
+pub fn plain_path(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    let unc = [r"\\?\UNC\"];
+    for pre in unc {
+        if let Some(rest) = s.strip_prefix(pre) {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    p.to_path_buf()
+}
+
 fn locate(dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    let dir = plain_path(dir);
     let exe = dir.join(SIDECAR_EXE);
     let models = dir.join("models");
     (exe.is_file() && models.is_dir()).then_some((exe, models))
@@ -62,7 +80,7 @@ fn locate(dir: &Path) -> Option<(PathBuf, PathBuf)> {
 fn run_sidecar(img: &RgbImage, dir: &Path, up: u32) -> Result<RgbImage, String> {
     let (exe, models) = locate(dir).ok_or_else(|| format!("{SIDECAR_EXE} or its models folder not found in {}", dir.display()))?;
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let tmp = std::env::temp_dir().join(format!("vektora-{}-{}", std::process::id(), nanos));
+    let tmp = plain_path(&std::env::temp_dir()).join(format!("vektora-{}-{}", std::process::id(), nanos));
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let result = (|| {
         let (w, h) = img.dimensions();
@@ -76,26 +94,49 @@ fn run_sidecar(img: &RgbImage, dir: &Path, up: u32) -> Result<RgbImage, String> 
         let inp = tmp.join("in.png");
         let outp = tmp.join("out.png");
         input.save(&inp).map_err(|e| e.to_string())?;
-        let mut cmd = Command::new(&exe);
-        cmd.arg("-i").arg(&inp).arg("-o").arg(&outp).args(["-n", MODEL, "-s", "4", "-m"]).arg(&models).stdout(Stdio::null()).stderr(Stdio::null()).stdin(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        let mut child = cmd.spawn().map_err(|e| format!("cannot start the Real-ESRGAN sidecar: {e}"))?;
-        let t0 = Instant::now();
-        loop {
-            match child.try_wait().map_err(|e| e.to_string())? {
-                Some(status) if status.success() => break,
-                Some(status) => return Err(format!("the Real-ESRGAN sidecar failed ({status}); probably no usable GPU or Vulkan driver")),
-                None if t0.elapsed() > TIMEOUT => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err("the Real-ESRGAN sidecar took too long and was stopped".into());
-                }
-                None => std::thread::sleep(Duration::from_millis(100)),
+        // Some GPU/driver setups make the first try crash; retry with a small tile size and each Vulkan device.
+        let attempts: [&[&str]; 3] = [&[], &["-t", "128"], &["-g", "1", "-t", "128"]];
+        let mut last_err = String::new();
+        let mut done = false;
+        for (n, extra) in attempts.iter().enumerate() {
+            let _ = std::fs::remove_file(&outp);
+            let log = tmp.join(format!("sidecar{n}.log"));
+            let log_file = std::fs::File::create(&log).map_err(|e| e.to_string())?;
+            let log_err = log_file.try_clone().map_err(|e| e.to_string())?;
+            let mut cmd = Command::new(&exe);
+            cmd.arg("-i").arg(&inp).arg("-o").arg(&outp).args(["-n", MODEL, "-s", "4", "-m"]).arg(&models).args(*extra).stdout(Stdio::from(log_file)).stderr(Stdio::from(log_err)).stdin(Stdio::null());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
             }
+            let mut child = cmd.spawn().map_err(|e| format!("cannot start the Real-ESRGAN sidecar: {e}"))?;
+            let t0 = Instant::now();
+            loop {
+                match child.try_wait().map_err(|e| e.to_string())? {
+                    Some(status) if status.success() && outp.is_file() => {
+                        done = true;
+                        break;
+                    }
+                    Some(status) => {
+                        let tail = std::fs::read_to_string(&log).unwrap_or_default().lines().rev().find(|l| !l.trim().is_empty() && !l.contains('%')).unwrap_or("").to_string();
+                        last_err = format!("the Real-ESRGAN sidecar failed ({status}) {tail}");
+                        break;
+                    }
+                    None if t0.elapsed() > TIMEOUT => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err("the Real-ESRGAN sidecar took too long and was stopped".into());
+                    }
+                    None => std::thread::sleep(Duration::from_millis(100)),
+                }
+            }
+            if done {
+                break;
+            }
+        }
+        if !done {
+            return Err(last_err);
         }
         let out = image::open(&outp).map_err(|e| format!("cannot read the sidecar output: {e}"))?.to_rgb8();
         Ok(image::imageops::resize(&out, w * up, h * up, FilterType::Lanczos3))
@@ -117,4 +158,29 @@ pub fn clean(img: &RgbImage, want_ai: bool, sidecar_dir: Option<&Path>, up: u32)
         None => "the Real-ESRGAN sidecar is not available".to_string(),
     };
     Cleaned { image: fallback(img, up), used_ai: false, note: Some(format!("AI cleaning was skipped ({why}). A median filter was used instead.")) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_prefix_is_removed() {
+        assert_eq!(plain_path(Path::new(r"\\?\C:\Users\x\realesrgan")), PathBuf::from(r"C:\Users\x\realesrgan"));
+        assert_eq!(plain_path(Path::new(r"\\?\UNC\server\share\a")), PathBuf::from(r"\\server\share\a"));
+        assert_eq!(plain_path(Path::new(r"C:\plain\path")), PathBuf::from(r"C:\plain\path"));
+    }
+
+    #[test]
+    fn locate_accepts_a_folder_with_the_verbatim_prefix() {
+        let dir = std::env::temp_dir().join("vektora-locate-test");
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        std::fs::write(dir.join(SIDECAR_EXE), b"x").unwrap();
+        let verbatim = PathBuf::from(format!("{}{}", r"\\?\", dir.display()));
+        let (exe, models) = locate(&verbatim).expect("a sidecar folder with a verbatim prefix must be found");
+        for p in [&exe, &models] {
+            assert!(!p.to_string_lossy().starts_with(r"\\?\"), "still verbatim: {}", p.display());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
