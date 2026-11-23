@@ -1,12 +1,22 @@
+<p align="center"><img src="docs/branding/trasea-logo-long.png" alt="Trasea — Clean curves. Ready to cut." width="720"></p>
+
 # Trasea
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.2.0 ("Stiker, Laser, & Presisi RIP")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.3.0 ("Editor Node & Vektor Pro")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun.
 
 ## Tangkapan Layar
 
-![Trasea 1.2.0 — Hapus Latar 1-Klik, Garis Potong CutContour & Toolbar Ikon 1 Baris](docs/screenshots/app_remove_bg_diecut.png)
+![Trasea 1.3.0 — Alat Node: titik jangkar dan handle Bézier di kanvas](docs/screenshots/app_node_edit.png)
+
+| Inspeksi Node (kotak = Corner, lingkaran = Smooth) | Simplify Path |
+| :---: | :---: |
+| ![Overlay inspeksi node](docs/screenshots/app_node_inspect.png) | ![Simplify path](docs/screenshots/app_node_simplify.png) |
+
+| Impor SVG (buka .svg yang sudah ada sebagai vektor) | Hapus Latar 1-Klik & Garis Potong CutContour |
+| :---: | :---: |
+| ![Impor SVG](docs/screenshots/app_svg_import.png) | ![Hapus latar dan die-cut](docs/screenshots/app_remove_bg_diecut.png) |
 
 | Mode Garis Tengah / Centerline (Laser / CNC) | Pilih & Edit Path Langsung di Kanvas |
 | :---: | :---: |
@@ -38,6 +48,15 @@ Format keluaran yang didukung:
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`) — Pro
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
 
+### Baru di 1.3.0 ("Editor Node & Vektor Pro")
+
+Seluruh fitur baru 1.3.0 **terbuka tanpa memerlukan kunci Pro**:
+
+- **Alat Node (`A`).** Klik sebuah path untuk mengeditnya node demi node: seret titik jangkar dan handle Bézier secara real-time (kotak = Corner, lingkaran = Smooth), `Alt`+seret handle untuk memutus tangen, klik dua kali node untuk beralih Corner ↔ Smooth, `Delete` untuk menghapus node, **Tampilkan semua handle**, serta **Simplify** dan **Reset Node** di bilah mengambang. Setiap gerakan adalah satu langkah Undo/Redo; pintasan dapat diatur di Pengaturan.
+- **Edit node non-destruktif.** Edit disimpan sebagai `nodeEdits` (piksel sumber) dan diterapkan setelah edit path, sehingga pratinjau dan seluruh ekspor — SVG, PDF, EPS, DXF, CutContour, separasi — memakai geometri hasil edit. Tersimpan di proyek `.trasea` (proyek lama tetap bisa dibuka).
+- **Impor SVG.** Buka `.svg` yang sudah ada (dialog Buka atau seret-lepas) sebagai vektor yang bisa diedit tanpa tracing; Pilih Path, Alat Node, pewarnaan ulang, dan semua ekspor berfungsi.
+- **Identitas merek baru.** Ikon aplikasi baru (varian mini huruf T dipakai pada ukuran ≤ 32 px), logo header dan favicon, serta banner wordmark berbasis path.
+
 ### Baru di 1.2.0 ("Stiker, Laser, & Presisi RIP")
 
 Seluruh 8 fitur baru 1.2.0 **terbuka tanpa memerlukan kunci Pro**:
@@ -53,6 +72,7 @@ Seluruh 8 fitur baru 1.2.0 **terbuka tanpa memerlukan kunci Pro**:
 
 ### Pencapaian versi sebelumnya
 
+- **1.2.0 ("Stiker, Laser, & Presisi RIP"):** Garis Potong Die-Cut CutContour, mode Garis Tengah, Hapus Latar 1-Klik, Pilih Path, Soft-Proof CMYK, tinta Spot bernama, Pengaturan Aplikasi, Inspektor Warna & pustaka palet.
 - **1.1.0 ("Alur Kerja Cepat & Produksi Penuh"):** Ekspor DXF R12 (`mm`/`px`), ekspor cetak DeviceCMYK murni (PDF/EPS/ASE), Sablon Knockout Murni, Pantau Folder otomatis, Clipboard Masuk/Keluar (`Ctrl+V` / `Ctrl+Shift+C`), pratinjau Outline (`Ctrl+Y`) & ikon mata layer, UI Dwibahasa ID/EN, Potong & Putar non-destruktif, Mode Gradasi/Cel-Shading.
 - **1.0.0 ("Siap Dijual"):** Ekspor EPS murni, lisensi lokal Ed25519 & trial ramah, modal Privasi & Lisensi, file proyek `.trasea`, Undo/Redo, Preset Kustom, ilustrasi contoh 1 klik, perbaikan kontinuitas garis tipis melengkung.
 - **0.5.0 ("Produksi"):** Batch folder + laporan CSV/Markdown, Mode Sablon (2–8 warna spot, tanda registrasi, film separasi `#000000`), Mode Cutting/Bordir *knockout*, pilih target warna saat Gabung palet, ikon macOS `icon.icns`.
@@ -61,10 +81,10 @@ Seluruh 8 fitur baru 1.2.0 **terbuka tanpa memerlukan kunci Pro**:
 
 ## Pakai
 
-1. Unduh dan ekstrak [`releases/Trasea_1.2.0_x64-setup.zip`](releases/Trasea_1.2.0_x64-setup.zip), jalankan `Trasea_1.2.0_x64-setup.exe` (per pengguna, tanpa admin), lalu buka Trasea.
+1. Unduh dan ekstrak [`releases/Trasea_1.3.0_x64-setup.zip`](releases/Trasea_1.3.0_x64-setup.zip), jalankan `Trasea_1.3.0_x64-setup.exe` (per pengguna, tanpa admin), lalu buka Trasea.
 2. Ganti bahasa (`ID | EN`) atau buka **Pengaturan Aplikasi (`⚙` / `Ctrl+,`)** kapan saja untuk memilih tema Gelap/Terang/Ikuti Sistem, default ekspor, dan pintasan keyboard kustom.
-3. Klik **Coba contoh gambar**, tekan `Ctrl+V` untuk menempel dari clipboard, seret gambar/proyek `.trasea`/folder ke jendela, atau klik **Buka gambar / proyek…**.
-4. Gunakan **Hapus latar belakang (1-klik)**, **Potong & Putar**, **Mode Produksi** (**Standar**, **Sablon**, **Cutting / Bordir**, **Gradasi**, **Garis Tengah**), **Pilih Path (`Ctrl+E`)**, **Soft-Proof CMYK (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Inspektor Warna (klik chip warna untuk HEX/RGB/CMYK/HSL & tinta spot), dan Pustaka Palet Tersimpan.
+3. Klik **Coba contoh gambar**, tekan `Ctrl+V` untuk menempel dari clipboard, seret gambar/`.svg`/proyek `.trasea`/folder ke jendela, atau klik **Buka gambar / proyek…**.
+4. Gunakan **Hapus latar belakang (1-klik)**, **Potong & Putar**, **Mode Produksi** (**Standar**, **Sablon**, **Cutting / Bordir**, **Gradasi**, **Garis Tengah**), **Pilih Path (`Ctrl+E`)**, **Alat Node (`A`)**, **Soft-Proof CMYK (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Inspektor Warna (klik chip warna untuk HEX/RGB/CMYK/HSL & tinta spot), dan Pustaka Palet Tersimpan.
 5. Aktifkan **Garis Potong Stiker (`CutContour`)** bila menyiapkan stiker, salin SVG (`Ctrl+Shift+C`), ekspor **SVG**, **PDF (RGB/CMYK/Spot)**, **DXF (mm/px)**, **palet `.ase`/`.gpl`/`.json`/`.css`**, atau jalankan **Pantau Folder** secara bebas; aktifkan kunci Pro lokal di **Privasi & Lisensi** untuk membuka **EPS**, **Film Separasi**, dan **Batch Sekali Jalan**.
 
 ## Build dari sumber
@@ -80,7 +100,7 @@ npx tauri build --target x86_64-pc-windows-gnu
 Alat pengembang:
 
 ```
-npm test                                   # 81 tes cargo: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10, G12-01..G12-10
+npm test                                   # 91 tes cargo: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10, G12-01..G12-10, G13-01..G13-10
 cargo run --release --bin trasea-cli -- in.png out.svg [--remove-bg] [--bg-tolerance 24] [--defringe 1] [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt 1.0] [--die-cut] [--die-cut-mm 2.0] [--die-cut-name CutContour] [--spot "#E63946=PANTONE 185 C"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm 120] [--crop X,Y,W,H] [--rotate DEG] [--separations dir]
 cargo run --release --bin trasea-cli -- --batch <folder-input> <folder-output> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut] [--color-space rgb|cmyk] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--subfolders] [--no-report]
 cargo run --release --bin trasea-cli -- --watch <folder-input> <folder-output> [--poll-ms 1000] [--debounce-ms 500] [--dxf] [--pdf] [--die-cut] [--color-space cmyk]
@@ -92,4 +112,4 @@ Baca [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) sebelum distribusi komer
 
 ## Pemrosesan Lokal, Privasi, & Lisensi
 
-Seluruh pembersihan gambar, vektorisasi, dan ekspor berjalan langsung di komputer Anda tanpa mengunggah desain ke cloud, dan Trasea tetap bekerja tanpa koneksi internet. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.2.0.md](docs/LICENSE-AUDIT-1.2.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Seluruh pembersihan gambar, vektorisasi, dan ekspor berjalan langsung di komputer Anda tanpa mengunggah desain ke cloud, dan Trasea tetap bekerja tanpa koneksi internet. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.3.0.md](docs/LICENSE-AUDIT-1.3.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

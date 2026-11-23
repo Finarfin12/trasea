@@ -1,12 +1,22 @@
+<p align="center"><img src="docs/branding/trasea-logo-long.png" alt="Trasea — Clean curves. Ready to cut." width="720"></p>
+
 # Trasea
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.2.0 ("Stickers, Laser, & RIP Precision")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.3.0 ("Node Editor & Vector Pro")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required.
 
 ## Screenshots
 
-![Trasea 1.2.0 — 1-Click Remove Background, Die-Cut CutContour & Single-Row Icon Toolbar](docs/screenshots/app_remove_bg_diecut.png)
+![Trasea 1.3.0 — Node Tool: anchors and Bézier handles on the canvas](docs/screenshots/app_node_edit.png)
+
+| Node Inspect (square = Corner, circle = Smooth) | Simplify Path |
+| :---: | :---: |
+| ![Node inspect overlay](docs/screenshots/app_node_inspect.png) | ![Simplify path](docs/screenshots/app_node_simplify.png) |
+
+| SVG Import (open an existing .svg as vectors) | 1-Click Remove Background & Die-Cut CutContour |
+| :---: | :---: |
+| ![SVG import](docs/screenshots/app_svg_import.png) | ![Remove background and die-cut](docs/screenshots/app_remove_bg_diecut.png) |
 
 | Centerline (Single-Line Laser / CNC) | Interactive Select & Edit Path on Canvas |
 | :---: | :---: |
@@ -38,6 +48,15 @@ Supported outputs:
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`) — Pro
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
 
+### New in 1.3.0 ("Node Editor & Vector Pro")
+
+All 1.3.0 features are **open without requiring a Pro key**:
+
+- **Node Tool (`A`).** Click a path to edit it node by node: drag anchors and Bézier handles at display rate (square = Corner, circle = Smooth), `Alt`+drag a handle to break the tangent, double-click a node to toggle Corner ↔ Smooth, `Delete` to remove a node, **Show all handles**, plus **Simplify** and **Reset Nodes** in a floating bar. Every gesture is a single Undo/Redo step; the shortcut is configurable in Settings.
+- **Non-destructive node edits.** Edits are stored as `nodeEdits` (source pixels) and applied after path edits, so the preview and every export — SVG, PDF, EPS, DXF, CutContour, separations — use the edited geometry. They are saved in `.trasea` projects (older projects still open).
+- **SVG import.** Open an existing `.svg` (Open dialog or drag-and-drop) as editable vectors without tracing; Select Path, Node Tool, recolouring and all exports work on it.
+- **New brand identity.** New app icons (a mini letter-T variant is used at ≤ 32 px), header logo and favicon, and an outlined-path wordmark banner.
+
 ### New in 1.2.0 ("Stickers, Laser, & RIP Precision")
 
 All 8 new 1.2.0 features are **open without requiring a Pro key**:
@@ -53,6 +72,7 @@ All 8 new 1.2.0 features are **open without requiring a Pro key**:
 
 ### Earlier milestones
 
+- **1.2.0 ("Stickers, Laser, & RIP Precision"):** Die-Cut CutContour, Centerline mode, 1-click Remove Background, Select Path, CMYK Soft-Proof, Named Spot inks, App Settings, Colour Inspector & palette library.
 - **1.1.0 ("Fast Workflow & Full Production"):** AutoCAD R12 DXF export (`mm`/`px`), pure DeviceCMYK PDF/EPS/ASE export, Screen Print Pure Knockout, Watch Folder, Clipboard In/Out (`Ctrl+V` / `Ctrl+Shift+C`), Outline/Wireframe preview (`Ctrl+Y`) & layer visibility toggles, bilingual UI (EN/ID), non-destructive Crop & Rotate, Shading/Cel-Shading mode.
 - **1.0.0 ("Production Ready"):** Pure EPS export, local Ed25519 licensing & friendly trial, Privacy & License modal, `.trasea` project files, Undo/Redo, Custom Presets, 1-click sample illustration, continuous thin-line extraction fix.
 - **0.5.0 ("Production"):** Batch folder processing + CSV/Markdown reports, Screen Print mode (2–8 spot colours, registration marks, `#000000` separation films), Cutting/Embroidery knockout mode, targeted manual palette merge, macOS `icon.icns`.
@@ -61,10 +81,10 @@ All 8 new 1.2.0 features are **open without requiring a Pro key**:
 
 ## Use
 
-1. Download and extract [`releases/Trasea_1.2.0_x64-setup.zip`](releases/Trasea_1.2.0_x64-setup.zip), run `Trasea_1.2.0_x64-setup.exe` (per-user, no admin needed), and launch Trasea.
+1. Download and extract [`releases/Trasea_1.3.0_x64-setup.zip`](releases/Trasea_1.3.0_x64-setup.zip), run `Trasea_1.3.0_x64-setup.exe` (per-user, no admin needed), and launch Trasea.
 2. Switch language (`ID | EN`) or open **App Settings (`⚙` / `Ctrl+,`)** anytime to choose Dark/Light/System theme, export defaults, and custom keyboard shortcuts.
-3. Click **Try sample image**, press `Ctrl+V` to paste from clipboard, drag an image/`.trasea` project/folder onto the window, or click **Open image / project…**.
-4. Use **Remove background (1-click)**, **Crop & Rotate**, **Production Mode** (**Standard**, **Screen Print**, **Cut / Embroidery**, **Shading**, **Centerline**), **Select Path (`Ctrl+E`)**, **CMYK Soft-Proof (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Colour Inspector (click any palette chip for HEX/RGB/CMYK/HSL & spot ink), and Saved Palette Library.
+3. Click **Try sample image**, press `Ctrl+V` to paste from clipboard, drag an image/`.svg`/`.trasea` project/folder onto the window, or click **Open image / project…**.
+4. Use **Remove background (1-click)**, **Crop & Rotate**, **Production Mode** (**Standard**, **Screen Print**, **Cut / Embroidery**, **Shading**, **Centerline**), **Select Path (`Ctrl+E`)**, **Node Tool (`A`)**, **CMYK Soft-Proof (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Colour Inspector (click any palette chip for HEX/RGB/CMYK/HSL & spot ink), and Saved Palette Library.
 5. Enable **Die-Cut Contour (`CutContour`)** if preparing stickers, copy SVG (`Ctrl+Shift+C`), export **SVG**, **PDF (RGB/CMYK/Spot)**, **DXF (mm/px)**, **`.ase`/`.gpl`/`.json`/`.css` palettes**, or run **Watch Folder** freely; activate a local Pro key in **Privacy & License** to also unlock **EPS**, **Separation Films**, and one-shot **Batch Folder**.
 
 ## Build from source
@@ -80,7 +100,7 @@ npx tauri build --target x86_64-pc-windows-gnu
 Developer tools:
 
 ```
-npm test                                   # 81 cargo tests: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10, G12-01..G12-10
+npm test                                   # 91 cargo tests: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10, G12-01..G12-10, G13-01..G13-10
 cargo run --release --bin trasea-cli -- in.png out.svg [--remove-bg] [--bg-tolerance 24] [--defringe 1] [--mode standard|screen-print|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt 1.0] [--die-cut] [--die-cut-mm 2.0] [--die-cut-name CutContour] [--spot "#E63946=PANTONE 185 C"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm 120] [--crop X,Y,W,H] [--rotate DEG] [--separations dir]
 cargo run --release --bin trasea-cli -- --batch <input-dir> <output-dir> [--mode standard|screen-print|cutting|shading|centerline] [--remove-bg] [--die-cut] [--color-space rgb|cmyk] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--subfolders] [--no-report]
 cargo run --release --bin trasea-cli -- --watch <input-dir> <output-dir> [--poll-ms 1000] [--debounce-ms 500] [--dxf] [--pdf] [--die-cut] [--color-space cmyk]
@@ -92,4 +112,4 @@ See [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) before commercial distrib
 
 ## Local-First, Privacy, & Licenses
 
-All image cleaning, vectorization, and exports run locally on your computer without uploading designs to any cloud service, and Trasea continues to work without an internet connection. The core `trasea-core` crate links zero HTTP/network crates and zero GPL/AGPL crates (verified automatically by `V7`, `N-01`, `F-09`, and `G12-10`), and the WebView enforces a strict local-IPC CSP. See [docs/LICENSE-AUDIT-1.2.0.md](docs/LICENSE-AUDIT-1.2.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+All image cleaning, vectorization, and exports run locally on your computer without uploading designs to any cloud service, and Trasea continues to work without an internet connection. The core `trasea-core` crate links zero HTTP/network crates and zero GPL/AGPL crates (verified automatically by `V7`, `N-01`, `F-09`, and `G12-10`), and the WebView enforces a strict local-IPC CSP. See [docs/LICENSE-AUDIT-1.3.0.md](docs/LICENSE-AUDIT-1.3.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

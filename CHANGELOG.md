@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0] "Node Editor & Vector Pro"
+
+All 1.3.0 features are open without requiring a Pro key; the 1.0.0 local Ed25519 license system and every earlier test remain intact. Standard-mode SVG output is byte-identical to 1.2.0 on the 10-image benchmark (0.00% regression).
+
+- **Node Tool (`node_edit.rs`, `src/NodeOverlay.tsx`, shortcut `A`).** New icon button **Node Tool (A)** next to Select Path. Click a path to see its anchors and Bézier handles; drag anchors and handles (square = Corner, circle = Smooth; `Alt`+drag a handle breaks the tangent); double-click a node to toggle Corner ↔ Smooth; `Delete` removes the selected node; toggle **Show all handles**; a floating bar shows the node count and selected node with **Simplify** and **Reset Nodes**. Every gesture is one Undo/Redo step, the UI is bilingual (ID/EN), and the shortcut is configurable in Settings → Keyboard Shortcuts.
+- **Non-destructive node edits (`NodeEdit`).** `moveNode`, `moveHandle`, `deleteNode`, `toggleSmooth`, `simplifyPath` in source pixels, applied after path edits so the preview and every export (SVG, PDF, EPS, DXF, CutContour, separations) see the edited geometry. Persisted in `.trasea` projects (`nodeEdits`, backwards-compatible: older projects load with none). New Tauri command `inspect_path_nodes`.
+- **SVG import (`svg_import.rs`).** Open an existing `.svg` (Open dialog or drag-and-drop) as editable vectors without tracing — paths, basic shapes, transforms and fills become layers that work with Select Path, Node Tool, recolouring and all exports.
+- **New brand identity.** The final Trasea logo (icon + wordmark) replaces the old placeholder: app icons (`.ico`, `.icns`, all PNG sizes) are generated from the icon, with a **mini variant (letter T only)** for sizes ≤ 32 px where the three small node squares would merge; the header and favicon use the new logo; the wordmark in the README banner is converted from live Inter text to outlined paths (design and colours unchanged).
+- **Tests & Audit:** Added `G13-01`..`G13-10` in `tests/core13.rs` (91/91 tests pass in `trasea-core`), published `docs/LICENSE-AUDIT-1.3.0.md` (0 new crates, 0 GPL, 0 network crates).
+
 ## [1.2.0] "Stiker, Laser, & Presisi RIP"
 
 All 8 new 1.2.0 features (F1–F8) are open without requiring a Pro key (QT-1 = A); the 1.0.0 local Ed25519 license system and all legacy tests remain intact. Updated user-facing positioning to **Local-First & Private** (*Pemrosesan Lokal & Privat*) while keeping `trasea-core` at 0 network crates and 0 GPL crates.

@@ -6,6 +6,7 @@
 use crate::brush::BrushStroke;
 use crate::color::{ColorSpace, SpotColorMapping};
 use crate::dxf::DxfUnit;
+use crate::node_edit::NodeEdit;
 use crate::path_edit::PathEdit;
 use crate::preprocess::PreprocessOptions;
 use crate::{Error, Result};
@@ -71,6 +72,8 @@ pub struct ProjectOptions {
     pub centerline_stroke_pt: f64,
     #[serde(default)]
     pub path_edits: Vec<PathEdit>,
+    #[serde(default)]
+    pub node_edits: Vec<NodeEdit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

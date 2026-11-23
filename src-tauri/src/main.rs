@@ -18,12 +18,14 @@ use trasea_core::export::{
     to_separation_pdfs, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs,
 };
 use trasea_core::license::{verify_embedded, LicenseInfo};
+use trasea_core::node_edit::{inspect_path_nodes as core_inspect_path_nodes, NodeEdit, PathNodeGeometry};
 use trasea_core::path_edit::PathEdit;
 use trasea_core::preprocess::PreprocessOptions;
 use trasea_core::project::{
     load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject,
     ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION,
 };
+use trasea_core::svg_import::load_svg_doc;
 use trasea_core::watch::{watch_folder, WatchConfig};
 use trasea_core::{
     hex, load, prepare, vectorize_prepared, BrushStroke, NodeHeatmap, Params, PreparedImage,
@@ -128,6 +130,9 @@ struct UiParams {
     centerline_stroke_pt: f64,
     #[serde(default)]
     path_edits: Vec<PathEdit>,
+    /// 1.3.0 node edits (move node / handle, delete node, toggle smooth, simplify), in source pixels.
+    #[serde(default)]
+    node_edits: Vec<NodeEdit>,
 }
 
 #[derive(Serialize, Clone)]
@@ -504,6 +509,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         production: prod,
         preprocess: params.preprocess.clone(),
         path_edits: params.path_edits.clone(),
+        node_edits: params.node_edits.clone(),
         ..Params::default()
     }
 }
@@ -547,6 +553,9 @@ fn merge_batch_export(p: &Params, options: &UiExport) -> ExportOptions {
 
 #[tauri::command]
 async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
+    if path.to_ascii_lowercase().ends_with(".svg") {
+        return process_svg(&last, path, params).await;
+    }
     let sidecar = sidecar_dir(&app);
     let handle = app.clone();
     let cached: Option<(Arc<PreparedImage>, String)> = {
@@ -628,6 +637,69 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
         *last.prepared.lock().map_err(|_| "internal error".to_string())? = Some(entry);
     }
     Ok(result.0)
+}
+
+/// Open an .svg as vectors (no tracing): path edits and node edits are applied, the original is rendered for the compare view.
+async fn process_svg(last: &State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
+        let t0 = Instant::now();
+        let p = to_core_params(&params, None);
+        let eo = export_options_for_production(&p.production);
+        let import = load_svg_doc(Path::new(&path)).map_err(|e| e.to_string())?;
+        let (w, h) = (import.doc.width, import.doc.height);
+        let out = trasea_core::vectorize_svg(import, &p, &eo);
+        let original_svg = std::fs::read_to_string(&path).unwrap_or_else(|_| out.svg.clone());
+        let original_img = trasea_core::stats::render_svg(&original_svg, w, h)
+            .or_else(|_| trasea_core::stats::render_svg(&out.svg, w, h))
+            .map_err(|e| e.to_string())?;
+        let original = png_data_url(&original_img)?;
+        let palette_proof: Vec<PaletteProofItem> = out
+            .palette
+            .iter()
+            .map(|&c| PaletteProofItem {
+                hex: hex(c),
+                proof_hex: hex(rgb_to_soft_proof_rgb(c[0], c[1], c[2])),
+                out_of_gamut: is_out_of_cmyk_gamut(c[0], c[1], c[2]),
+            })
+            .collect();
+        let processed = Processed {
+            svg: out.svg.clone(),
+            original,
+            width: w,
+            height: h,
+            paths: out.stats.paths,
+            nodes: out.stats.nodes,
+            bytes: out.stats.bytes,
+            mae: out.stats.mae,
+            notes: out.notes.clone(),
+            palette: out.palette.iter().map(|c| hex(*c)).collect(),
+            palette_proof,
+            used_ai: false,
+            secs: t0.elapsed().as_secs_f64(),
+            thin_pixels: 0,
+            primitives: out.stats.primitives,
+            symmetry_applied: None,
+            text_regions: Vec::new(),
+            heatmap: out.heatmap.clone(),
+            effective_smooth: p.smooth * 100.0,
+            budget_met: None,
+            reused: false,
+        };
+        Ok((processed, out.doc))
+    })
+    .await
+    .map_err(|e| format!("the SVG import stopped unexpectedly: {e}"))??;
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    // there is no raster to sample colours from
+    *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
+    Ok(result.0)
+}
+
+/// Anchors and Bezier handles of one path of the last result (source pixels), for the Node tool overlay.
+#[tauri::command]
+fn inspect_path_nodes(last: State<'_, Last>, target_id: String) -> Result<Option<PathNodeGeometry>, String> {
+    let guard = last.doc.lock().map_err(|_| "internal error".to_string())?;
+    Ok(guard.as_ref().and_then(|doc| core_inspect_path_nodes(doc, &target_id)))
 }
 
 #[tauri::command]
@@ -1032,6 +1104,9 @@ fn collect_dropped_images(paths: Vec<String>, include_subfolders: bool) -> Resul
             }
         } else if is_supported_image(&p) {
             out.push(raw);
+        } else if p.is_file() && p.extension().and_then(|e| e.to_str()).map_or(false, |e| e.eq_ignore_ascii_case("svg")) {
+            // an .svg opens as vectors in the editor (it is not a batch input)
+            out.push(raw);
         }
     }
     out.sort();
@@ -1217,6 +1292,7 @@ fn main() {
             render_preview_svg,
             load_raw_image_preview,
             pick_color,
+            inspect_path_nodes,
             save_file,
             save_text_file,
             export_dxf,

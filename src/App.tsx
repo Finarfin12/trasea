@@ -9,6 +9,8 @@ import {
 } from "react";
 import BatchView from "./BatchView";
 import CropModal from "./CropModal";
+import logoIcon from "./assets/trasea-icon-mini.svg";
+import { NodeOverlay, type NodeSelection } from "./NodeOverlay";
 import SettingsModal, { type SettingsTab } from "./SettingsModal";
 import {
 	IconChecker,
@@ -24,6 +26,7 @@ import {
 	IconSmoothBrush,
 	IconSoftProof,
 	IconUndo,
+	IconNode,
 } from "./ToolbarIcons";
 import {
 	collectDroppedImages,
@@ -70,6 +73,9 @@ import {
 	type Options,
 	type PaletteTextExportKind,
 	type PathEdit,
+	type NodeEdit,
+	type PathNodeGeometry,
+	inspectPathNodes,
 	type PreprocessOptions,
 	type Processed,
 	type ProductionMode,
@@ -109,6 +115,7 @@ const DEFAULTS: Options = {
 	centerlineInvert: false,
 	centerlineStrokePt: 1.0,
 	pathEdits: [],
+	nodeEdits: [],
 };
 
 const DEFAULT_EXP: ExportOptions = {
@@ -127,7 +134,7 @@ const DEFAULT_EXP: ExportOptions = {
 };
 
 type View = "editor" | "batch";
-type Tool = "pan" | "selectPath" | "detail" | "smooth" | "pipet";
+type Tool = "pan" | "selectPath" | "node" | "detail" | "smooth" | "pipet";
 type PanelTab = "trace" | "colors" | "export";
 
 function TipDot({ text }: { text: string }) {
@@ -155,6 +162,7 @@ const normalizeOptions = (po: Partial<Options>): Options => ({
 	centerlineInvert: po.centerlineInvert ?? false,
 	centerlineStrokePt: po.centerlineStrokePt ?? 1.0,
 	pathEdits: Array.isArray(po.pathEdits) ? po.pathEdits : [],
+	nodeEdits: Array.isArray(po.nodeEdits) ? po.nodeEdits : [],
 	preprocess: po.preprocess
 		? {
 				crop: po.preprocess.crop ?? null,
@@ -305,6 +313,11 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [strokes, setStrokes] = useState<BrushStroke[]>([]);
 	const [live, setLive] = useState<BrushStroke | null>(null);
 	const [pathEdits, setPathEdits] = useState<PathEdit[]>([]);
+	const [nodeEdits, setNodeEdits] = useState<NodeEdit[]>([]);
+	const [nodeGeo, setNodeGeo] = useState<PathNodeGeometry | null>(null);
+	const [nodeSel, setNodeSel] = useState<NodeSelection | null>(null);
+	const [showAllHandles, setShowAllHandles] = useState(false);
+	const keepSelectionRef = useRef(false);
 	const [palette, setPalette] = useState<string[] | null>(null);
 	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
 	const [mergeSource, setMergeSource] = useState<string | null>(null);
@@ -379,13 +392,14 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			paletteMerges: paletteMerges.map(m => [m[0], m[1]]),
 			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
 			pathEdits: pathEdits.map(pe => ({ ...pe })),
+			nodeEdits: nodeEdits.map(ne => ({ ...ne })),
 			targetChoice,
 			customTarget,
 			exp: { ...exp, spotColors: exp.spotColors.map(s => ({ ...s })) },
 			label,
 		}),
-		[opts, palette, paletteMerges, strokes, pathEdits, targetChoice, customTarget, exp],
-	);
+		[opts, palette, paletteMerges, strokes, pathEdits, nodeEdits, targetChoice, customTarget, exp],
+				);
 
 	const recordHistory = useCallback(
 		(label: string) => {
@@ -410,7 +424,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setResult(r);
 				setLiveSvg(null);
 				setHiddenLayers(new Set());
-				setSelectedPathId(null);
+				if (!keepSelectionRef.current) setSelectedPathId(null);
+				keepSelectionRef.current = false;
 				setAppliedSig(JSON.stringify(effectiveOpts));
 			} catch (e) {
 				setError(errText(e));
@@ -423,15 +438,18 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	);
 
 	const restoreSnapshot = useCallback(
-		(snap: EditorSnapshot, prevPathEdits: PathEdit[]) => {
+		(snap: EditorSnapshot, prevPathEdits: PathEdit[], prevNodeEdits: NodeEdit[]) => {
 			const normOpts = normalizeOptions(snap.opts);
 			const normExp = normalizeExport(snap.exp);
 			const restoredEdits = snap.pathEdits ?? [];
+			const restoredNodeEdits = snap.nodeEdits ?? [];
 			setOpts(normOpts);
 			setPalette(snap.palette);
 			setPaletteMerges(snap.paletteMerges);
 			setStrokes(snap.strokes);
 			setPathEdits(restoredEdits);
+			setNodeEdits(restoredNodeEdits);
+			setNodeSel(null);
 			setTargetChoice(snap.targetChoice);
 			setCustomTarget(snap.customTarget);
 			setExp(normExp);
@@ -440,7 +458,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setMergeSource(null);
 			setSelectedPathId(null);
 			// Instant re-render when undoing/redoing path edits (uses fast prep cache!)
-			if (path && JSON.stringify(prevPathEdits) !== JSON.stringify(restoredEdits)) {
+			if (path && (JSON.stringify(prevPathEdits) !== JSON.stringify(restoredEdits) || JSON.stringify(prevNodeEdits) !== JSON.stringify(restoredNodeEdits))) {
+				keepSelectionRef.current = false;
 				const tNodes =
 					snap.targetChoice === "auto"
 						? null
@@ -452,6 +471,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 					targetNodes: tNodes,
 					brushStrokes: snap.strokes,
 					pathEdits: restoredEdits,
+					nodeEdits: restoredNodeEdits,
 				});
 			}
 		},
@@ -463,22 +483,22 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		if (!res) return;
 		const prevEdits = pathEdits;
 		setHistory(res.history);
-		restoreSnapshot(res.target, prevEdits);
+		restoreSnapshot(res.target, prevEdits, nodeEdits);
 		setInfo(`Undo: ${res.target.label}`);
-	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, restoreSnapshot, t.undo]);
+	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, nodeEdits, restoreSnapshot, t.undo]);
 
 	const doRedo = useCallback(() => {
 		const res = stepRedo(history, makeSnapshot(t.redo), appSettings.undoLimit);
 		if (!res) return;
 		const prevEdits = pathEdits;
 		setHistory(res.history);
-		restoreSnapshot(res.target, prevEdits);
+		restoreSnapshot(res.target, prevEdits, nodeEdits);
 		setInfo(`Redo: ${res.target.label}`);
-	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, restoreSnapshot, t.redo]);
+	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, nodeEdits, restoreSnapshot, t.redo]);
 
 	const signature = useMemo(
-		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits }),
-		[opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
+		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }),
+		[opts, palette, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits],
 	);
 
 	const openPrivacyModal = useCallback((licenseSubTab: "license" | "privacy" | "thirdParty" = "license", licenseHint = "") => {
@@ -553,6 +573,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setStrokes([]);
 			setLive(null);
 			setPathEdits([]);
+			setNodeEdits([]);
+			setNodeSel(null);
+			setNodeGeo(null);
 			setSelectedPathId(null);
 			setPalette(null);
 			setPaletteMerges([]);
@@ -567,6 +590,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				paletteMerges: [],
 				brushStrokes: [],
 				pathEdits: [],
+				nodeEdits: [],
 				preprocess: { ...DEFAULT_PREPROCESS },
 			};
 			setOpts(nextOpts);
@@ -592,7 +616,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setPaletteMerges(po.paletteMerges ?? []);
 				setStrokes(po.brushStrokes ?? []);
 				setPathEdits(po.pathEdits ?? []);
-				setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
+				setNodeEdits(po.nodeEdits ?? []);
+				setNodeSel(null);
+setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
 				setHiddenLayers(new Set());
 				setHistory(emptyHistory());
 				setSelectedPathId(null);
@@ -624,7 +650,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		const newImg = await pickImage();
 		if (!newImg) return;
 		setMissingSourceProject(null);
-		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits };
+		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits };
 		await run(newImg, mergedOpts);
 		setInfo(`${t.projectRelinked} ${newImg}`);
 	};
@@ -637,7 +663,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			try {
 				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
 				if (!dest) return;
-				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits };
+				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits };
 				await saveProjectFile(dest, path, fullOpts, effectiveExport());
 				setProjectPath(dest);
 				setInfo(`${t.projectSaved} ${dest}`);
@@ -645,7 +671,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setError(errText(e));
 			}
 		},
-		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, pathEdits, effectiveExport, errText, t.projectSaved],
+		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits, effectiveExport, errText, t.projectSaved],
 	);
 
 	const openSample = async () => {
@@ -702,6 +728,10 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			}),
 			onDrop(paths => {
 				const proj = paths.find(x => x.toLowerCase().endsWith(".trasea"));
+				if (paths.length === 1 && paths[0]?.toLowerCase().endsWith(".svg")) {
+					openPicture(paths[0]);
+					return;
+				}
 				if (proj && paths.length === 1) {
 					void openProject(proj);
 					return;
@@ -738,9 +768,10 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				targetNodes,
 				brushStrokes: strokes,
 				pathEdits: nextEdits,
+				nodeEdits,
 			});
 		},
-		[path, recordHistory, pathEdits, run, opts, palette, paletteMerges, targetNodes, strokes],
+		[path, recordHistory, pathEdits, nodeEdits, run, opts, palette, paletteMerges, targetNodes, strokes],
 	);
 
 	const deleteSelectedPath = useCallback(() => {
@@ -770,9 +801,104 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			paletteMerges,
 			targetNodes,
 			brushStrokes: strokes,
-			pathEdits: [],
+							pathEdits: [],
+							nodeEdits,
+						});
+					}, [path, pathEdits.length, nodeEdits, recordHistory, t.pathResetEdits, run, opts, palette, paletteMerges, targetNodes, strokes]);
+
+	// ---- Node tool (1.3.0) ----
+	// geometry of the selected path (source pixels); refreshed after every re-render
+	useEffect(() => {
+		if (tool !== "node" || !selectedPathId || !result) {
+			setNodeGeo(null);
+			return;
+		}
+		let cancelled = false;
+		void inspectPathNodes(selectedPathId)
+			.then(g => {
+				if (!cancelled) setNodeGeo(g);
+			})
+			.catch(() => {
+				if (!cancelled) setNodeGeo(null);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [tool, selectedPathId, result]);
+
+	const commitNodeEdit = useCallback(
+		(edit: NodeEdit, label: string) => {
+			if (!path || busyRef.current) return;
+			recordHistory(label);
+			const next = [...nodeEdits, edit];
+			setNodeEdits(next);
+			keepSelectionRef.current = true;
+			void run(path, {
+				...opts,
+				customPalette: palette,
+				paletteMerges,
+				targetNodes,
+				brushStrokes: strokes,
+				pathEdits,
+				nodeEdits: next,
+			});
+		},
+		[path, recordHistory, nodeEdits, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
+	);
+
+	const onNodeMove = useCallback(
+		(sub: number, idx: number, x: number, y: number) => {
+			if (!selectedPathId) return;
+			commitNodeEdit({ kind: "moveNode", targetId: selectedPathId, subpathIdx: sub, nodeIdx: idx, x, y }, t.nodeMoveLabel);
+		},
+		[selectedPathId, commitNodeEdit, t.nodeMoveLabel],
+	);
+	const onNodeMoveHandle = useCallback(
+		(sub: number, idx: number, which: "in" | "out", x: number, y: number, mirrorSmooth: boolean) => {
+			if (!selectedPathId) return;
+			commitNodeEdit(
+				{ kind: "moveHandle", targetId: selectedPathId, subpathIdx: sub, nodeIdx: idx, which, x, y, mirrorSmooth },
+				t.nodeMoveHandleLabel,
+			);
+		},
+		[selectedPathId, commitNodeEdit, t.nodeMoveHandleLabel],
+	);
+	const onNodeToggle = useCallback(
+		(sub: number, idx: number) => {
+			if (!selectedPathId) return;
+			commitNodeEdit({ kind: "toggleSmooth", targetId: selectedPathId, subpathIdx: sub, nodeIdx: idx }, t.nodeToggleLabel);
+		},
+		[selectedPathId, commitNodeEdit, t.nodeToggleLabel],
+	);
+	const deleteSelectedNode = useCallback(() => {
+		if (!selectedPathId || !nodeSel) return;
+		commitNodeEdit(
+			{ kind: "deleteNode", targetId: selectedPathId, subpathIdx: nodeSel.sub, nodeIdx: nodeSel.idx },
+			t.nodeDeleteLabel,
+		);
+		setNodeSel(null);
+	}, [selectedPathId, nodeSel, commitNodeEdit, t.nodeDeleteLabel]);
+	const simplifySelectedPath = useCallback(() => {
+		if (!selectedPathId) return;
+		commitNodeEdit({ kind: "simplifyPath", targetId: selectedPathId, tolerancePx: 1.0 }, t.nodeSimplifyLabel);
+		setNodeSel(null);
+	}, [selectedPathId, commitNodeEdit, t.nodeSimplifyLabel]);
+	const resetNodeEdits = useCallback(() => {
+		if (!path || nodeEdits.length === 0 || busyRef.current) return;
+		recordHistory(t.nodeResetLabel);
+		setNodeEdits([]);
+		setNodeSel(null);
+		keepSelectionRef.current = true;
+		void run(path, {
+			...opts,
+			customPalette: palette,
+			paletteMerges,
+			targetNodes,
+			brushStrokes: strokes,
+			pathEdits,
+			nodeEdits: [],
 		});
-	}, [path, pathEdits.length, recordHistory, t.pathResetEdits, run, opts, palette, paletteMerges, targetNodes, strokes]);
+	}, [path, nodeEdits.length, recordHistory, t.nodeResetLabel, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits]);
 
 	// Global keyboard shortcuts driven by SettingsModal (`activeShortcuts`)
 	useEffect(() => {
@@ -780,6 +906,12 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			if (settingsModal !== null) return;
 			const tag = (e.target as HTMLElement | null)?.tagName ?? "";
 			const editingText = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+			if (!editingText && (e.key === "Delete" || e.key === "Backspace") && view === "editor" && tool === "node" && selectedPathId && nodeSel) {
+				e.preventDefault();
+				deleteSelectedNode();
+				return;
+			}
 
 			if (!editingText && (e.key === "Delete" || e.key === "Backspace") && view === "editor" && tool === "selectPath" && selectedPathId) {
 				e.preventDefault();
@@ -802,6 +934,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			} else if (matchShortcut(e, activeShortcuts.togglePathSelect) && !editingText && view === "editor" && result) {
 				e.preventDefault();
 				setTool(tl => (tl === "selectPath" ? "pan" : "selectPath"));
+			} else if (matchShortcut(e, activeShortcuts.nodeTool) && !editingText && view === "editor" && result) {
+				e.preventDefault();
+				setTool(tl => (tl === "node" ? "pan" : "node"));
 			} else if (matchShortcut(e, activeShortcuts.toggleSoftProof) && !editingText && view === "editor" && result) {
 				e.preventDefault();
 				setSoftProof(v => !v);
@@ -833,6 +968,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		cropOpen,
 		tool,
 		selectedPathId,
+		nodeSel,
+		deleteSelectedNode,
 		deleteSelectedPath,
 		doUndo,
 		doRedo,
@@ -938,7 +1075,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		if (po.productionMode === "standard") {
 			standardBackupRef.current = { colors: po.colors, smooth: po.smooth };
 		}
-		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, pathEdits, preprocess: opts.preprocess });
+		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, pathEdits, nodeEdits, preprocess: opts.preprocess });
 		setExp(pe);
 		setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
 		setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
@@ -966,6 +1103,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 					paletteMerges: [],
 					brushStrokes: [],
 					pathEdits: [],
+					nodeEdits: [],
 					targetNodes,
 					preprocess: { ...DEFAULT_PREPROCESS },
 				},
@@ -1000,13 +1138,13 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		setMergeSource(null);
 		setInspectedColor(null);
 		if (path && !busyRef.current)
-			void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits });
-	};
+			void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
+		};
 
-	const apply = () => {
+		const apply = () => {
 		setMergeSource(null);
-		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits });
-	};
+		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
+				};
 
 	const applyPreprocess = (pp: PreprocessOptions) => {
 		recordHistory(t.cropRotate);
@@ -1020,9 +1158,12 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			targetNodes,
 			brushStrokes: [],
 			pathEdits: [],
+			nodeEdits: [],
 		};
 		setStrokes([]);
 		setPathEdits([]);
+		setNodeEdits([]);
+		setNodeSel(null);
 		setOpts(nextOpts);
 		if (path) void run(path, nextOpts);
 	};
@@ -1216,7 +1357,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 
 	const baseSvg = liveSvg ?? result?.svg ?? "";
 	const previewSvg = useMemo(
-		() => (baseSvg ? buildPreviewSvg(baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool === "selectPath" ? selectedPathId : null) : ""),
+		() => (baseSvg ? buildPreviewSvg(baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool === "selectPath" || tool === "node" ? selectedPathId : null) : ""),
 		[baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool, selectedPathId],
 	);
 	const svgUrl = useMemo(() => (previewSvg ? URL.createObjectURL(new Blob([previewSvg], { type: "image/svg+xml" })) : ""), [previewSvg]);
@@ -1273,10 +1414,12 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	};
 
 	const onInteractiveSvgClick = (e: ReactMouseEvent<HTMLDivElement>) => {
-		if (tool !== "selectPath") return;
+		if (tool !== "selectPath" && tool !== "node") return;
 		const el = (e.target as Element | null)?.closest("[data-trasea-id]");
 		const id = el?.getAttribute("data-trasea-id") ?? null;
+		if (tool === "node" && id === null) return; // keep the current path when clicking empty canvas
 		setSelectedPathId(id);
+		setNodeSel(null);
 	};
 
 	const toImage = (e: ReactPointerEvent<SVGSVGElement>): [number, number] => {
@@ -1342,7 +1485,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
 			<header className="top">
 				<div className="brand">
-					<span className="logo" aria-hidden="true">T</span> Trasea <small>{t.headerOffline}</small>
+					<img className="logo" src={logoIcon} alt="" aria-hidden="true" width={24} height={24} /> Trasea <small>{t.headerOffline}</small>
 					<button
 						className={`small lic-pill ${license.active ? "lic-pro" : "lic-trial"}`}
 						onClick={() => void openPrivacyModal("license")}
@@ -1441,6 +1584,16 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 											aria-label={`${t.toolSelectPath} (${activeShortcuts.togglePathSelect})`}
 										>
 											<IconPointer />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={tool === "node"}
+											data-testid="tool-node"
+											onClick={() => setTool(tl => (tl === "node" ? "pan" : "node"))}
+											title={`${t.toolNode} (${activeShortcuts.nodeTool}) — ${t.toolNodeTip}`}
+											aria-label={`${t.toolNode} (${activeShortcuts.nodeTool})`}
+										>
+											<IconNode />
 										</button>
 										<button
 											className="tb-icon-btn tool-detail"
@@ -1591,6 +1744,37 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 										)}
 									</div>
 								)}
+								{tool === "node" && !selectedPathId && (
+									<div className="row between">
+										<span className="hint">{t.nodeHint}</span>
+										{nodeEdits.length > 0 && (
+											<button className="small" onClick={resetNodeEdits} title={t.nodeResetTip}>
+												{t.nodeResetBtn} ({nodeEdits.length})
+											</button>
+										)}
+									</div>
+								)}
+								{tool === "node" && selectedPathId && (
+									<div className="path-bar node-bar" role="region" aria-label={t.toolNode} data-testid="node-bar">
+										<span>
+											<code>{selectedPathId}</code> · {t.nodeInfoPrefix}: <b data-testid="node-count">{nodeGeo?.totalNodes ?? 0}</b>
+										</span>
+										<span className="muted">
+											{(() => {
+												const n = nodeSel ? nodeGeo?.subpaths.find(s => s.subpathIndex === nodeSel.sub)?.nodes.find(x => x.index === nodeSel.idx) : null;
+												return n ? `${t.nodeSelectedLabel}: #${n.index} · ${n.isSmooth ? t.nodeKindSmooth : t.nodeKindCorner}` : t.nodeNoneSelected;
+											})()}
+										</span>
+										<label className="inline-check">
+											<input type="checkbox" checked={showAllHandles} onChange={e => setShowAllHandles(e.target.checked)} />
+											{t.nodeShowAllHandles}
+										</label>
+										<button className="small" onClick={simplifySelectedPath} title={t.nodeSimplifyTip} data-testid="node-simplify">{t.nodeSimplifyBtn}</button>
+										<button className="small" onClick={resetNodeEdits} disabled={nodeEdits.length === 0} title={t.nodeResetTip} data-testid="node-reset">
+											{t.nodeResetBtn}{nodeEdits.length > 0 ? ` (${nodeEdits.length})` : ""}
+										</button>
+									</div>
+								)}
 								{painting && (
 									<div className="hint">
 										{t.brushHintPrefix} {tool === "detail" ? t.brushHintDetail : t.brushHintSmooth}. {t.brushHintSuffix}
@@ -1605,7 +1789,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 											width: `min(100%, calc((100vh - 156px) * ${(result.width / Math.max(1, result.height)).toFixed(4)}))`,
 										}}
 									>
-										{tool === "selectPath" ? (
+										{tool === "selectPath" || tool === "node" ? (
 											<div
 												className="layer vec interactive-svg"
 												onClick={onInteractiveSvgClick}
@@ -1628,7 +1812,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 											preserveAspectRatio="none"
 											aria-hidden="true"
 											data-testid="overlay"
-											style={{ pointerEvents: tool === "pan" || tool === "selectPath" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
+											style={{ pointerEvents: tool === "pan" || tool === "selectPath" || tool === "node" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
 											onPointerDown={onDown}
 											onPointerMove={onMove}
 											onPointerUp={onUp}
@@ -1643,9 +1827,22 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 												? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
 												: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
 										</svg>
-										{tool !== "selectPath" && <span className="tag left">{t.tagOriginal}</span>}
+										{tool === "node" && selectedPathId && nodeGeo && (
+											<NodeOverlay
+												geometry={nodeGeo}
+												width={result.width}
+												height={result.height}
+												showAllHandles={showAllHandles}
+												selected={nodeSel}
+												onSelect={setNodeSel}
+												onMoveNode={onNodeMove}
+												onMoveHandle={onNodeMoveHandle}
+												onToggleSmooth={onNodeToggle}
+											/>
+										)}
+										{tool !== "selectPath" && tool !== "node" && <span className="tag left">{t.tagOriginal}</span>}
 										<span className="tag right">{outlineView ? t.tagOutline : softProof ? t.tagSoftProof : t.tagVector}</span>
-										{tool !== "selectPath" && (
+										{tool !== "selectPath" && tool !== "node" && (
 											<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label={t.compareSliderAria} style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
 										)}
 									</div>
@@ -2320,12 +2517,13 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 							{dirty && (
 								<div className="pending" role="status" style={{ marginBottom: 4 }}>
 									{t.pendingChanges}
-									{palette !== null || strokes.length > 0 || hasPreprocess || pathEdits.length > 0
+									{palette !== null || strokes.length > 0 || hasPreprocess || pathEdits.length > 0 || nodeEdits.length > 0
 										? ` (${[
 												palette !== null ? t.pendingPalette : "",
 												strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "",
 												hasPreprocess ? t.pendingPreprocess : "",
 												pathEdits.length > 0 ? `${pathEdits.length} ${t.pendingPathEdits}` : "",
+												nodeEdits.length > 0 ? `${nodeEdits.length} ${t.pendingNodeEdits}` : "",
 											]
 												.filter(Boolean)
 												.join(", ")})`

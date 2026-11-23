@@ -40,6 +40,7 @@ const SHORTCUT_ORDER: ShortcutAction[] = [
 	"redo",
 	"toggleOutline",
 	"togglePathSelect",
+	"nodeTool",
 	"toggleSoftProof",
 	"openSettings",
 ];
@@ -81,6 +82,7 @@ export default function SettingsModal({
 			redo: t.actRedo,
 			toggleOutline: t.actToggleOutline,
 			togglePathSelect: t.actTogglePathSelect,
+			nodeTool: t.actNodeTool,
 			toggleSoftProof: t.actToggleSoftProof,
 			openSettings: t.actOpenSettings,
 		}),

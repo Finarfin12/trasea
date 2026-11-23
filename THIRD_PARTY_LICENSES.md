@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Trasea 1.2.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
+Trasea 1.3.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
 
 ## Bundled programs, models, and frontend libraries
 
@@ -14,6 +14,7 @@ Trasea 1.2.0 is MIT licensed. It bundles or links the following third-party comp
 | ed25519-dalek (offline license verification) | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek |
 | React, React DOM | MIT | Copyright (c) Meta Platforms, Inc. — https://react.dev |
 | Tauri 2 & `@tauri-apps/*` | MIT OR Apache-2.0 | https://tauri.app |
+| Inter typeface (only as outlined glyph paths in the logo wordmark; no font file is bundled) | SIL Open Font License 1.1 | Copyright (c) The Inter Project Authors — https://rsms.me/inter |
 
 ## Full BSD-3-Clause notice (Real-ESRGAN, ncnn, ed25519-dalek)
 

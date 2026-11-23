@@ -54,7 +54,7 @@ fn d0_the_product_is_called_trasea_everywhere_the_user_can_see_it() {
         assert!(!t.to_lowercase().contains("vektora"), "{rel} still says Vektora");
     }
     assert!(read("../../index.html").contains("<title>Trasea</title>"));
-    assert!(read("../../src/App.tsx").contains(">T</span> Trasea"), "the header must show the T logo and the name");
+    assert!(read("../../src/App.tsx").contains("trasea-icon-mini.svg") && read("../../src/App.tsx").contains("</img>") == false && read("../../src/App.tsx").contains("alt=\"\" aria-hidden=\"true\" width={24} height={24} /> Trasea"), "the header must show the Trasea logo and the name");
     assert!(read("Cargo.toml").contains("name = \"trasea-core\"") && read("Cargo.toml").contains("name = \"trasea-cli\""));
     assert!(read("../../src-tauri/Cargo.toml").contains("name = \"trasea\""));
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_trasea-cli")).is_file(), "the CLI binary must be trasea-cli");

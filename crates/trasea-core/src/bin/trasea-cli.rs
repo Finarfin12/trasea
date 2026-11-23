@@ -11,6 +11,7 @@ use trasea_core::export::{
     export_options_for_production, palette_of, to_ase_with_spots, to_dxf, to_eps, to_pdf,
     to_separation_eps, to_separation_pdfs, to_separation_svgs, to_svg, LinesAs,
 };
+use trasea_core::node_edit::{inspect_path_nodes, NodeEdit};
 use trasea_core::path_edit::PathEdit;
 use trasea_core::watch::{watch_folder, WatchConfig};
 use trasea_core::{load, vectorize, Params, ProductionMode, ProductionOptions, SymmetryMode};
@@ -46,7 +47,7 @@ fn parse_spot_arg(s: &str) -> Option<SpotColorMapping> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt PT] [--sablon-knockout] [--remove-bg] [--bg-tolerance 0..100] [--defringe 0..3] [--die-cut-mm MM] [--die-cut-spot NAME] [--no-die-cut-bridge] [--spot \"#HEX=Name\"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut-mm MM] [--spot \"#HEX=Name\"] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
+        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt PT] [--sablon-knockout] [--remove-bg] [--bg-tolerance 0..100] [--defringe 0..3] [--die-cut-mm MM] [--die-cut-spot NAME] [--no-die-cut-bridge] [--spot \"#HEX=Name\"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--delete-path ID] [--recolor-path \"ID=#RRGGBB\"] [--simplify-path \"ID[=TOL_PX]\"] [--inspect-nodes ID] [--png out.png] [--sidecar DIR]\n  (the input may also be an .svg file: it is opened as vectors without tracing; path/node edits, --die-cut-mm, --color-space, --spot and every export work on it)\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut-mm MM] [--spot \"#HEX=Name\"] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
     );
 }
 
@@ -124,6 +125,7 @@ fn main() {
     let mut die_cut_mm: Option<f64> = None;
     let mut die_cut_spot: Option<String> = None;
     let mut die_cut_bridge = true;
+    let mut inspect_ids: Vec<String> = Vec::new();
     let mut spot_colors: Vec<SpotColorMapping> = Vec::new();
 
     let mut i = start_i;
@@ -225,6 +227,34 @@ fn main() {
                 } else {
                     eprintln!("--recolor-path needs \"ID=#RRGGBB\", e.g. \"f:1:0=#00AA55\"");
                     std::process::exit(2);
+                }
+            }
+            "--simplify-path" => {
+                i += 1;
+                let Some(arg) = args.get(i) else {
+                    eprintln!("--simplify-path needs \"ID\" or \"ID=TOL_PX\", e.g. \"f:1:0=1.5\"");
+                    std::process::exit(2);
+                };
+                let (id, tol) = match arg.split_once('=') {
+                    Some((id, t)) => match t.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0) {
+                        Some(v) => (id.trim().to_string(), v),
+                        None => {
+                            eprintln!("--simplify-path tolerance must be a positive number of pixels");
+                            std::process::exit(2);
+                        }
+                    },
+                    None => (arg.trim().to_string(), 1.0),
+                };
+                p.node_edits.push(NodeEdit::SimplifyPath { target_id: id, tolerance_px: tol });
+            }
+            "--inspect-nodes" => {
+                i += 1;
+                match args.get(i) {
+                    Some(id) => inspect_ids.push(id.trim().to_string()),
+                    None => {
+                        eprintln!("--inspect-nodes needs a path id, e.g. \"f:1:0\"");
+                        std::process::exit(2);
+                    }
                 }
             }
             "--colors" => {
@@ -606,20 +636,41 @@ fn main() {
 
     // Single-file mode
     let t0 = Instant::now();
-    let img = match load::load_path(&input, load::DEFAULT_MAX_SIDE) {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
+    let is_svg_input = input
+        .extension()
+        .and_then(|e| e.to_str())
+        .map_or(false, |e| e.eq_ignore_ascii_case("svg"));
+    let out = if is_svg_input {
+        let import = match trasea_core::svg_import::load_svg_doc(&input) {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        };
+        trasea_core::vectorize_svg(import, &p, &eo)
+    } else {
+        let img = match load::load_path(&input, load::DEFAULT_MAX_SIDE) {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        };
+        match vectorize(&img, &p, &|stage, f| eprintln!("[{:>3.0}%] {stage}", f * 100.0)) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
         }
     };
-    let out = match vectorize(&img, &p, &|stage, f| eprintln!("[{:>3.0}%] {stage}", f * 100.0)) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
+    for id in &inspect_ids {
+        match inspect_path_nodes(&out.doc, id) {
+            Some(g) => println!("{}", serde_json::to_string(&g).unwrap_or_default()),
+            None => eprintln!("inspect-nodes: id {id} not found"),
         }
-    };
+    }
     let svg = to_svg(&out.doc, &eo);
     std::fs::write(&output, &svg).expect("cannot write the SVG");
     if let Some(eps) = &eps_path {

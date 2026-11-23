@@ -29,6 +29,35 @@ export type PathEdit =
 	| { kind: "delete"; targetId: string }
 	| { kind: "reassignColor"; targetId: string; toHex: string };
 
+export type NodeEdit =
+	| { kind: "moveNode"; targetId: string; subpathIdx: number; nodeIdx: number; x: number; y: number }
+	| { kind: "moveHandle"; targetId: string; subpathIdx: number; nodeIdx: number; which: "in" | "out"; x: number; y: number; mirrorSmooth: boolean }
+	| { kind: "deleteNode"; targetId: string; subpathIdx: number; nodeIdx: number }
+	| { kind: "toggleSmooth"; targetId: string; subpathIdx: number; nodeIdx: number }
+	| { kind: "simplifyPath"; targetId: string; tolerancePx: number };
+
+export interface NodePoint {
+	index: number;
+	x: number;
+	y: number;
+	handleIn: [number, number] | null;
+	handleOut: [number, number] | null;
+	isSmooth: boolean;
+}
+
+export interface SubpathNodes {
+	subpathIndex: number;
+	closed: boolean;
+	nodes: NodePoint[];
+}
+
+export interface PathNodeGeometry {
+	targetId: string;
+	colorHex: string;
+	totalNodes: number;
+	subpaths: SubpathNodes[];
+}
+
 export interface SpotColorMapping {
 	hex: string;
 	spotName: string;
@@ -62,6 +91,7 @@ export interface Options {
 	centerlineInvert: boolean;
 	centerlineStrokePt: number;
 	pathEdits: PathEdit[];
+	nodeEdits: NodeEdit[];
 }
 
 export interface BrushStroke {
@@ -220,6 +250,7 @@ export type ShortcutAction =
 	| "redo"
 	| "toggleOutline"
 	| "togglePathSelect"
+	| "nodeTool"
 	| "toggleSoftProof"
 	| "openSettings";
 
@@ -232,6 +263,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
 	redo: "Ctrl+Shift+Z",
 	toggleOutline: "Ctrl+Y",
 	togglePathSelect: "Ctrl+E",
+	nodeTool: "A",
 	toggleSoftProof: "Ctrl+P",
 	openSettings: "Ctrl+,",
 };
@@ -315,6 +347,8 @@ export interface UserPreset {
 }
 
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
+/** Single-file open also accepts vector .svg (1.3.0); batch stays raster-only. */
+export const OPEN_EXTENSIONS = [...IMAGE_EXTENSIONS, "svg"];
 
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
 export const renderPreviewSvg = (options: ExportOptions): Promise<string> => invoke<string>("render_preview_svg", { options });
@@ -360,6 +394,7 @@ export const startWatchFolder = (config: UiWatchConfig): Promise<void> => invoke
 export const stopWatchFolder = (): Promise<void> => invoke<void>("stop_watch_folder");
 export const openFolder = (dir: string): Promise<void> => invoke<void>("open_folder", { dir });
 
+export const inspectPathNodes = (targetId: string): Promise<PathNodeGeometry | null> => invoke<PathNodeGeometry | null>("inspect_path_nodes", { targetId });
 export const sidecarAvailable = (): Promise<boolean> => invoke<boolean>("sidecar_available");
 export const licenses = (): Promise<string> => invoke<string>("third_party_licenses");
 
@@ -368,8 +403,9 @@ export async function pickImageOrProject(): Promise<string | null> {
 		multiple: false,
 		directory: false,
 		filters: [
-			{ name: "Images & Trasea Projects", extensions: [...IMAGE_EXTENSIONS, "trasea"] },
+			{ name: "Images, SVG & Trasea Projects", extensions: [...OPEN_EXTENSIONS, "trasea"] },
 			{ name: "Images", extensions: IMAGE_EXTENSIONS },
+			{ name: "SVG", extensions: ["svg"] },
 			{ name: "Trasea Project", extensions: ["trasea"] },
 		],
 	});
@@ -377,7 +413,7 @@ export async function pickImageOrProject(): Promise<string | null> {
 }
 
 export async function pickImage(): Promise<string | null> {
-	const r = await open({ multiple: false, directory: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+	const r = await open({ multiple: false, directory: false, filters: [{ name: "Images & SVG", extensions: OPEN_EXTENSIONS }] });
 	return typeof r === "string" ? r : null;
 }
 

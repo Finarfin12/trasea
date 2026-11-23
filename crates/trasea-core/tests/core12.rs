@@ -529,6 +529,7 @@ fn g12_09_project_compat_and_roundtrip_120() {
                 PathEdit::Delete { target_id: "f:1:0".to_string() },
                 PathEdit::ReassignColor { target_id: "f:2:0".to_string(), to_hex: "#00AA55".to_string() },
             ],
+            node_edits: Vec::new(),
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".to_string(),
