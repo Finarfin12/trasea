@@ -1,7 +1,11 @@
 //! Versioned `.trasea` project file (JSON, schemaVersion = 1): saves and restores
-//! source image link (+ SHA-256), production mode, palette, merges, brush strokes, and export options.
+//! source image link (+ SHA-256), production mode, palette, merges, brush strokes,
+//! non-destructive preprocess options, and export options.
 
 use crate::brush::BrushStroke;
+use crate::color::ColorSpace;
+use crate::dxf::DxfUnit;
+use crate::preprocess::PreprocessOptions;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -35,6 +39,10 @@ pub struct ProjectOptions {
     pub strip_background: bool,
     #[serde(default)]
     pub registration_marks: bool,
+    #[serde(default)]
+    pub sablon_knockout: bool,
+    #[serde(default)]
+    pub preprocess: PreprocessOptions,
 }
 
 fn default_mode() -> String {
@@ -50,6 +58,12 @@ pub struct ProjectExportOptions {
     pub registration_marks: bool,
     #[serde(default)]
     pub strip_background: bool,
+    #[serde(default)]
+    pub color_space: ColorSpace,
+    #[serde(default)]
+    pub dxf_unit: DxfUnit,
+    #[serde(default)]
+    pub dxf_target_width_mm: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -12,6 +12,7 @@ pub enum ProductionMode {
     Standard,
     ScreenPrint,
     CutEmbroidery,
+    Shading,
 }
 
 impl ProductionMode {
@@ -20,6 +21,7 @@ impl ProductionMode {
             "standard" | "standar" => Some(Self::Standard),
             "screenprint" | "screen-print" | "screen_print" | "sablon" => Some(Self::ScreenPrint),
             "cutembroidery" | "cut-embroidery" | "cut_embroidery" | "cutting" | "cut" | "bordir" => Some(Self::CutEmbroidery),
+            "shading" | "gradasi" | "gradient" => Some(Self::Shading),
             _ => None,
         }
     }
@@ -29,6 +31,7 @@ impl ProductionMode {
             Self::Standard => "Standar",
             Self::ScreenPrint => "Sablon",
             Self::CutEmbroidery => "Cutting / Bordir",
+            Self::Shading => "Gradasi",
         }
     }
 }
@@ -38,7 +41,7 @@ impl ProductionMode {
 pub struct ProductionOptions {
     #[serde(default)]
     pub mode: ProductionMode,
-    /// Minimum stroke width in points (pt). 0.0 = disabled (Standard), 1.0 (ScreenPrint), 1.5 (CutEmbroidery).
+    /// Minimum stroke width in points (pt). 0.0 = disabled (Standard/Shading), 1.0 (ScreenPrint), 1.5 (CutEmbroidery).
     #[serde(default)]
     pub min_stroke_pt: f64,
     /// Omit the background layer (index 0) on CutEmbroidery. Default true in CutEmbroidery, false otherwise.
@@ -47,6 +50,9 @@ pub struct ProductionOptions {
     /// Add 4 registration marks in the outer margin (ScreenPrint). Default true in ScreenPrint, false otherwise.
     #[serde(default)]
     pub registration_marks: bool,
+    /// Use pure knockout (non-overlapping) tracing for ScreenPrint spot colours while preserving trap & registration marks.
+    #[serde(default)]
+    pub sablon_knockout: bool,
 }
 
 impl Default for ProductionOptions {
@@ -62,6 +68,7 @@ impl ProductionOptions {
             min_stroke_pt: 0.0,
             strip_background: false,
             registration_marks: false,
+            sablon_knockout: false,
         }
     }
 
@@ -71,6 +78,7 @@ impl ProductionOptions {
             min_stroke_pt: 1.0,
             strip_background: false,
             registration_marks: true,
+            sablon_knockout: false,
         }
     }
 
@@ -80,6 +88,17 @@ impl ProductionOptions {
             min_stroke_pt: 1.5,
             strip_background: true,
             registration_marks: false,
+            sablon_knockout: false,
+        }
+    }
+
+    pub fn shading() -> Self {
+        Self {
+            mode: ProductionMode::Shading,
+            min_stroke_pt: 0.0,
+            strip_background: false,
+            registration_marks: false,
+            sablon_knockout: false,
         }
     }
 
@@ -89,7 +108,7 @@ impl ProductionOptions {
             self.min_stroke_pt
         } else {
             match self.mode {
-                ProductionMode::Standard => 0.0,
+                ProductionMode::Standard | ProductionMode::Shading => 0.0,
                 ProductionMode::ScreenPrint => 1.0,
                 ProductionMode::CutEmbroidery => 1.5,
             }

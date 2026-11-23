@@ -1,6 +1,11 @@
-//! Reusable batch folder engine and report writers (CSV + Markdown) for both CLI and Tauri UI (`#17`).
+//! Reusable batch folder engine and report writers (CSV + Markdown) for CLI, Watch Folder, and Tauri UI.
 
-use crate::export::{export_options_for_production, palette_of, svg_to_pdf, to_ase, to_eps, to_separation_svgs, to_svg, ExportOptions};
+use crate::color::ColorSpace;
+use crate::dxf::DxfUnit;
+use crate::export::{
+    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    to_separation_eps, to_separation_pdfs, to_separation_svgs, to_svg, ExportOptions,
+};
 use crate::load;
 use crate::pipeline::{vectorize, Params};
 use crate::{Error, Result};
@@ -57,12 +62,38 @@ pub struct BatchConfig {
     pub export: ExportOptions,
     pub write_pdf: bool,
     pub write_eps: bool,
+    pub write_dxf: bool,
     pub write_ase: bool,
     pub write_separations: bool,
     pub write_report_csv: bool,
     pub write_report_md: bool,
+    pub color_space: ColorSpace,
+    pub dxf_unit: DxfUnit,
+    pub dxf_target_width_mm: Option<f32>,
     /// Optional worker cap (None = 1 when ai_clean else min(cpu/2, 4)).
     pub max_workers: Option<usize>,
+}
+
+impl Default for BatchConfig {
+    fn default() -> Self {
+        Self {
+            inputs: Vec::new(),
+            output_dir: PathBuf::new(),
+            params: Params::default(),
+            export: ExportOptions::default(),
+            write_pdf: false,
+            write_eps: false,
+            write_dxf: false,
+            write_ase: false,
+            write_separations: false,
+            write_report_csv: true,
+            write_report_md: true,
+            color_space: ColorSpace::Rgb,
+            dxf_unit: DxfUnit::Mm,
+            dxf_target_width_mm: None,
+            max_workers: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,7 +177,40 @@ fn assign_unique_stems(inputs: &[PathBuf]) -> Vec<String> {
         .collect()
 }
 
-fn process_one(input: &Path, stem: &str, cfg: &BatchConfig, eff_export: &ExportOptions) -> BatchItemReport {
+/// Resolve effective export options for a batch/watch run, combining production-mode defaults
+/// with explicit caller overrides (`config.export` and `config.color_space` / `dxf_unit` / `dxf_target_width_mm`).
+pub fn resolve_effective_export(config: &BatchConfig) -> ExportOptions {
+    let mut eff_export = config.export.clone();
+    if config.color_space != ColorSpace::Rgb {
+        eff_export.color_space = config.color_space;
+    }
+    if config.dxf_unit != DxfUnit::Mm {
+        eff_export.dxf_unit = config.dxf_unit;
+    }
+    if config.dxf_target_width_mm.is_some() {
+        eff_export.dxf_target_width_mm = config.dxf_target_width_mm;
+    }
+    let prod_exp = export_options_for_production(&config.params.production);
+    match config.params.production.mode {
+        crate::production::ProductionMode::CutEmbroidery => {
+            eff_export.lines_as = crate::export::LinesAs::Shape;
+            eff_export.trap_pt = 0.0;
+            eff_export.registration_marks = false;
+            eff_export.strip_background = config.params.production.strip_background;
+        }
+        crate::production::ProductionMode::ScreenPrint => {
+            eff_export.registration_marks = config.params.production.registration_marks;
+            if eff_export.trap_pt <= 0.0 && !config.params.production.sablon_knockout {
+                eff_export.trap_pt = prod_exp.trap_pt;
+            }
+        }
+        crate::production::ProductionMode::Standard | crate::production::ProductionMode::Shading => {}
+    }
+    eff_export
+}
+
+/// Process a single image file according to `cfg` and `eff_export`. Reused by both `run_batch` and `watch_folder`.
+pub fn process_single_file(input: &Path, stem: &str, cfg: &BatchConfig, eff_export: &ExportOptions) -> BatchItemReport {
     let file_name = input
         .file_name()
         .and_then(|s| s.to_str())
@@ -219,7 +283,7 @@ fn process_one(input: &Path, stem: &str, cfg: &BatchConfig, eff_export: &ExportO
     }
 
     if cfg.write_pdf {
-        match svg_to_pdf(&svg) {
+        match to_pdf(&out.doc, eff_export) {
             Ok(bytes) => {
                 let pdf_path = cfg.output_dir.join(format!("{stem}.pdf"));
                 if let Err(e) = std::fs::write(&pdf_path, bytes) {
@@ -237,30 +301,46 @@ fn process_one(input: &Path, stem: &str, cfg: &BatchConfig, eff_export: &ExportO
         }
     }
 
+    if cfg.write_dxf {
+        let dxf_path = cfg.output_dir.join(format!("{stem}.dxf"));
+        if let Err(e) = std::fs::write(&dxf_path, to_dxf(&out.doc, eff_export)) {
+            warnings.push(format!("Gagal tulis DXF: {e}"));
+        }
+    }
+
     if cfg.write_ase {
         let ase_path = cfg.output_dir.join(format!("{stem}.ase"));
-        if let Err(e) = std::fs::write(&ase_path, to_ase(&palette_of(&out.doc))) {
+        if let Err(e) = std::fs::write(&ase_path, to_ase_with_color_space(&palette_of(&out.doc), eff_export.color_space)) {
             warnings.push(format!("Gagal tulis ASE: {e}"));
         }
     }
 
     if cfg.write_separations {
         let films = to_separation_svgs(&out.doc, eff_export);
-        for film in films {
+        for film in &films {
             let f_svg = cfg.output_dir.join(format!("{stem}_{}.svg", film.suffix));
             if let Err(e) = std::fs::write(&f_svg, &film.svg) {
                 warnings.push(format!("Gagal tulis film {}: {e}", film.suffix));
-                continue;
             }
-            if cfg.write_pdf {
-                match svg_to_pdf(&film.svg) {
-                    Ok(bytes) => {
+        }
+        if cfg.write_pdf {
+            match to_separation_pdfs(&out.doc, eff_export) {
+                Ok(pdfs) => {
+                    for (film, bytes) in pdfs {
                         let f_pdf = cfg.output_dir.join(format!("{stem}_{}.pdf", film.suffix));
                         if let Err(e) = std::fs::write(&f_pdf, bytes) {
                             warnings.push(format!("Gagal tulis PDF film {}: {e}", film.suffix));
                         }
                     }
-                    Err(e) => warnings.push(format!("PDF film {} dilewati: {e}", film.suffix)),
+                }
+                Err(e) => warnings.push(format!("PDF film dilewati: {e}")),
+            }
+        }
+        if cfg.write_eps {
+            for (film, eps) in to_separation_eps(&out.doc, eff_export) {
+                let f_eps = cfg.output_dir.join(format!("{stem}_{}.eps", film.suffix));
+                if let Err(e) = std::fs::write(&f_eps, eps) {
+                    warnings.push(format!("Gagal tulis EPS film {}: {e}", film.suffix));
                 }
             }
         }
@@ -297,25 +377,7 @@ where
     let t0 = Instant::now();
     let total = config.inputs.len();
     let stems = assign_unique_stems(&config.inputs);
-
-    // Merge production-mode export defaults with caller-provided export overrides.
-    let mut eff_export = config.export.clone();
-    let prod_exp = export_options_for_production(&config.params.production);
-    match config.params.production.mode {
-        crate::production::ProductionMode::CutEmbroidery => {
-            eff_export.lines_as = crate::export::LinesAs::Shape;
-            eff_export.trap_pt = 0.0;
-            eff_export.registration_marks = false;
-            eff_export.strip_background = config.params.production.strip_background;
-        }
-        crate::production::ProductionMode::ScreenPrint => {
-            eff_export.registration_marks = config.params.production.registration_marks;
-            if eff_export.trap_pt <= 0.0 {
-                eff_export.trap_pt = prod_exp.trap_pt;
-            }
-        }
-        crate::production::ProductionMode::Standard => {}
-    }
+    let eff_export = resolve_effective_export(config);
 
     let auto_workers = if config.params.ai_clean {
         1
@@ -388,7 +450,7 @@ where
                         });
                     }
 
-                    let rep = process_one(input, &stems[i], config, &eff_export);
+                    let rep = process_single_file(input, &stems[i], config, &eff_export);
                     results.lock().unwrap()[i] = Some(rep.clone());
                     let done = done_count.fetch_add(1, Ordering::SeqCst) + 1;
                     {

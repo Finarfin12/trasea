@@ -1,9 +1,9 @@
 [package]
 name = "trasea-core"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 license = "MIT"
-description = "Trasea core: raster illustration/logo to clean SVG/PDF (no UI)."
+description = "Trasea core: raster illustration/logo to clean SVG/PDF/EPS/DXF (no UI)."
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import BatchView from "./BatchView";
+import CropModal from "./CropModal";
 import Licenses from "./Licenses";
 import {
 	collectDroppedImages,
+	copySvgToClipboard,
+	DEFAULT_PREPROCESS,
 	deletePreset,
+	exportDxf,
+	getAppSettings,
 	getLicenseStatus,
 	getSampleImagePath,
 	licenses,
@@ -11,6 +16,7 @@ import {
 	loadProjectFile,
 	onDrop,
 	onProgress,
+	pasteClipboardImage,
 	pickColor,
 	pickFolder,
 	pickImage,
@@ -18,21 +24,26 @@ import {
 	pickProjectSavePath,
 	pickSavePath,
 	processImage,
+	saveAppSettings,
 	saveFile,
 	savePreset,
 	saveProjectFile,
 	saveSeparations,
 	sidecarAvailable,
 	type BrushStroke,
+	type ColorSpace,
+	type DxfUnit,
 	type ExportKind,
 	type ExportOptions,
 	type LicenseStatus,
 	type Options,
+	type PreprocessOptions,
 	type Processed,
 	type ProductionMode,
 	type UserPreset,
 } from "./api";
 import { emptyHistory, pushSnapshot, stepRedo, stepUndo, type EditorSnapshot, type HistoryState, type TargetChoice } from "./history";
+import { I18nProvider, useI18n, type Lang } from "./i18n";
 
 const DEFAULTS: Options = {
 	colors: 10,
@@ -50,20 +61,92 @@ const DEFAULTS: Options = {
 	minStrokePt: 0,
 	stripBackground: false,
 	registrationMarks: false,
+	sablonKnockout: false,
+	preprocess: { ...DEFAULT_PREPROCESS },
 };
 
-const DEFAULT_EXP: ExportOptions = { linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false };
+const DEFAULT_EXP: ExportOptions = {
+	linesAs: "stroke",
+	trapPt: 0,
+	registrationMarks: false,
+	stripBackground: false,
+	colorSpace: "rgb",
+	dxfUnit: "mm",
+	dxfTargetWidthMm: null,
+};
 
 type View = "editor" | "batch";
 type Tool = "pan" | "detail" | "smooth" | "pipet";
 
+const GARIS_LAYER = "__GARIS__";
+const REG_LAYER = "__REGISTRASI__";
+
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : "Terjadi kesalahan yang tidak dikenal.");
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 const heatColor = (r: number): string => `hsl(${Math.round(120 * (1 - Math.min(1, Math.max(0, r))))}, 90%, 50%)`;
 
-export default function App() {
+const normalizeOptions = (po: Partial<Options>): Options => ({
+	...DEFAULTS,
+	...po,
+	sablonKnockout: po.sablonKnockout ?? false,
+	preprocess: po.preprocess ? { crop: po.preprocess.crop ?? null, rotateDeg: po.preprocess.rotateDeg ?? 0 } : { ...DEFAULT_PREPROCESS },
+});
+
+const normalizeExport = (pe: Partial<ExportOptions>): ExportOptions => ({
+	...DEFAULT_EXP,
+	...pe,
+	colorSpace: pe.colorSpace ?? "rgb",
+	dxfUnit: pe.dxfUnit ?? "mm",
+	dxfTargetWidthMm: pe.dxfTargetWidthMm ?? null,
+});
+
+function buildPreviewSvg(rawSvg: string, outline: boolean, hidden: Set<string>): string {
+	if (!outline && hidden.size === 0) return rawSvg;
+	const rules: string[] = [];
+	if (outline) {
+		rules.push(
+			"path, circle, ellipse, rect, polygon, polyline { fill: none !important; stroke: #2563eb !important; stroke-width: 1.25px !important; vector-effect: non-scaling-stroke !important; }",
+			"#Garis path { stroke: #0ea5e9 !important; }",
+			"#Registrasi circle, #Registrasi line { stroke: #ef4444 !important; }",
+		);
+	}
+	for (const key of hidden) {
+		if (key === GARIS_LAYER) {
+			rules.push("#Garis { display: none !important; }");
+		} else if (key === REG_LAYER) {
+			rules.push("#Registrasi { display: none !important; }");
+		} else if (/^#[0-9A-Fa-f]{6}$/.test(key)) {
+			const suffix = key.slice(1).toUpperCase();
+			rules.push(`g[id$="_${suffix}"] { display: none !important; }`);
+		}
+	}
+	if (rules.length === 0) return rawSvg;
+	const styleTag = `<style>${rules.join(" ")}</style>`;
+	const idx = rawSvg.indexOf(">", rawSvg.indexOf("<svg"));
+	if (idx === -1) return rawSvg;
+	return rawSvg.slice(0, idx + 1) + styleTag + rawSvg.slice(idx + 1);
+}
+
+function EyeIcon({ hidden }: { hidden: boolean }) {
+	return hidden ? (
+		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+			<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+			<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+			<line x1="1" y1="1" x2="23" y2="23" />
+		</svg>
+	) : (
+		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+			<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+			<circle cx="12" cy="12" r="3" />
+		</svg>
+	);
+}
+
+function TraseaApp() {
+	const { t, lang, setLang } = useI18n();
+	const errText = useCallback((e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError), [t.unknownError]);
+
 	const [view, setView] = useState<View>("editor");
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
@@ -79,9 +162,13 @@ export default function App() {
 	const [over, setOver] = useState(false);
 	const [split, setSplit] = useState(50);
 	const [exp, setExp] = useState<ExportOptions>(DEFAULT_EXP);
+	const [dxfWidthInput, setDxfWidthInput] = useState("");
 	const [withAse, setWithAse] = useState(true);
 	const [sepPdf, setSepPdf] = useState(false);
 	const [checker, setChecker] = useState(false);
+	const [outlineView, setOutlineView] = useState(false);
+	const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(() => new Set());
+	const [cropOpen, setCropOpen] = useState(false);
 	const [showText, setShowText] = useState(false);
 	const [showHeat, setShowHeat] = useState(false);
 	const [tool, setTool] = useState<Tool>("pan");
@@ -118,7 +205,10 @@ export default function App() {
 
 	const makeSnapshot = useCallback(
 		(label: string): EditorSnapshot => ({
-			opts: { ...opts },
+			opts: {
+				...opts,
+				preprocess: { crop: opts.preprocess.crop ? [...opts.preprocess.crop] : null, rotateDeg: opts.preprocess.rotateDeg },
+			},
 			palette: palette ? [...palette] : null,
 			paletteMerges: paletteMerges.map(m => [m[0], m[1]]),
 			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
@@ -138,32 +228,35 @@ export default function App() {
 	);
 
 	const restoreSnapshot = useCallback((snap: EditorSnapshot) => {
-		setOpts(snap.opts);
+		const normOpts = normalizeOptions(snap.opts);
+		const normExp = normalizeExport(snap.exp);
+		setOpts(normOpts);
 		setPalette(snap.palette);
 		setPaletteMerges(snap.paletteMerges);
 		setStrokes(snap.strokes);
 		setTargetChoice(snap.targetChoice);
 		setCustomTarget(snap.customTarget);
-		setExp(snap.exp);
-		setChecker(snap.opts.productionMode === "cutEmbroidery" && snap.opts.stripBackground);
+		setExp(normExp);
+		setDxfWidthInput(normExp.dxfTargetWidthMm ? String(normExp.dxfTargetWidthMm) : "");
+		setChecker(normOpts.productionMode === "cutEmbroidery" && normOpts.stripBackground);
 		setMergeSource(null);
 	}, []);
 
 	const doUndo = useCallback(() => {
-		const res = stepUndo(history, makeSnapshot("Keadaan sebelumnya"));
+		const res = stepUndo(history, makeSnapshot(t.undo));
 		if (!res) return;
 		setHistory(res.history);
 		restoreSnapshot(res.target);
 		setInfo(`Undo: ${res.target.label}`);
-	}, [history, makeSnapshot, restoreSnapshot]);
+	}, [history, makeSnapshot, restoreSnapshot, t.undo]);
 
 	const doRedo = useCallback(() => {
-		const res = stepRedo(history, makeSnapshot("Ulangi"));
+		const res = stepRedo(history, makeSnapshot(t.redo));
 		if (!res) return;
 		setHistory(res.history);
 		restoreSnapshot(res.target);
 		setInfo(`Redo: ${res.target.label}`);
-	}, [history, makeSnapshot, restoreSnapshot]);
+	}, [history, makeSnapshot, restoreSnapshot, t.redo]);
 
 	const signature = useMemo(
 		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes }),
@@ -175,26 +268,43 @@ export default function App() {
 		setModalOpen({ markdown: md, tab, hint });
 	}, []);
 
-	const run = useCallback(async (p: string, o: Options) => {
-		if (busyRef.current) return;
-		busyRef.current = true;
-		setBusy(true);
-		setError("");
-		setInfo("");
-		setStage("Memuat gambar");
-		setFraction(0);
-		setPath(p);
-		try {
-			const r = await processImage(p, o);
-			setResult(r);
-			setAppliedSig(JSON.stringify(o));
-		} catch (e) {
-			setError(errText(e));
-		} finally {
-			busyRef.current = false;
-			setBusy(false);
+	const effectiveExport = useCallback((): ExportOptions => {
+		const parsedW = Number.parseFloat(dxfWidthInput);
+		const dxfTargetWidthMm = exp.dxfUnit === "mm" && Number.isFinite(parsedW) && parsedW > 0 ? parsedW : null;
+		const base: ExportOptions = { ...exp, dxfTargetWidthMm };
+		if (opts.productionMode === "cutEmbroidery") {
+			return { ...base, linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: opts.stripBackground };
 		}
-	}, []);
+		if (opts.productionMode === "screenPrint") {
+			return { ...base, registrationMarks: opts.registrationMarks, stripBackground: false };
+		}
+		return { ...base, registrationMarks: false, stripBackground: false };
+	}, [exp, dxfWidthInput, opts.productionMode, opts.stripBackground, opts.registrationMarks]);
+
+	const run = useCallback(
+		async (p: string, o: Options) => {
+			if (busyRef.current) return;
+			busyRef.current = true;
+			setBusy(true);
+			setError("");
+			setInfo("");
+			setStage(t.loadingImage);
+			setFraction(0);
+			setPath(p);
+			try {
+				const r = await processImage(p, o);
+				setResult(r);
+				setHiddenLayers(new Set());
+				setAppliedSig(JSON.stringify(o));
+			} catch (e) {
+				setError(errText(e));
+			} finally {
+				busyRef.current = false;
+				setBusy(false);
+			}
+		},
+		[errText, t.loadingImage],
+	);
 
 	const openPicture = useCallback(
 		(p: string) => {
@@ -206,9 +316,18 @@ export default function App() {
 			setPalette(null);
 			setPaletteMerges([]);
 			setMergeSource(null);
+			setHiddenLayers(new Set());
 			setHistory(emptyHistory());
 			setTool("pan");
-			void run(p, { ...optsRef.current, customPalette: null, paletteMerges: [], brushStrokes: [] });
+			const nextOpts: Options = {
+				...optsRef.current,
+				customPalette: null,
+				paletteMerges: [],
+				brushStrokes: [],
+				preprocess: { ...DEFAULT_PREPROCESS },
+			};
+			setOpts(nextOpts);
+			void run(p, nextOpts);
 		},
 		[run],
 	);
@@ -219,16 +338,18 @@ export default function App() {
 			setInfo("");
 			try {
 				const loaded = await loadProjectFile(projFile);
-				const po = loaded.project.options;
-				const pe = loaded.project.exportOptions;
+				const po = normalizeOptions(loaded.project.options);
+				const pe = normalizeExport(loaded.project.exportOptions);
 				setView("editor");
 				setProjectPath(projFile);
 				setOpts(po);
 				setExp(pe);
+				setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
 				setPalette(po.customPalette);
 				setPaletteMerges(po.paletteMerges ?? []);
 				setStrokes(po.brushStrokes ?? []);
 				setChecker(po.productionMode === "cutEmbroidery" && po.stripBackground);
+				setHiddenLayers(new Set());
 				setHistory(emptyHistory());
 				if (po.targetNodes === null) setTargetChoice("auto");
 				else if (["500", "1000", "2000"].includes(String(po.targetNodes))) setTargetChoice(String(po.targetNodes) as TargetChoice);
@@ -240,22 +361,18 @@ export default function App() {
 				if (loaded.sourceExists) {
 					setMissingSourceProject(null);
 					await run(loaded.project.sourcePath, po);
-					if (!loaded.hashMatches) {
-						setInfo("Proyek dibuka. Catatan: gambar sumber berubah sejak proyek disimpan; pengaturan & sapuan kuas tetap dimuat.");
-					} else {
-						setInfo(`Proyek dibuka: ${projFile}`);
-					}
+					setInfo(!loaded.hashMatches ? t.projectOpenedChanged : `${t.projectOpened} ${projFile}`);
 				} else {
 					setPath(null);
 					setResult(null);
 					setMissingSourceProject(loaded.project.sourcePath);
-					setInfo("Pengaturan dan sapuan kuas dari proyek sudah dimuat. Pilih lokasi baru gambar sumber untuk melanjutkan.");
+					setInfo(t.projectMissingSource);
 				}
 			} catch (e) {
 				setError(errText(e));
 			}
 		},
-		[run],
+		[run, errText, t.projectOpenedChanged, t.projectOpened, t.projectMissingSource],
 	);
 
 	const relinkMissingSource = async () => {
@@ -264,7 +381,7 @@ export default function App() {
 		setMissingSourceProject(null);
 		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
 		await run(newImg, mergedOpts);
-		setInfo(`Gambar sumber ditautkan ulang ke ${newImg}`);
+		setInfo(`${t.projectRelinked} ${newImg}`);
 	};
 
 	const saveProject = useCallback(
@@ -276,14 +393,14 @@ export default function App() {
 				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
 				if (!dest) return;
 				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
-				await saveProjectFile(dest, path, fullOpts, exp);
+				await saveProjectFile(dest, path, fullOpts, effectiveExport());
 				setProjectPath(dest);
-				setInfo(`Proyek tersimpan: ${dest}`);
+				setInfo(`${t.projectSaved} ${dest}`);
 			} catch (e) {
 				setError(errText(e));
 			}
 		},
-		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, exp],
+		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, effectiveExport, errText, t.projectSaved],
 	);
 
 	const openSample = async () => {
@@ -295,6 +412,31 @@ export default function App() {
 			setError(errText(e));
 		}
 	};
+
+	const doPasteClipboard = useCallback(async () => {
+		if (busyRef.current) return;
+		setError("");
+		setInfo("");
+		try {
+			const clipPath = await pasteClipboardImage();
+			openPicture(clipPath);
+			setInfo(t.pastedClipboardMsg);
+		} catch (e) {
+			setError(errText(e));
+		}
+	}, [openPicture, errText, t.pastedClipboardMsg]);
+
+	const doCopySvg = useCallback(async () => {
+		if (!result || busyRef.current) return;
+		setError("");
+		setInfo("");
+		try {
+			const bytes = await copySvgToClipboard(effectiveExport());
+			setInfo(`${t.copiedSvgMsg} (${fmtKb(bytes)}).`);
+		} catch (e) {
+			setError(errText(e));
+		}
+	}, [result, effectiveExport, errText, t.copiedSvgMsg]);
 
 	const choose = useCallback(async () => {
 		const p = await pickImageOrProject();
@@ -320,7 +462,7 @@ export default function App() {
 				}
 				void collectDroppedImages(paths, false).then(imgs => {
 					if (imgs.length === 0) {
-						setError("File atau folder itu tidak berisi gambar (.png/.jpg/.webp/.bmp) atau proyek .trasea.");
+						setError(t.dropInvalidErr);
 					} else if (imgs.length === 1 && paths.length === 1 && imgs[0] && imgs[0] === paths[0]) {
 						openPicture(imgs[0]);
 					} else {
@@ -333,9 +475,11 @@ export default function App() {
 		return () => {
 			subs.forEach(s => void s.then(u => u()));
 		};
-	}, [openPicture, openProject]);
+	}, [openPicture, openProject, t.dropInvalidErr]);
 
-	// Global keyboard shortcuts: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S, Ctrl+O
+	// Global keyboard shortcuts:
+	// Ctrl+Z (Undo), Ctrl+Shift+Z (Redo), Ctrl+Y (Outline toggle), Ctrl+V (Paste image),
+	// Ctrl+Shift+C (Copy SVG), Ctrl+S / Ctrl+Shift+S (Save project), Ctrl+O (Open)
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const tag = (e.target as HTMLElement | null)?.tagName ?? "";
@@ -346,9 +490,15 @@ export default function App() {
 				e.preventDefault();
 				if (e.shiftKey) doRedo();
 				else doUndo();
-			} else if (k === "y" && !editingText && view === "editor") {
+			} else if (k === "y" && !editingText && view === "editor" && result) {
 				e.preventDefault();
-				doRedo();
+				setOutlineView(v => !v);
+			} else if (k === "v" && !editingText && view === "editor" && !modalOpen && !cropOpen) {
+				e.preventDefault();
+				void doPasteClipboard();
+			} else if (k === "c" && e.shiftKey && !editingText && view === "editor" && result) {
+				e.preventDefault();
+				void doCopySvg();
 			} else if (k === "s" && view === "editor" && path) {
 				e.preventDefault();
 				void saveProject(e.shiftKey);
@@ -359,10 +509,11 @@ export default function App() {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [view, path, doUndo, doRedo, saveProject, choose]);
+	}, [view, path, result, modalOpen, cropOpen, doUndo, doRedo, doPasteClipboard, doCopySvg, saveProject, choose]);
 
 	const switchProductionMode = (mode: ProductionMode) => {
-		recordHistory(`Ubah Mode ${mode === "screenPrint" ? "Sablon" : mode === "cutEmbroidery" ? "Cutting" : "Standar"}`);
+		const mName = mode === "screenPrint" ? t.modeScreenPrint : mode === "cutEmbroidery" ? t.modeCutEmbroidery : mode === "shading" ? t.modeShading : t.modeStandard;
+		recordHistory(`${t.productionModeTitle}: ${mName}`);
 		setSelectedPresetId("");
 		setOpts(o => {
 			if (o.productionMode === "standard" && mode !== "standard") {
@@ -377,6 +528,7 @@ export default function App() {
 					minStrokePt: 0,
 					stripBackground: false,
 					registrationMarks: false,
+					sablonKnockout: false,
 				};
 			}
 			if (mode === "screenPrint") {
@@ -390,44 +542,60 @@ export default function App() {
 					registrationMarks: true,
 				};
 			}
+			if (mode === "shading") {
+				return {
+					...o,
+					productionMode: "shading",
+					colors: o.productionMode === "shading" ? Math.min(32, Math.max(12, o.colors)) : 18,
+					smooth: o.productionMode === "shading" ? o.smooth : 50,
+					minStrokePt: 0,
+					stripBackground: false,
+					registrationMarks: false,
+					sablonKnockout: false,
+				};
+			}
 			return {
 				...o,
 				productionMode: "cutEmbroidery",
-				colors: o.productionMode === "screenPrint" ? standardBackupRef.current.colors : o.colors,
+				colors: o.productionMode === "screenPrint" || o.productionMode === "shading" ? standardBackupRef.current.colors : o.colors,
 				smooth: o.productionMode === "cutEmbroidery" ? o.smooth : 70,
 				minStrokePt: o.productionMode === "cutEmbroidery" ? o.minStrokePt : 1.5,
 				stripBackground: true,
 				registrationMarks: false,
+				sablonKnockout: false,
 			};
 		});
-		if (mode === "standard") {
-			setExp({ linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false });
+		if (mode === "standard" || mode === "shading") {
+			setExp(ex => ({ ...ex, linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false }));
 			setChecker(false);
 		} else if (mode === "screenPrint") {
-			setExp({ linesAs: "stroke", trapPt: 0.5, registrationMarks: true, stripBackground: false });
+			setExp(ex => ({ ...ex, linesAs: "stroke", trapPt: 0.5, registrationMarks: true, stripBackground: false }));
 			setChecker(false);
 		} else {
-			setExp({ linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: true });
+			setExp(ex => ({ ...ex, linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: true }));
 			setChecker(true);
 		}
 	};
 
 	const applyPreset = (preset: UserPreset) => {
-		recordHistory(`Terapkan preset "${preset.name}"`);
+		recordHistory(`${t.presetAppliedPrefix} "${preset.name}"`);
 		setSelectedPresetId(preset.id);
-		if (preset.options.productionMode === "standard") {
-			standardBackupRef.current = { colors: preset.options.colors, smooth: preset.options.smooth };
+		const po = normalizeOptions(preset.options);
+		const pe = normalizeExport(preset.exportOptions);
+		if (po.productionMode === "standard") {
+			standardBackupRef.current = { colors: po.colors, smooth: po.smooth };
 		}
-		setOpts({ ...preset.options, customPalette: palette, paletteMerges, brushStrokes: strokes });
-		setExp(preset.exportOptions);
-		setChecker(preset.options.productionMode === "cutEmbroidery" && preset.options.stripBackground);
-		if (preset.options.targetNodes === null) setTargetChoice("auto");
-		else if (["500", "1000", "2000"].includes(String(preset.options.targetNodes))) setTargetChoice(String(preset.options.targetNodes) as TargetChoice);
+		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, preprocess: opts.preprocess });
+		setExp(pe);
+		setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
+		setChecker(po.productionMode === "cutEmbroidery" && po.stripBackground);
+		if (po.targetNodes === null) setTargetChoice("auto");
+		else if (["500", "1000", "2000"].includes(String(po.targetNodes))) setTargetChoice(String(po.targetNodes) as TargetChoice);
 		else {
 			setTargetChoice("custom");
-			setCustomTarget(String(preset.options.targetNodes));
+			setCustomTarget(String(po.targetNodes));
 		}
-		setInfo(`Preset "${preset.name}" diterapkan. Klik Terapkan ulang bila gambar sudah terbuka.`);
+		setInfo(`${t.presetAppliedPrefix} "${preset.name}" ${t.presetAppliedSuffix}`);
 	};
 
 	const createPreset = async () => {
@@ -439,14 +607,14 @@ export default function App() {
 			const next = await savePreset({
 				id,
 				name,
-				options: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], targetNodes },
-				exportOptions: exp,
+				options: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], targetNodes, preprocess: { ...DEFAULT_PREPROCESS } },
+				exportOptions: effectiveExport(),
 			});
 			setPresets(next);
 			setSelectedPresetId(id);
 			setPresetNameInput("");
 			setAddingPreset(false);
-			setInfo(`Preset "${name}" tersimpan.`);
+			setInfo(`${t.presetAppliedPrefix} "${name}" ${t.presetSavedSuffix}`);
 		} catch (e) {
 			setError(errText(e));
 		}
@@ -458,14 +626,14 @@ export default function App() {
 			const next = await deletePreset(selectedPresetId);
 			setPresets(next);
 			setSelectedPresetId("");
-			setInfo("Preset dihapus.");
+			setInfo(t.presetDeleted);
 		} catch (e) {
 			setError(errText(e));
 		}
 	};
 
 	const resetPalette = () => {
-		recordHistory("Reset palet");
+		recordHistory(t.resetPalette);
 		setPalette(null);
 		setPaletteMerges([]);
 		setMergeSource(null);
@@ -477,29 +645,41 @@ export default function App() {
 		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes });
 	};
 
+	const applyPreprocess = (pp: PreprocessOptions) => {
+		recordHistory(t.cropRotate);
+		setCropOpen(false);
+		const nextOpts: Options = { ...opts, preprocess: pp, customPalette: palette, paletteMerges, targetNodes, brushStrokes: [] };
+		setStrokes([]);
+		setOpts(nextOpts);
+		if (path) void run(path, nextOpts);
+	};
+
+	const resetPreprocess = () => {
+		applyPreprocess({ ...DEFAULT_PREPROCESS });
+	};
+
 	const exportAs = async (kind: ExportKind) => {
 		if (!path) return;
 		if (kind === "eps" && !license.active) {
-			void openPrivacyModal("license", "Ekspor EPS adalah fitur Trasea Pro (bayar sekali, 100% offline). Masukkan kunci lisensi untuk membukanya.");
+			void openPrivacyModal("license", t.epsProPrompt);
 			return;
 		}
 		setError("");
 		setInfo("");
-		const effExp: ExportOptions =
-			opts.productionMode === "cutEmbroidery"
-				? { linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: opts.stripBackground }
-				: opts.productionMode === "screenPrint"
-					? { ...exp, registrationMarks: opts.registrationMarks, stripBackground: false }
-					: { ...exp, registrationMarks: false, stripBackground: false };
+		const effExp = effectiveExport();
 		try {
 			const target = await pickSavePath(kind, `${baseName(path)}.${kind}`);
 			if (!target) return;
-			await saveFile(kind, target, effExp);
-			let msg = `Tersimpan: ${target}`;
-			if (kind !== "ase" && withAse) {
+			if (kind === "dxf") {
+				await exportDxf(target, effExp);
+			} else {
+				await saveFile(kind, target, effExp);
+			}
+			let msg = `${t.savedLabel} ${target}`;
+			if (kind !== "ase" && kind !== "dxf" && withAse) {
 				const ase = target.replace(/\.[^.\\/]+$/, "") + ".ase";
 				await saveFile("ase", ase, effExp);
-				msg += ` dan ${ase}`;
+				msg += ` ${t.andLabel} ${ase}`;
 			}
 			setInfo(msg);
 		} catch (e) {
@@ -510,23 +690,23 @@ export default function App() {
 	const exportSeparationFilms = async () => {
 		if (!path) return;
 		if (!license.active) {
-			void openPrivacyModal("license", "Ekspor Film Separasi Sablon adalah fitur Trasea Pro (bayar sekali, 100% offline).");
+			void openPrivacyModal("license", t.sepProPrompt);
 			return;
 		}
 		setError("");
 		setInfo("");
 		try {
-			const dir = await pickFolder("Pilih folder untuk menyimpan film separasi");
+			const dir = await pickFolder(t.chooseSepFolderTitle);
 			if (!dir) return;
-			const effExp: ExportOptions = { ...exp, registrationMarks: true, stripBackground: false };
+			const effExp: ExportOptions = { ...effectiveExport(), registrationMarks: true, stripBackground: false };
 			const written = await saveSeparations(dir, baseName(path), sepPdf ? "both" : "svg", effExp);
-			setInfo(`Tersimpan ${written.length} file film separasi di ${dir}`);
+			setInfo(`${t.savedSepPrefix} ${written.length} ${t.savedSepMid} ${dir}`);
 		} catch (e) {
 			setError(errText(e));
 		}
 	};
 
-	const set = (patch: Partial<Options>, label = "Ubah pengaturan") => {
+	const set = (patch: Partial<Options>, label = t.settingsTitle) => {
 		recordHistory(label);
 		setSelectedPresetId("");
 		setOpts(o => {
@@ -537,14 +717,28 @@ export default function App() {
 			return next;
 		});
 	};
-	const svgUrl = useMemo(() => (result ? URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })) : ""), [result]);
+
+	const previewSvg = useMemo(
+		() => (result ? buildPreviewSvg(result.svg, outlineView, hiddenLayers) : ""),
+		[result, outlineView, hiddenLayers],
+	);
+	const svgUrl = useMemo(() => (previewSvg ? URL.createObjectURL(new Blob([previewSvg], { type: "image/svg+xml" })) : ""), [previewSvg]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);
+
+	const toggleLayer = (key: string) => {
+		setHiddenLayers(prev => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return next;
+		});
+	};
 
 	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
 	const removeColor = (hex: string) => {
 		const base = currentPalette();
 		if (base.length <= 2) return;
-		recordHistory(`Hapus warna ${hex}`);
+		recordHistory(`${t.removeBtn} ${hex}`);
 		setPalette(base.filter(c => c !== hex));
 		setMergeSource(null);
 	};
@@ -563,21 +757,21 @@ export default function App() {
 	const mergeColorInto = (fromHex: string, targetHex: string) => {
 		const base = currentPalette();
 		if (base.length <= 2 || fromHex === targetHex) return;
-		recordHistory(`Gabung ${fromHex} ke ${targetHex}`);
+		recordHistory(`${t.mergeBtn} ${fromHex} → ${targetHex}`);
 		setPalette(base.filter(c => c !== fromHex));
 		setPaletteMerges(prev => [...prev.map(([a, b]): [string, string] => [a, b === fromHex ? targetHex : b]), [fromHex, targetHex]]);
 		setMergeSource(null);
-		setInfo(`Warna ${fromHex} digabung ke ${targetHex}. Klik Terapkan ulang untuk memakainya.`);
+		setInfo(`${t.colorExistsPrefix} ${fromHex} ${t.colorMergedMid} ${targetHex}. ${t.colorMergedSuffix}`);
 	};
 	const addColor = (hex: string) => {
 		const base = currentPalette();
 		if (base.includes(hex)) {
-			setInfo(`Warna ${hex} sudah ada di palet.`);
+			setInfo(`${t.colorExistsPrefix} ${hex} ${t.colorExistsSuffix}`);
 			return;
 		}
-		recordHistory(`Pipet warna ${hex}`);
+		recordHistory(`${t.toolPipet} ${hex}`);
 		setPalette([...base, hex]);
-		setInfo(`Warna ${hex} ditambahkan. Klik Terapkan ulang untuk memakainya.`);
+		setInfo(`${t.colorExistsPrefix} ${hex} ${t.colorAddedSuffix}`);
 	};
 
 	const toImage = (e: ReactPointerEvent<SVGSVGElement>): [number, number] => {
@@ -614,48 +808,57 @@ export default function App() {
 		liveRef.current = null;
 		setLive(null);
 		if (s) {
-			recordHistory(s.kind === "detail" ? "Goresan Kuas Detail" : "Goresan Kuas Halus");
+			recordHistory(s.kind === "detail" ? t.toolDetail : t.toolSmooth);
 			setStrokes(list => [...list, s]);
 		}
 	};
 
+	const hasPreprocess = opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05;
+	const hasRegLayer = result !== null && result.svg.includes('id="Registrasi"');
 	const dirty = result !== null && appliedSig !== "" && signature !== appliedSig;
 	const paletteDirty = result !== null && palette !== null && JSON.stringify(palette) !== JSON.stringify(result.palette);
 	const painting = tool === "detail" || tool === "smooth";
 	const shown = live ? [...strokes, live] : strokes;
-	const maxColors = opts.productionMode === "screenPrint" ? 8 : 16;
-	const undoTip = history.past.length > 0 ? `Undo (Ctrl+Z): ${history.past[history.past.length - 1]?.label ?? ""}` : "Undo (Ctrl+Z)";
-	const redoTip = history.future.length > 0 ? `Redo (Ctrl+Y): ${history.future[0]?.label ?? ""}` : "Redo (Ctrl+Y)";
+	const maxColors = opts.productionMode === "screenPrint" ? 8 : opts.productionMode === "shading" ? 32 : 16;
+	const minColors = opts.productionMode === "shading" ? 12 : 2;
+	const undoTip = history.past.length > 0 ? `${t.undoTipPrefix}: ${history.past[history.past.length - 1]?.label ?? ""}` : t.undoTipPrefix;
+	const redoTip = history.future.length > 0 ? `${t.redoTipPrefix}: ${history.future[0]?.label ?? ""}` : t.redoTipPrefix;
+	const locale = lang === "en" ? "en-US" : "id-ID";
 
 	return (
 		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
 			<header className="top">
 				<div className="brand">
-					<span className="logo" aria-hidden="true">T</span> Trasea <small>1.0.0 · offline</small>
+					<span className="logo" aria-hidden="true">T</span> Trasea <small>{t.headerOffline}</small>
 					<button
 						className={`small lic-pill ${license.active ? "lic-pro" : "lic-trial"}`}
 						onClick={() => void openPrivacyModal("license")}
-						title="Lihat status lisensi offline dan janji privasi"
+						title={t.licenseTitle}
 					>
-						{license.active ? "Pro Aktif" : "Trial · Aktivasi"}
+						{license.active ? t.proActive : t.trialActivate}
 					</button>
 				</div>
 				<div className="row">
+					<div className="seg seg2 lang-switch" role="group" aria-label={t.switchLangTip} title={t.switchLangTip}>
+						<button aria-pressed={lang === "id"} onClick={() => setLang("id")}>ID</button>
+						<button aria-pressed={lang === "en"} onClick={() => setLang("en")}>EN</button>
+					</div>
+					<button className="ghost" onClick={() => void doPasteClipboard()} disabled={busy} title={t.pasteImageTip}>{t.pasteImage}</button>
 					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>
-						Batch folder{!license.active ? " (Pro)" : ""}
+						{t.batchFolder}
 					</button>
 					{view === "editor" && path && (
-						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title="Simpan proyek .trasea (Ctrl+S)">Simpan proyek</button>
+						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title={t.saveProjectTip}>{t.saveProject}</button>
 					)}
-					<button className="ghost" onClick={() => void openPrivacyModal("license")}>Privasi & Lisensi</button>
-					<button onClick={() => void choose()} disabled={busy} title="Buka gambar atau proyek .trasea (Ctrl+O)">Buka gambar / proyek…</button>
+					<button className="ghost" onClick={() => void openPrivacyModal("license")}>{t.privacyLicense}</button>
+					<button onClick={() => void choose()} disabled={busy} title={t.openImageProjectTip}>{t.openImageProject}</button>
 				</div>
 			</header>
 
 			{view === "batch" ? (
 				<BatchView
 					opts={opts}
-					exp={exp}
+					exp={effectiveExport()}
 					initialFiles={batchInitialFiles}
 					license={license}
 					presets={presets}
@@ -667,25 +870,26 @@ export default function App() {
 				/>
 			) : (
 				<main className="work">
-					<section className="stage" aria-label="Pratinjau">
+					<section className="stage" aria-label={t.stageAria}>
 						{!result && !busy && (
 							<div className="drop-wrap">
 								{missingSourceProject && (
 									<div className="warn" style={{ marginBottom: 12 }}>
-										Gambar sumber proyek tidak ditemukan di <code>{missingSourceProject}</code>. Pengaturan dan sapuan kuas tetap tersimpan.
+										{t.missingSourcePrefix} <code>{missingSourceProject}</code>. {t.missingSourceSuffix}
 										<div className="row" style={{ marginTop: 8 }}>
-											<button onClick={() => void relinkMissingSource()}>Pilih lokasi gambar baru…</button>
+											<button onClick={() => void relinkMissingSource()}>{t.relinkSource}</button>
 										</div>
 									</div>
 								)}
 								<div className="drop" role="button" tabIndex={0} onClick={() => void choose()} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") void choose(); }}>
-									<div className="drop-title">Seret gambar, proyek .trasea, atau folder ke sini</div>
-									<div className="drop-sub">atau klik untuk memilih · PNG, JPG, WEBP, BMP, .trasea</div>
-									<div className="drop-sub">Ilustrasi flat dan logo hasilnya paling bagus. Semua diproses 100% offline di komputer ini.</div>
+									<div className="drop-title">{t.dropTitle}</div>
+									<div className="drop-sub">{t.dropSub1}</div>
+									<div className="drop-sub">{t.dropSub2}</div>
 								</div>
 								<div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
-									<button onClick={() => void openSample()}>Coba contoh gambar</button>
-									<button onClick={() => setView("batch")}>Proses folder (Batch)…</button>
+									<button onClick={() => void openSample()}>{t.trySample}</button>
+									<button onClick={() => void doPasteClipboard()}>{t.pasteFromClipboard}</button>
+									<button onClick={() => setView("batch")}>{t.processBatchBtn}</button>
 								</div>
 							</div>
 						)}
@@ -693,39 +897,45 @@ export default function App() {
 							<div className="progress" role="status" aria-live="polite">
 								<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
 								<div>{stage}… {Math.round(fraction * 100)}%</div>
-								<div className="muted">Pembersihan AI bisa memakan 10–40 detik pada gambar besar.</div>
+								<div className="muted">{t.aiWaitHint}</div>
 							</div>
 						)}
 						{result && !busy && (
 							<div className="stagebox">
-								<div className="toolbar" role="toolbar" aria-label="Alat kanvas">
-									<div className="group" role="group" aria-label="Mode">
-										<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Geser</button>
-										<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">Kuas Detail</button>
-										<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">Kuas Halus</button>
-										<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>Pipet Warna</button>
+								<div className="toolbar" role="toolbar" aria-label={t.toolbarAria}>
+									<div className="group" role="group" aria-label={t.modeGroupAria}>
+										<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>{t.toolPan}</button>
+										<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">{t.toolDetail}</button>
+										<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">{t.toolSmooth}</button>
+										<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>{t.toolPipet}</button>
 									</div>
-									<div className="group" role="group" aria-label="Riwayat">
-										<button onClick={doUndo} disabled={history.past.length === 0} title={undoTip}>Undo</button>
-										<button onClick={doRedo} disabled={history.future.length === 0} title={redoTip}>Redo</button>
+									<div className="group" role="group" aria-label={t.historyGroupAria}>
+										<button onClick={doUndo} disabled={history.past.length === 0} title={undoTip}>{t.undo}</button>
+										<button onClick={doRedo} disabled={history.future.length === 0} title={redoTip}>{t.redo}</button>
 									</div>
 									{painting && (
 										<div className="group">
-											<label className="brushsize" htmlFor="brush">Ukuran <b>{brushSize}</b> px</label>
+											<label className="brushsize" htmlFor="brush">{t.brushSize} <b>{brushSize}</b> px</label>
 											<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
-											<button onClick={() => { recordHistory("Bersihkan sapuan"); setStrokes([]); }} disabled={strokes.length === 0}>Bersihkan sapuan</button>
+											<button onClick={() => { recordHistory(t.clearStrokes); setStrokes([]); }} disabled={strokes.length === 0}>{t.clearStrokes}</button>
 										</div>
 									)}
-									<div className="group" role="group" aria-label="Overlay">
-										<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>Heatmap node</button>
-										<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>Latar kotak-kotak</button>
+									<div className="group" role="group" aria-label={t.overlayGroupAria}>
+										<button aria-pressed={outlineView} onClick={() => setOutlineView(v => !v)} title={t.outlineTip}>{t.outlineView}</button>
+										<button aria-pressed={hasPreprocess} onClick={() => setCropOpen(true)} title={t.cropRotateTip}>{t.cropRotate}</button>
+										<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>{t.heatmapNode}</button>
+										<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>{t.checkerBg}</button>
 									</div>
 								</div>
-								{tool === "pipet" && <div className="hint">Klik pada gambar untuk mengambil warna dan menambahkannya ke palet.</div>}
-								{painting && <div className="hint">Sapukan di atas gambar: {tool === "detail" ? "area biru memakai kurva lebih rapat (lebih detail)" : "area oranye dirampingkan (lebih sedikit node)"}. Lalu klik Terapkan ulang.</div>}
+								{tool === "pipet" && <div className="hint">{t.pipetHint}</div>}
+								{painting && (
+									<div className="hint">
+										{t.brushHintPrefix} {tool === "detail" ? t.brushHintDetail : t.brushHintSmooth}. {t.brushHintSuffix}
+									</div>
+								)}
 								<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
-									<img className="layer" src={result.original} alt="Gambar asli" draggable={false} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
-									<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
+									<img className="layer" src={result.original} alt={t.tagOriginal} draggable={false} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
+									<img className="layer vec" src={svgUrl} alt={t.tagVector} draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
 									<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
 									{showText && result.textRegions.map((r, i) => (
 										<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
@@ -742,196 +952,308 @@ export default function App() {
 											? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
 											: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
 									</svg>
-									<span className="tag left">Asli</span>
-									<span className="tag right">Vektor</span>
-									<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
+									<span className="tag left">{t.tagOriginal}</span>
+									<span className="tag right">{outlineView ? t.tagOutline : t.tagVector}</span>
+									<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label={t.compareSliderAria} style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
 								</div>
 								{showHeat && (
-									<div className="legend" aria-label="Legenda heatmap">
-										<span>sedikit node</span><span className="ramp" aria-hidden="true" /><span>padat ({result.heatmap.maxCell} node/kotak)</span>
+									<div className="legend" aria-label={t.heatmapLegendAria}>
+										<span>{t.heatFew}</span><span className="ramp" aria-hidden="true" /><span>{t.heatDensePrefix}{result.heatmap.maxCell}{t.heatDenseSuffix}</span>
 									</div>
 								)}
 							</div>
 						)}
 					</section>
 
-					<aside className="panel" aria-label="Pengaturan">
+					<aside className="panel" aria-label={t.panelAria}>
 						<div className="palette-head" style={{ marginTop: 0 }}>
-							<h2>Preset Kustom</h2>
-							<button className="small" onClick={() => setAddingPreset(v => !v)}>{addingPreset ? "Tutup" : "+ Simpan preset"}</button>
+							<h2>{t.customPresets}</h2>
+							<button className="small" onClick={() => setAddingPreset(v => !v)}>{addingPreset ? t.close : t.addPresetBtn}</button>
 						</div>
 						{addingPreset && (
 							<div className="preset-add">
 								<input
 									className="num"
 									type="text"
-									placeholder="Nama preset (mis. Stiker Vinyl 1.5pt)"
-									aria-label="Nama preset kustom"
+									placeholder={t.presetPlaceholder}
+									aria-label={t.presetNameAria}
 									value={presetNameInput}
 									onChange={e => setPresetNameInput(e.target.value)}
 									onKeyDown={e => { if (e.key === "Enter") void createPreset(); }}
 								/>
-								<button className="small" onClick={() => void createPreset()} disabled={!presetNameInput.trim()}>Simpan</button>
+								<button className="small" onClick={() => void createPreset()} disabled={!presetNameInput.trim()}>{t.save}</button>
 							</div>
 						)}
 						{presets.length > 0 && (
 							<div className="preset-row">
 								<select
-									aria-label="Pilih preset kustom"
+									aria-label={t.selectPresetAria}
 									value={selectedPresetId}
 									onChange={e => {
 										const p = presets.find(x => x.id === e.target.value);
 										if (p) applyPreset(p);
 									}}
 								>
-									<option value="">Pilih preset tersimpan…</option>
+									<option value="">{t.chooseSavedPreset}</option>
 									{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
 								</select>
-								<button className="small" onClick={() => void removeSelectedPreset()} disabled={!selectedPresetId} aria-label="Hapus preset terpilih">Hapus</button>
+								<button className="small" onClick={() => void removeSelectedPreset()} disabled={!selectedPresetId} aria-label={t.deletePresetAria}>{t.delete}</button>
 							</div>
 						)}
 
-						<h2>Mode Produksi</h2>
-						<div className="seg" role="group" aria-label="Mode produksi">
-							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>Standar</button>
-							<button aria-pressed={opts.productionMode === "screenPrint"} onClick={() => switchProductionMode("screenPrint")}>Sablon</button>
-							<button aria-pressed={opts.productionMode === "cutEmbroidery"} onClick={() => switchProductionMode("cutEmbroidery")}>Cutting / Bordir</button>
+						<h2>{t.productionModeTitle}</h2>
+						<div className="seg seg4-grid" role="group" aria-label={t.productionModeAria}>
+							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>{t.modeStandard}</button>
+							<button aria-pressed={opts.productionMode === "screenPrint"} onClick={() => switchProductionMode("screenPrint")}>{t.modeScreenPrint}</button>
+							<button aria-pressed={opts.productionMode === "cutEmbroidery"} onClick={() => switchProductionMode("cutEmbroidery")}>{t.modeCutEmbroidery}</button>
+							<button aria-pressed={opts.productionMode === "shading"} onClick={() => switchProductionMode("shading")}>{t.modeShading}</button>
 						</div>
 
 						{opts.productionMode === "screenPrint" && (
 							<div className="mode-box">
-								<label htmlFor="minStroke">Garis minimum (pt)</label>
-								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, "Ubah garis minimum")} />
-								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }, "Ubah tanda registrasi"); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> Tanda registrasi (4 sudut)</label>
-								{opts.colors > 6 && <div className="warn">Lebih dari 6 warna spot dapat menaikkan biaya film sablon.</div>}
-								<div className="hint">Warna dibatasi 2–8 spot, bintik mikro diserap, garis tipis ditebalkan ke batas aman afdruk.</div>
+								<label>{t.sablonMethodLabel}</label>
+								<div className="seg seg2" role="group" aria-label={t.sablonMethodLabel} style={{ marginTop: 4 }}>
+									<button aria-pressed={!opts.sablonKnockout} onClick={() => set({ sablonKnockout: false }, t.sablonStacking)}>{t.sablonStacking}</button>
+									<button aria-pressed={opts.sablonKnockout} onClick={() => set({ sablonKnockout: true }, t.sablonKnockout)}>{t.sablonKnockout}</button>
+								</div>
+								<label htmlFor="minStroke">{t.minStrokeLabel}</label>
+								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
+								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }, t.regMarksLabel); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> {t.regMarksLabel}</label>
+								{opts.colors > 6 && <div className="warn">{t.sablonOver6Warn}</div>}
+								<div className="hint">{opts.sablonKnockout ? t.sablonKnockoutHint : t.sablonHint}</div>
 							</div>
 						)}
 
 						{opts.productionMode === "cutEmbroidery" && (
 							<div className="mode-box">
-								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }, "Ubah hapus latar"); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> Hapus latar belakang</label>
-								<label htmlFor="minStrokeCut">Garis minimum (pt)</label>
-								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, "Ubah garis minimum")} />
-								<div className="hint">Bebas tumpang tindih (knockout), semua garis jadi bentuk isi tertutup, trap dikunci 0 pt.</div>
+								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }, t.stripBgLabel); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> {t.stripBgLabel}</label>
+								<label htmlFor="minStrokeCut">{t.minStrokeLabel}</label>
+								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
+								<div className="hint">{t.cutHint}</div>
 							</div>
 						)}
 
-						<h2>Pengaturan</h2>
-						<label htmlFor="colors">Jumlah warna <b>{Math.min(opts.colors, maxColors)}</b></label>
-						<input id="colors" type="range" min={2} max={maxColors} value={Math.min(opts.colors, maxColors)} onChange={e => set({ colors: Number(e.target.value) }, "Ubah jumlah warna")} />
-						<label htmlFor="smooth">Kehalusan <b>{opts.smooth < 34 ? "detail" : opts.smooth > 66 ? "halus" : "sedang"}</b></label>
-						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, "Ubah kehalusan")} />
-						<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
-						<label htmlFor="target">Target node (maks)</label>
-						<select id="target" value={targetChoice} onChange={e => { recordHistory("Ubah target node"); setTargetChoice(e.target.value as TargetChoice); }}>
-							<option value="auto">Otomatis</option>
+						{opts.productionMode === "shading" && (
+							<div className="mode-box">
+								<div className="hint">{t.shadingHint}</div>
+							</div>
+						)}
+
+						{hasPreprocess && (
+							<div className="mode-box row between" style={{ marginTop: 8 }}>
+								<span className="hint" style={{ color: "var(--ink)" }}>
+									{t.preprocessActive}
+									{Math.abs(opts.preprocess.rotateDeg) > 0.05 ? ` (${opts.preprocess.rotateDeg}°)` : ""}
+									{opts.preprocess.crop ? ` · ${opts.preprocess.crop[2]}×${opts.preprocess.crop[3]}` : ""}
+								</span>
+								<button className="small" onClick={resetPreprocess}>{t.preprocessReset}</button>
+							</div>
+						)}
+
+						<h2>{t.settingsTitle}</h2>
+						<label htmlFor="colors">{t.colorCount} <b>{Math.min(maxColors, Math.max(minColors, opts.colors))}</b></label>
+						<input id="colors" type="range" min={minColors} max={maxColors} value={Math.min(maxColors, Math.max(minColors, opts.colors))} onChange={e => set({ colors: Number(e.target.value) }, t.colorCount)} />
+						<label htmlFor="smooth">{t.smoothness} <b>{opts.smooth < 34 ? t.smoothDetail : opts.smooth > 66 ? t.smoothSmooth : t.smoothMedium}</b></label>
+						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, t.smoothness)} />
+						<div className="hint">{t.smoothHint}</div>
+						<label htmlFor="target">{t.targetNodesLabel}</label>
+						<select id="target" value={targetChoice} onChange={e => { recordHistory(t.targetNodesLabel); setTargetChoice(e.target.value as TargetChoice); }}>
+							<option value="auto">{t.targetAuto}</option>
 							<option value="500">500</option>
 							<option value="1000">1000</option>
 							<option value="2000">2000</option>
-							<option value="custom">Angka sendiri…</option>
+							<option value="custom">{t.targetCustom}</option>
 						</select>
-						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label="Target node" />}
-						<div className="hint">Trasea menghaluskan hasil sampai jumlah node masuk anggaran, tanpa membersihkan gambar ulang.</div>
-						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, "Ubah jaga garis tipis")} /> Jaga garis tipis</label>
-						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, "Ubah bentuk dasar")} /> Kenali bentuk dasar</label>
-						<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
-						<label htmlFor="symmetry">Tegas simetri</label>
-						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, "Ubah simetri")}>
-							<option value="off">Mati</option>
-							<option value="auto">Otomatis</option>
-							<option value="vertical">Vertikal (kiri = kanan)</option>
-							<option value="horizontal">Horizontal (atas = bawah)</option>
+						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label={t.targetNodesLabel} />}
+						<div className="hint">{t.targetHint}</div>
+						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, t.keepLines)} /> {t.keepLines}</label>
+						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} /> {t.detectPrimitives}</label>
+						<div className="hint">{t.primitivesHint}</div>
+						<label htmlFor="symmetry">{t.symmetryLabel}</label>
+						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, t.symmetryLabel)}>
+							<option value="off">{t.symOff}</option>
+							<option value="auto">{t.symAuto}</option>
+							<option value="vertical">{t.symVert}</option>
+							<option value="horizontal">{t.symHoriz}</option>
 						</select>
-						<div className="hint">Untuk logo yang seharusnya simetris. Satu sisi disalin ke sisi lain.</div>
-						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked }, "Ubah pembersih AI")} /> Bersihkan dengan AI</label>
-						<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
-						{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
-						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
-						{dirty && <div className="pending" role="status">Perubahan belum diterapkan{palette !== null || strokes.length > 0 ? ` (${[palette !== null ? "palet" : "", strokes.length > 0 ? `${strokes.length} sapuan` : ""].filter(Boolean).join(", ")})` : ""}.</div>}
+						<div className="hint">{t.symmetryHint}</div>
+						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} /> {t.aiCleanLabel}</label>
+						<div className="hint">{t.aiCleanHint}</div>
+						{opts.aiClean && !hasSidecar && <div className="warn">{t.noSidecarWarn}</div>}
+						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? t.applyAgain : t.vectorizeBtn}</button>
+						{dirty && (
+							<div className="pending" role="status">
+								{t.pendingChanges}
+								{palette !== null || strokes.length > 0 || hasPreprocess
+									? ` (${[palette !== null ? t.pendingPalette : "", strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "", hasPreprocess ? t.pendingPreprocess : ""].filter(Boolean).join(", ")})`
+									: ""}.
+							</div>
+						)}
 
 						{result && (
 							<>
 								<div className="palette-head">
-									<h2>Palet</h2>
+									<h2>{t.paletteTitle}</h2>
 									<div className="row">
-										<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(t => (t === "pipet" ? "pan" : "pipet"))}>+ Pipet</button>
-										<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>Reset palet</button>
+										{hiddenLayers.size > 0 && (
+											<button className="small" onClick={() => setHiddenLayers(new Set())}>{t.showAllLayers}</button>
+										)}
+										<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(tl => (tl === "pipet" ? "pan" : "pipet"))}>{t.pipetBtn}</button>
+										<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>{t.resetPalette}</button>
 									</div>
 								</div>
-								<ul className="palette" aria-label="Palet warna">
-									{currentPalette().map(c => (
-										<li key={c} className="swatch-item">
-											<div className="swatch">
-												<span className="chip" style={{ background: c }} aria-hidden="true" />
-												<code>{c}</code>
-												<button className="small" aria-expanded={mergeSource === c} onClick={() => setMergeSource(s => (s === c ? null : c))} disabled={currentPalette().length <= 2} aria-label={`Gabung ${c}`}>Gabung</button>
-												<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`Hapus ${c}`}>Hapus</button>
-											</div>
-											{mergeSource === c && (
-												<div className="merge-pop" role="region" aria-label={`Pilih target gabung untuk ${c}`}>
-													<div className="hint">Gabung <code>{c}</code> ke warna:</div>
-													<div className="merge-targets">
-														{othersByDistance(c).map((t, i) => (
-															<button key={t} className="small merge-opt" onClick={() => mergeColorInto(c, t)} aria-label={`Gabung ${c} ke ${t}`}>
-																<span className="chip-sm" style={{ background: t }} aria-hidden="true" />
-																<span>{t}{i === 0 ? " (terdekat)" : ""}</span>
-															</button>
-														))}
-													</div>
+								<ul className="palette" aria-label={t.paletteAria}>
+									{currentPalette().map(c => {
+										const isHidden = hiddenLayers.has(c);
+										return (
+											<li key={c} className={`swatch-item ${isHidden ? "layer-hidden" : ""}`}>
+												<div className="swatch">
+													<button
+														className="small icon-btn"
+														aria-pressed={isHidden}
+														onClick={() => toggleLayer(c)}
+														title={isHidden ? t.toggleLayerShow : t.toggleLayerHide}
+														aria-label={`${isHidden ? t.toggleLayerShow : t.toggleLayerHide} ${c}`}
+													>
+														<EyeIcon hidden={isHidden} />
+													</button>
+													<span className="chip" style={{ background: c }} aria-hidden="true" />
+													<code>{c}</code>
+													<button className="small" aria-expanded={mergeSource === c} onClick={() => setMergeSource(s => (s === c ? null : c))} disabled={currentPalette().length <= 2} aria-label={`${t.mergeBtn} ${c}`}>{t.mergeBtn}</button>
+													<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`${t.removeBtn} ${c}`}>{t.removeBtn}</button>
 												</div>
-											)}
+												{mergeSource === c && (
+													<div className="merge-pop" role="region" aria-label={`${t.mergeToLabel} ${c}`}>
+														<div className="hint">{t.mergeToLabel} <code>{c}</code></div>
+														<div className="merge-targets">
+															{othersByDistance(c).map((targetHex, i) => (
+																<button key={targetHex} className="small merge-opt" onClick={() => mergeColorInto(c, targetHex)} aria-label={`${t.mergeBtn} ${c} → ${targetHex}`}>
+																	<span className="chip-sm" style={{ background: targetHex }} aria-hidden="true" />
+																	<span>{targetHex}{i === 0 ? t.nearestTag : ""}</span>
+																</button>
+															))}
+														</div>
+													</div>
+												)}
+											</li>
+										);
+									})}
+									<li className={`swatch-item ${hiddenLayers.has(GARIS_LAYER) ? "layer-hidden" : ""}`}>
+										<div className="swatch">
+											<button
+												className="small icon-btn"
+												aria-pressed={hiddenLayers.has(GARIS_LAYER)}
+												onClick={() => toggleLayer(GARIS_LAYER)}
+												title={hiddenLayers.has(GARIS_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+												aria-label={t.layerThinLines}
+											>
+												<EyeIcon hidden={hiddenLayers.has(GARIS_LAYER)} />
+											</button>
+											<span className="chip chip-line" aria-hidden="true" />
+											<span className="layer-label">{t.layerThinLines}</span>
+										</div>
+									</li>
+									{hasRegLayer && (
+										<li className={`swatch-item ${hiddenLayers.has(REG_LAYER) ? "layer-hidden" : ""}`}>
+											<div className="swatch">
+												<button
+													className="small icon-btn"
+													aria-pressed={hiddenLayers.has(REG_LAYER)}
+													onClick={() => toggleLayer(REG_LAYER)}
+													title={hiddenLayers.has(REG_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+													aria-label={t.layerRegistration}
+												>
+													<EyeIcon hidden={hiddenLayers.has(REG_LAYER)} />
+												</button>
+												<span className="chip chip-reg" aria-hidden="true" />
+												<span className="layer-label">{t.layerRegistration}</span>
+											</div>
 										</li>
-									))}
+									)}
 								</ul>
-								<div className="hint">Klik Gabung untuk memilih warna target (warna terdekat disarankan pertama). {paletteDirty ? "Palet berubah, klik Terapkan ulang." : palette !== null ? "Palet manual dipakai." : "Palet otomatis."}</div>
+								<div className="hint">{t.layerPreviewOnlyHint}</div>
+								<div className="hint">{t.paletteHintBase} {paletteDirty ? t.paletteDirtyHint : palette !== null ? t.paletteManualHint : t.paletteAutoHint}</div>
 
-								<h2>Statistik</h2>
+								<h2>{t.statsTitle}</h2>
 								<dl className="stats">
-									<dt>Path</dt><dd>{result.paths}</dd>
-									<dt>Node</dt><dd>{result.nodes.toLocaleString("id-ID")}</dd>
-									<dt>Ukuran SVG</dt><dd>{fmtKb(result.bytes)}</dd>
-									<dt>Bentuk dasar</dt><dd>{result.primitives}</dd>
-									{result.symmetryApplied && <><dt>Simetri</dt><dd>{result.symmetryApplied === "vertical" ? "kiri = kanan" : "atas = bawah"}</dd></>}
-									{result.budgetMet !== null && <><dt>Target node</dt><dd>{result.budgetMet ? "tercapai" : "tidak tercapai"}</dd><dt>Kehalusan dipakai</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
-									<dt>Selisih warna (MAE)</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
-									<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk{result.reused ? " (tanpa muat/bersihkan ulang)" : ""}</dd>
-									<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
+									<dt>{t.statPaths}</dt><dd>{result.paths}</dd>
+									<dt>{t.statNodes}</dt><dd>{result.nodes.toLocaleString(locale)}</dd>
+									<dt>{t.statSvgSize}</dt><dd>{fmtKb(result.bytes)}</dd>
+									<dt>{t.statPrimitives}</dt><dd>{result.primitives}</dd>
+									{result.symmetryApplied && <><dt>{t.statSymmetry}</dt><dd>{result.symmetryApplied === "vertical" ? t.symVertShort : t.symHorizShort}</dd></>}
+									{result.budgetMet !== null && <><dt>{t.statTargetNode}</dt><dd>{result.budgetMet ? t.budgetMet : t.budgetMissed}</dd><dt>{t.statEffSmooth}</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
+									<dt>{t.statMae}</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
+									<dt>{t.statTime}</dt><dd>{result.secs.toFixed(1)} {t.secUnit}{result.reused ? t.reusedSuffix : ""}</dd>
+									<dt>{t.statCleaner}</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
 								</dl>
-								<h2>Ekspor</h2>
-								<label htmlFor="linesAs">Garis tipis sebagai</label>
+
+								<h2>{t.exportTitle}</h2>
+								<label>{t.colorSpaceLabel}</label>
+								<div className="seg seg2" role="group" aria-label={t.colorSpaceLabel} style={{ marginTop: 4 }}>
+									<button aria-pressed={exp.colorSpace === "rgb"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "rgb" as ColorSpace }))}>RGB</button>
+									<button aria-pressed={exp.colorSpace === "cmyk"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "cmyk" as ColorSpace }))}>CMYK</button>
+								</div>
+								{exp.colorSpace === "cmyk" && <div className="hint">{t.colorSpaceHintCmyk}</div>}
+
+								<label htmlFor="linesAs">{t.linesAsLabel}</label>
 								<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
-									<option value="stroke">Stroke (tebal bisa diubah)</option>
-									<option value="shape">Bentuk isi (outline)</option>
+									<option value="stroke">{t.linesStroke}</option>
+									<option value="shape">{t.linesShape}</option>
 								</select>
-								<label htmlFor="trap">Trap untuk cetak</label>
+								<label htmlFor="trap">{t.trapLabel}</label>
 								<select id="trap" value={opts.productionMode === "cutEmbroidery" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
-									<option value={0}>Tanpa trap (0 pt)</option>
+									<option value={0}>{t.trapNone}</option>
 									<option value={0.25}>0,25 pt</option>
 									<option value={0.5}>0,5 pt</option>
 									<option value={1}>1 pt</option>
+									<option value={1.5}>1,5 pt</option>
+									<option value={2}>2 pt</option>
 								</select>
-								{opts.productionMode === "cutEmbroidery" && <div className="hint">Trap dikunci 0 pt dan garis jadi bentuk isi agar aman untuk pisau cutting / bordir.</div>}
-								<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> Sertakan palet .ase</label>
+								{opts.productionMode === "cutEmbroidery" && <div className="hint">{t.cutExportHint}</div>}
+
+								<label htmlFor="dxfUnit">{t.dxfUnitLabel}</label>
+								<select id="dxfUnit" value={exp.dxfUnit} onChange={e => setExp({ ...exp, dxfUnit: e.target.value as DxfUnit })}>
+									<option value="mm">{t.dxfUnitMm}</option>
+									<option value="px">{t.dxfUnitPx}</option>
+								</select>
+								{exp.dxfUnit === "mm" && (
+									<>
+										<label htmlFor="dxfTargetWidth">{t.dxfTargetWidthLabel}</label>
+										<input
+											id="dxfTargetWidth"
+											className="num"
+											type="number"
+											min={1}
+											step={1}
+											placeholder={t.dxfTargetWidthPlaceholder}
+											value={dxfWidthInput}
+											onChange={e => setDxfWidthInput(e.target.value)}
+										/>
+									</>
+								)}
+
+								<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> {t.includeAse}</label>
 								<div className="row" style={{ marginTop: 8 }}>
-									<button onClick={() => void exportAs("svg")}>Ekspor SVG</button>
-									<button onClick={() => void exportAs("pdf")}>Ekspor PDF</button>
-									<button onClick={() => void exportAs("eps")}>Ekspor EPS{!license.active ? " (Pro)" : ""}</button>
-									<button onClick={() => void exportAs("ase")}>Palet .ase</button>
+									<button onClick={() => void doCopySvg()} title={t.copySvgTip}>{t.copySvgBtn}</button>
+									<button onClick={() => void exportAs("svg")}>{t.exportSvg}</button>
+									<button onClick={() => void exportAs("pdf")}>{t.exportPdf}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
+									<button onClick={() => void exportAs("dxf")}>{t.exportDxf}</button>
+									<button onClick={() => void exportAs("eps")}>{t.exportEps}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}{!license.active ? " (Pro)" : ""}</button>
+									<button onClick={() => void exportAs("ase")}>{t.exportAse}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 								</div>
 								{opts.productionMode === "screenPrint" && (
 									<div className="sep-box">
-										<label className="check"><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> Sertakan PDF per film</label>
-										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>Ekspor film separasi…{!license.active ? " (Pro)" : ""}</button>
+										<label className="check"><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> {t.includeSepPdf}</label>
+										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>{t.exportSepBtn}{!license.active ? " (Pro)" : ""}</button>
 									</div>
 								)}
 							</>
 						)}
 						{result && result.textRegions.length > 0 && (
 							<div className="warn" role="status" id="text-warning">
-								Terdeteksi kemungkinan teks ({result.textRegions.length} area). Teks hasil vektorisasi hampir selalu kalah rapi dibanding mengetik ulang dengan font aslinya.
+								{t.textWarnPrefix}{result.textRegions.length}{t.textWarnSuffix}
 								<div className="row" style={{ marginTop: 8 }}>
-									<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? "Sembunyikan area teks" : "Sorot area teks"}</button>
+									<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? t.hideTextAreas : t.highlightTextAreas}</button>
 								</div>
 							</div>
 						)}
@@ -942,12 +1264,21 @@ export default function App() {
 				</main>
 			)}
 
+			{cropOpen && path && (
+				<CropModal
+					path={path}
+					initial={opts.preprocess}
+					onCancel={() => setCropOpen(false)}
+					onApply={applyPreprocess}
+				/>
+			)}
+
 			{modalOpen !== null && (
-				<div className="modal" role="dialog" aria-modal="true" aria-label="Privasi dan Lisensi" onClick={() => setModalOpen(null)}>
+				<div className="modal" role="dialog" aria-modal="true" aria-label={t.privacyLicense} onClick={() => setModalOpen(null)}>
 					<div className="modal-box" onClick={e => e.stopPropagation()}>
 						<div className="row between">
-							<h2>Privasi & Lisensi</h2>
-							<button className="ghost" onClick={() => setModalOpen(null)}>Tutup</button>
+							<h2>{t.privacyLicense}</h2>
+							<button className="ghost" onClick={() => setModalOpen(null)}>{t.close}</button>
 						</div>
 						<Licenses
 							markdown={modalOpen.markdown}
@@ -960,5 +1291,28 @@ export default function App() {
 				</div>
 			)}
 		</div>
+	);
+}
+
+export default function App() {
+	const [lang, setLangState] = useState<Lang>("id");
+
+	useEffect(() => {
+		void getAppSettings()
+			.then(s => {
+				if (s.language === "en" || s.language === "id") setLangState(s.language);
+			})
+			.catch(() => {});
+	}, []);
+
+	const setLang = useCallback((next: Lang) => {
+		setLangState(next);
+		void saveAppSettings({ language: next }).catch(() => {});
+	}, []);
+
+	return (
+		<I18nProvider lang={lang} setLang={setLang}>
+			<TraseaApp />
+		</I18nProvider>
 	);
 }

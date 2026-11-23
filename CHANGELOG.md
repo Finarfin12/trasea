@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0] "Alur Kerja Cepat & Produksi Penuh"
+
+All 9 new 1.1.0 features are open without requiring a Pro key (QT-1 = B); the 1.0.0 offline Ed25519 license system and all legacy tests remain intact.
+
+- **Pure AutoCAD R12 DXF export (`dxf.rs`, CLI `--dxf`, Editor & Batch/Watch DXF).** ASCII `AC1009` DXF generator for laser cutters, CNC routers, and vinyl plotters with separated colour layers (`COLOR_01_RRGGBB`, `THIN_LINES`, `REGISTRATION`), native `CIRCLE` entities for detected circles, adaptive Bézier polyline flattening, bottom-left CAD Y-axis, and `mm` (96 DPI default: `1 px = 0.264583 mm`, optional `dxf_target_width_mm`) or `px` units (QT-2 = A).
+- **CMYK print colour space (`color.rs`, `export.rs`, CLI `--color-space cmyk`).** Deterministic RGB → CMYK conversion with a Pure Black rule (`0 0 0 1` for `#000000`/near-black & registration marks). Pure PDF 1.4 DeviceCMYK writer (`to_pdf` using `k`/`K` operators with zero RGB operators), CMYK EPS (`setcmykcolor`), CMYK `.ase` swatches (`to_ase_with_color_space`), and 100% K separation film PDFs (`to_separation_pdfs`).
+- **Screen Print Pure Knockout (`production.rs`, CLI `--sablon-knockout`).** Optional non-overlapping knockout separation mode in Screen Print alongside gap-free Stacking, supporting `0..2 pt` print trap.
+- **Watch Folder (`watch.rs`, `BatchView.tsx` Watch sub-tab, CLI `--watch`).** Cross-platform local `std::fs` polling watcher (zero network crates) with write-stability debounce, corrupt-file isolation, clean stop signal, live UI event log table, and automatic `laporan-trasea.csv`/`.md` report updates.
+- **Clipboard In & Out (`arboard`, `paste_clipboard_image`, `copy_svg_to_clipboard`).** Paste raster images/screenshots directly with `Ctrl+V` (or header/welcome button) and copy clean SVG markup with `Ctrl+Shift+C` (or **Copy SVG** button) directly into Affinity Designer, Illustrator, Inkscape, or Figma.
+- **Instant Outline / Wireframe preview (`Ctrl+Y`) & Layer Visibility (`App.tsx`).** Client-side `<style>` preview injection toggles wireframe outlines (`Ctrl+Y`) and individual colour/`Garis`/`Registrasi` layer visibility via eye icons with zero re-tracing; exported files remain complete. *(Redo uses `Ctrl+Shift+Z`.)*
+- **Bilingual UI (Indonesian & English, `src/i18n/`, `settings.json`).** Instant `ID | EN` switcher in the header covering Editor, Crop Modal, Batch/Watch view, and Privacy & License modal, persisted locally in `app_config_dir()/settings.json`.
+- **Non-destructive Crop & Rotate (`preprocess.rs`, `CropModal.tsx`, CLI `--crop`, `--rotate`).** Exact lossless `90°`/`180°`/`270°` transposition, bilinear expanded-canvas free-angle rotation (`-45°..+45°`), interactive crop box modal, cache-keyed `PreparedImage`, and `.trasea` project persistence (100% backwards compatible with 1.0.0 `.trasea` files via `#[serde(default)]`).
+- **Shading / Cel-Shading mode (`ProductionMode::Shading`, CLI `--mode shading`).** 4th production mode using Lab bilateral pre-smoothing and 12–32 smooth colour bands (default 18) for softly shaded artwork.
+- **Tests & Audit:** Added `F-01`..`F-10` in `tests/core11.rs` (71/71 total tests pass in `trasea-core`, zero regression on 10-image benchmark), refreshed `THIRD_PARTY_LICENSES.md` (adding `arboard`), and published `docs/LICENSE-AUDIT-1.1.0.md` (0 GPL-only crates, 0 network crates).
+
 ## [1.0.0] "Siap Dijual"
 
 - **Pure EPS export (`to_eps`, CLI `--eps`, Batch EPS).** Writes clean PostScript Level 2 / EPSF-3.0 directly from `Doc` without Ghostscript or Inkscape: bottom-left coordinates, `eofill`, cubic Bézier conversion for `Circle`/`Ellipse`/`Rect` (including rounded corners and rotation), print trap, strokes/shapes, and 4-corner Screen Print registration marks.

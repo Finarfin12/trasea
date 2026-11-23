@@ -3,7 +3,16 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
-export type ProductionMode = "standard" | "screenPrint" | "cutEmbroidery";
+export type ProductionMode = "standard" | "screenPrint" | "cutEmbroidery" | "shading";
+export type ColorSpace = "rgb" | "cmyk";
+export type DxfUnit = "mm" | "px";
+
+export interface PreprocessOptions {
+	crop: [number, number, number, number] | null;
+	rotateDeg: number;
+}
+
+export const DEFAULT_PREPROCESS: PreprocessOptions = { crop: null, rotateDeg: 0 };
 
 export interface Options {
 	colors: number;
@@ -22,6 +31,8 @@ export interface Options {
 	minStrokePt: number;
 	stripBackground: boolean;
 	registrationMarks: boolean;
+	sablonKnockout: boolean;
+	preprocess: PreprocessOptions;
 }
 
 export interface BrushStroke {
@@ -71,11 +82,20 @@ export interface Processed {
 	reused: boolean;
 }
 
+export interface RawImagePreview {
+	dataUrl: string;
+	width: number;
+	height: number;
+}
+
 export interface ExportOptions {
 	linesAs: "stroke" | "shape";
 	trapPt: number;
 	registrationMarks: boolean;
 	stripBackground: boolean;
+	colorSpace: ColorSpace;
+	dxfUnit: DxfUnit;
+	dxfTargetWidthMm: number | null;
 }
 
 export type BatchStatus = "ok" | "failed" | "cancelled";
@@ -120,8 +140,44 @@ export interface UiBatchConfig {
 	export: ExportOptions;
 	writePdf: boolean;
 	writeEps: boolean;
+	writeDxf: boolean;
 	writeAse: boolean;
 	writeSeparations: boolean;
+}
+
+export interface UiWatchConfig {
+	inDir: string;
+	outDir: string;
+	includeSubfolders: boolean;
+	params: Options;
+	export: ExportOptions;
+	writePdf: boolean;
+	writeEps: boolean;
+	writeDxf: boolean;
+	writeAse: boolean;
+	writeSeparations: boolean;
+	pollMs?: number;
+	debounceMs?: number;
+}
+
+export interface WatchEvent {
+	file: string;
+	fileName: string;
+	status: BatchStatus;
+	colors: number;
+	paths: number;
+	nodes: number;
+	mae: number | null;
+	elapsedMs: number;
+	error: string | null;
+}
+
+export interface WatchStoppedEvent {
+	error: string | null;
+}
+
+export interface AppSettings {
+	language: "id" | "en";
 }
 
 export interface LicenseInfo {
@@ -162,12 +218,19 @@ export interface UserPreset {
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
+export const loadRawImagePreview = (path: string): Promise<RawImagePreview> => invoke<RawImagePreview>("load_raw_image_preview", { path });
 export const pickColor = (x: number, y: number): Promise<string> => invoke<string>("pick_color", { x, y });
 
-export type ExportKind = "svg" | "pdf" | "eps" | "ase";
+export type ExportKind = "svg" | "pdf" | "eps" | "dxf" | "ase";
 export const saveFile = (kind: ExportKind, path: string, options: ExportOptions): Promise<void> => invoke<void>("save_file", { kind, path, options });
+export const exportDxf = (path: string, options: ExportOptions): Promise<void> => invoke<void>("export_dxf", { path, options });
+export const pasteClipboardImage = (): Promise<string> => invoke<string>("paste_clipboard_image");
+export const copySvgToClipboard = (options: ExportOptions): Promise<number> => invoke<number>("copy_svg_to_clipboard", { options });
 export const saveSeparations = (dir: string, baseName: string, kind: "svg" | "pdf" | "both", options: ExportOptions): Promise<string[]> =>
 	invoke<string[]>("save_separations", { dir, baseName, kind, options });
+
+export const getAppSettings = (): Promise<AppSettings> => invoke<AppSettings>("get_app_settings");
+export const saveAppSettings = (settings: AppSettings): Promise<AppSettings> => invoke<AppSettings>("save_app_settings", { settings });
 
 export const getLicenseStatus = (): Promise<LicenseStatus> => invoke<LicenseStatus>("license_status");
 export const activateLicense = (key: string): Promise<LicenseStatus> => invoke<LicenseStatus>("activate_license", { key });
@@ -186,6 +249,8 @@ export const scanFolder = (dir: string, includeSubfolders: boolean): Promise<str
 export const collectDroppedImages = (paths: string[], includeSubfolders = false): Promise<string[]> => invoke<string[]>("collect_dropped_images", { paths, includeSubfolders });
 export const runBatch = (config: UiBatchConfig): Promise<BatchSummary> => invoke<BatchSummary>("run_batch", { config });
 export const cancelBatch = (): Promise<void> => invoke<void>("cancel_batch");
+export const startWatchFolder = (config: UiWatchConfig): Promise<void> => invoke<void>("start_watch_folder", { config });
+export const stopWatchFolder = (): Promise<void> => invoke<void>("stop_watch_folder");
 export const openFolder = (dir: string): Promise<void> => invoke<void>("open_folder", { dir });
 
 export const sidecarAvailable = (): Promise<boolean> => invoke<boolean>("sidecar_available");
@@ -196,21 +261,21 @@ export async function pickImageOrProject(): Promise<string | null> {
 		multiple: false,
 		directory: false,
 		filters: [
-			{ name: "Gambar & Proyek Trasea", extensions: [...IMAGE_EXTENSIONS, "trasea"] },
-			{ name: "Gambar", extensions: IMAGE_EXTENSIONS },
-			{ name: "Proyek Trasea", extensions: ["trasea"] },
+			{ name: "Images & Trasea Projects", extensions: [...IMAGE_EXTENSIONS, "trasea"] },
+			{ name: "Images", extensions: IMAGE_EXTENSIONS },
+			{ name: "Trasea Project", extensions: ["trasea"] },
 		],
 	});
 	return typeof r === "string" ? r : null;
 }
 
 export async function pickImage(): Promise<string | null> {
-	const r = await open({ multiple: false, directory: false, filters: [{ name: "Gambar", extensions: IMAGE_EXTENSIONS }] });
+	const r = await open({ multiple: false, directory: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
 	return typeof r === "string" ? r : null;
 }
 
 export async function pickImages(): Promise<string[]> {
-	const r = await open({ multiple: true, directory: false, filters: [{ name: "Gambar", extensions: IMAGE_EXTENSIONS }] });
+	const r = await open({ multiple: true, directory: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
 	if (Array.isArray(r)) return r.filter((x): x is string => typeof x === "string");
 	return typeof r === "string" ? [r] : [];
 }
@@ -221,16 +286,25 @@ export async function pickFolder(title?: string): Promise<string | null> {
 }
 
 export async function pickSavePath(kind: ExportKind, suggested: string): Promise<string | null> {
-	const label = kind === "ase" ? "Adobe Swatch Exchange" : kind === "eps" ? "Encapsulated PostScript" : kind.toUpperCase();
+	const label =
+		kind === "ase"
+			? "Adobe Swatch Exchange"
+			: kind === "eps"
+				? "Encapsulated PostScript"
+				: kind === "dxf"
+					? "AutoCAD DXF R12"
+					: kind.toUpperCase();
 	return save({ defaultPath: suggested, filters: [{ name: label, extensions: [kind] }] });
 }
 
 export async function pickProjectSavePath(suggested: string): Promise<string | null> {
-	return save({ defaultPath: suggested, filters: [{ name: "Proyek Trasea", extensions: ["trasea"] }] });
+	return save({ defaultPath: suggested, filters: [{ name: "Trasea Project", extensions: ["trasea"] }] });
 }
 
 export const onProgress = (fn: (stage: string, fraction: number) => void) => listen<{ stage: string; fraction: number }>("progress", e => fn(e.payload.stage, e.payload.fraction));
 export const onBatchProgress = (fn: (prog: BatchProgress) => void) => listen<BatchProgress>("batch-progress", e => fn(e.payload));
+export const onWatchEvent = (fn: (ev: WatchEvent) => void) => listen<WatchEvent>("watch-event", e => fn(e.payload));
+export const onWatchStopped = (fn: (ev: WatchStoppedEvent) => void) => listen<WatchStoppedEvent>("watch-stopped", e => fn(e.payload));
 
 export const onDrop = async (fn: (paths: string[]) => void, setOver: (over: boolean) => void) =>
 	getCurrentWebview().onDragDropEvent(e => {
