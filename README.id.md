@@ -45,7 +45,7 @@ Seluruh 9 fitur baru 1.1.0 **terbuka tanpa memerlukan kunci Pro**:
 
 ## Pakai
 
-1. Jalankan installer (`Trasea_1.1.0_x64-setup.exe`, per pengguna, tanpa admin) lalu buka Trasea.
+1. Unduh dan ekstrak [`releases/Trasea_1.1.0_x64-setup.zip`](releases/Trasea_1.1.0_x64-setup.zip), jalankan `Trasea_1.1.0_x64-setup.exe` (per pengguna, tanpa admin), lalu buka Trasea.
 2. Ganti bahasa (`ID | EN`) kapan saja melalui tombol di bilah atas.
 3. Klik **Coba contoh gambar**, tekan `Ctrl+V` untuk menempel dari clipboard, seret gambar/proyek `.trasea`/folder ke jendela, atau klik **Buka gambar / proyek…**.
 4. Gunakan **Potong & Putar**, **Outline (`Ctrl+Y`)**, ikon mata layer, **Mode Produksi** (**Standar**, **Sablon**, **Cutting / Bordir**, **Gradasi**), Preset Kustom, kuas, atau palet (`Ctrl+Z`/`Ctrl+Shift+Z` untuk Undo/Redo, `Ctrl+S` untuk simpan `.trasea`).

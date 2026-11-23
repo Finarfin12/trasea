@@ -45,7 +45,7 @@ All 9 new 1.1.0 features are **open without requiring a Pro key**:
 
 ## Use
 
-1. Run the installer (`Trasea_1.1.0_x64-setup.exe`, per-user, no admin needed) and launch Trasea.
+1. Download and extract [`releases/Trasea_1.1.0_x64-setup.zip`](releases/Trasea_1.1.0_x64-setup.zip), run `Trasea_1.1.0_x64-setup.exe` (per-user, no admin needed), and launch Trasea.
 2. Switch language (`ID | EN`) anytime in the header.
 3. Click **Try sample image**, press `Ctrl+V` to paste from clipboard, drag an image/`.trasea` project/folder onto the window, or click **Open image / project…**.
 4. Use **Crop & Rotate**, **Outline (`Ctrl+Y`)**, layer eye toggles, **Production Mode** (**Standard**, **Screen Print**, **Cut / Embroidery**, **Shading**), Custom Presets, brush strokes, or palette (`Ctrl+Z`/`Ctrl+Shift+Z` to undo/redo, `Ctrl+S` to save `.trasea`).
