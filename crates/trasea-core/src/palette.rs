@@ -199,6 +199,8 @@ pub fn remove_small_regions_ex(labels: &mut [u8], w: usize, h: usize, min_area: 
     let mut comp = vec![0u32; w * h];
     let mut stack = Vec::new();
     let mut regions: Vec<(usize, Vec<usize>)> = Vec::new(); // (label, pixels) for small ones
+    // the largest region of every colour: a colour the designer kept on purpose keeps at least that one
+    let mut max_comp = vec![0usize; n_labels.max(256)];
     let mut next = 0u32;
     for s in 0..w * h {
         if comp[s] != 0 {
@@ -231,6 +233,7 @@ pub fn remove_small_regions_ex(labels: &mut [u8], w: usize, h: usize, min_area: 
                 push(i + w);
             }
         }
+        max_comp[l as usize] = max_comp[l as usize].max(pix.len());
         if pix.len() < wide {
             regions.push((l as usize, pix));
         }
@@ -262,7 +265,7 @@ pub fn remove_small_regions_ex(labels: &mut [u8], w: usize, h: usize, min_area: 
             // the less the region differs from what surrounds it, the larger it may be and still be merged away
             let de = (d2(&plab[l], &plab[best])).sqrt() as f64;
             let t = ((30.0 - de) / 30.0).clamp(0.0, 1.0);
-            let factor = if protect.get(l).copied().unwrap_or(false) {
+            let factor = if protect.get(l).copied().unwrap_or(false) && pix.len() >= max_comp[l] {
                 0.1
             } else if let Some(z) = zones {
                 let (mut nd, mut ns) = (0usize, 0usize);

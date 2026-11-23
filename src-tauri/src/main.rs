@@ -192,14 +192,31 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
     Ok(result.0)
 }
 
-/// Colour of one pixel of the open picture (the eyedropper): exact, from the loaded image in memory.
+/// Colour under the eyedropper: the median of the 5x5 pixels around the click, from the loaded image in memory.
 #[tauri::command]
 fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
     let c = guard.as_ref().ok_or("Open a picture first.")?;
     let img = &c.prep.src;
-    let p = img.get_pixel(x.min(img.width() - 1), y.min(img.height() - 1));
-    Ok(hex([p[0], p[1], p[2]]))
+    // the median of the 5x5 pixels around the click (per channel): a click on an edge or a speck of JPEG noise still gives
+    // the colour of the area, not a blend of two colours
+    let (cx, cy) = (x.min(img.width() - 1) as i64, y.min(img.height() - 1) as i64);
+    let mut ch: [Vec<u8>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for dy in -2..=2i64 {
+        for dx in -2..=2i64 {
+            let (px, py) = ((cx + dx).clamp(0, img.width() as i64 - 1) as u32, (cy + dy).clamp(0, img.height() as i64 - 1) as u32);
+            let p = img.get_pixel(px, py);
+            for k in 0..3 {
+                ch[k].push(p[k]);
+            }
+        }
+    }
+    let med = |v: &mut Vec<u8>| {
+        v.sort_unstable();
+        v[v.len() / 2]
+    };
+    let [mut r, mut g, mut b] = ch;
+    Ok(hex([med(&mut r), med(&mut g), med(&mut b)]))
 }
 
 /// Export options chosen in the UI.
