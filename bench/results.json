@@ -1,47 +1,47 @@
 [
   {
     "file": "a5ace655e0efac144731489e3c42ec6f",
-    "kb": 65,
-    "mae": 8.006258238493476,
-    "nodes": 1726,
+    "kb": 62,
+    "mae": 8.011522834686952,
+    "nodes": 1621,
     "paths": 106,
     "recall": 0.8596810014132849,
-    "secs": 0.5419579,
+    "secs": 0.5324729,
     "target_nodes": 1903,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "Coastal Drift",
-    "kb": 57,
-    "mae": 4.6309398148263385,
-    "nodes": 1517,
+    "kb": 52,
+    "mae": 4.590908399481685,
+    "nodes": 1346,
     "paths": 95,
-    "recall": 0.8703923900118906,
-    "secs": 1.3077641,
+    "recall": 0.872490732321466,
+    "secs": 1.2416456,
     "target_nodes": 2208,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "d92c7c3eca71dddd688db2988652f362",
-    "kb": 121,
-    "mae": 7.324766111633217,
-    "nodes": 3313,
+    "kb": 113,
+    "mae": 7.285076658488963,
+    "nodes": 3033,
     "paths": 254,
-    "recall": 0.7674191182462717,
-    "secs": 1.3160046,
+    "recall": 0.7678537473175236,
+    "secs": 1.236791,
     "target_nodes": 4337,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "Drifting Leaf",
-    "kb": 92,
-    "mae": 6.855327380977808,
-    "nodes": 2562,
+    "kb": 88,
+    "mae": 6.850596891559683,
+    "nodes": 2427,
     "paths": 158,
-    "recall": 0.8724734319649927,
-    "secs": 1.9967487,
+    "recall": 0.8721400291727444,
+    "secs": 1.9523551000000001,
     "target_nodes": 6159,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "logo taekwondo",
@@ -50,31 +50,31 @@
     "nodes": 94,
     "paths": 2,
     "recall": 0.0,
-    "secs": 1.1694892000000001,
+    "secs": 1.0853666,
     "target_nodes": 113,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "logo atrione golf",
-    "kb": 17,
-    "mae": 2.2599094807844162,
-    "nodes": 666,
+    "kb": 15,
+    "mae": 2.2550202972579205,
+    "nodes": 558,
     "paths": 20,
     "recall": 0.6447337278106509,
-    "secs": 1.8150511,
+    "secs": 1.87947,
     "target_nodes": 413,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "Logo_Bangga_Buatan_Indonesia",
-    "kb": 19,
-    "mae": 1.2572601851864484,
-    "nodes": 537,
+    "kb": 15,
+    "mae": 1.2241969907419392,
+    "nodes": 429,
     "paths": 3,
     "recall": 0.0,
-    "secs": 0.9025593,
+    "secs": 0.8430914,
     "target_nodes": 645,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "Logo of Ari Reliyanto 1",
@@ -83,20 +83,20 @@
     "nodes": 163,
     "paths": 12,
     "recall": 0.8267543859649122,
-    "secs": 1.1461157,
+    "secs": 1.0652086,
     "target_nodes": null,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "logo kos kausar -Recovered-",
-    "kb": 100,
-    "mae": 5.028689910765076,
-    "nodes": 2349,
+    "kb": 97,
+    "mae": 5.020456966032735,
+    "nodes": 2254,
     "paths": 394,
-    "recall": 0.7916903121199838,
-    "secs": 1.1318034,
+    "recall": 0.7920956627482773,
+    "secs": 1.104869,
     "target_nodes": null,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   },
   {
     "file": "atrione takewondo",
@@ -105,8 +105,8 @@
     "nodes": 96,
     "paths": 2,
     "recall": 0.0,
-    "secs": 0.8320341,
+    "secs": 0.8050453,
     "target_nodes": null,
-    "variant": "Vektora (median, no AI)"
+    "variant": "Trasea (median, no AI)"
   }
 ]

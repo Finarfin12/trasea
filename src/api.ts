@@ -14,6 +14,28 @@ export interface Options {
 	symmetry: Symmetry;
 	/** warn about suspected text areas */
 	detectText: boolean;
+	/** the designer's own palette (#RRGGBB), null = automatic */
+	customPalette: string[] | null;
+	/** node budget, null = automatic */
+	targetNodes: number | null;
+	/** correction brush strokes in source pixels */
+	brushStrokes: BrushStroke[];
+}
+
+export interface BrushStroke {
+	kind: "detail" | "smooth";
+	/** radius in source pixels */
+	radius: number;
+	points: Array<[number, number]>;
+}
+
+/** Node density per grid cell (row-major). Preview overlay only; never exported. */
+export interface NodeHeatmap {
+	cols: number;
+	rows: number;
+	cells: number[];
+	maxCell: number;
+	hotCells: number;
 }
 
 export type Symmetry = "off" | "auto" | "vertical" | "horizontal";
@@ -44,11 +66,20 @@ export interface Processed {
 	primitives: number;
 	symmetryApplied: string | null;
 	textRegions: TextRegion[];
+	heatmap: NodeHeatmap;
+	/** smoothness 0..100 that was really used */
+	effectiveSmooth: number;
+	budgetMet: boolean | null;
+	/** loading and cleaning were not run again */
+	reused: boolean;
 }
 
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
+/** Eyedropper: the exact colour of one pixel of the open picture (source pixels). */
+export const pickColor = (x: number, y: number): Promise<string> => invoke<string>("pick_color", { x, y });
+
 export interface ExportOptions {
 	linesAs: "stroke" | "shape";
 	trapPt: number;

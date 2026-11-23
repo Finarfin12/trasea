@@ -228,12 +228,20 @@ pub fn drop_hidden_duplicates(layers: &mut [Layer]) -> usize {
         // even depth = outer outline (not inside an odd number of other contours of the same layer)
         let polys: Vec<Vec<(f64, f64)>> = layer.contours.iter().map(flatten).collect();
         let boxes: Vec<_> = polys.iter().map(|p| bbox(p)).collect();
+        // a solid island: an outer outline (even depth) with nothing inside it. An outline with a hole is not covering
+        // what lies beneath the hole, and dropping it would leave the hole alone, so those are never touched.
         let outer: Vec<bool> = (0..polys.len())
             .map(|i| {
                 let mut depth = 0;
                 for o in 0..polys.len() {
-                    if o != i && boxes[o].0 <= boxes[i].0 && boxes[o].1 <= boxes[i].1 && boxes[o].2 >= boxes[i].2 && boxes[o].3 >= boxes[i].3 && !polys[i].is_empty() && point_in(polys[i][0], &polys[o]) {
+                    if o == i || polys[i].is_empty() || polys[o].is_empty() {
+                        continue;
+                    }
+                    if boxes[o].0 <= boxes[i].0 && boxes[o].1 <= boxes[i].1 && boxes[o].2 >= boxes[i].2 && boxes[o].3 >= boxes[i].3 && point_in(polys[i][0], &polys[o]) {
                         depth += 1;
+                    }
+                    if boxes[i].0 <= boxes[o].0 && boxes[i].1 <= boxes[o].1 && boxes[i].2 >= boxes[o].2 && boxes[i].3 >= boxes[o].3 && point_in(polys[o][0], &polys[i]) {
+                        return false;
                     }
                 }
                 depth % 2 == 0

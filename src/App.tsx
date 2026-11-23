@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Licenses from "./Licenses";
-import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
+import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickColor, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type BrushStroke, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
 
-const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false, detectPrimitives: true, symmetry: "off", detectText: true };
+const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false, detectPrimitives: true, symmetry: "off", detectText: true, customPalette: null, targetNodes: null, brushStrokes: [] };
+
+type Tool = "pan" | "detail" | "smooth" | "pipet";
+type TargetChoice = "auto" | "500" | "1000" | "2000" | "custom";
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
 const isImage = (p: string): boolean => IMAGE_EXTENSIONS.includes((p.split(".").pop() ?? "").toLowerCase());
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : "Terjadi kesalahan yang tidak dikenal.");
+const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+const heatColor = (r: number): string => `hsl(${Math.round(120 * (1 - Math.min(1, Math.max(0, r))))}, 90%, 50%)`;
 
 export default function App() {
 	const [path, setPath] = useState<string | null>(null);
@@ -25,20 +30,43 @@ export default function App() {
 	const [checker, setChecker] = useState(false);
 	/** Show boxes around suspected text areas in the preview (off by default; never exported). */
 	const [showText, setShowText] = useState(false);
+	/** Node heatmap over the preview (off by default; never exported). */
+	const [showHeat, setShowHeat] = useState(false);
+	const [tool, setTool] = useState<Tool>("pan");
+	const [brushSize, setBrushSize] = useState(40);
+	const [strokes, setStrokes] = useState<BrushStroke[]>([]);
+	const [live, setLive] = useState<BrushStroke | null>(null);
+	/** The designer's palette; null = automatic. Changes wait for "Terapkan ulang". */
+	const [palette, setPalette] = useState<string[] | null>(null);
+	const [targetChoice, setTargetChoice] = useState<TargetChoice>("auto");
+	const [customTarget, setCustomTarget] = useState("800");
 	const [hasSidecar, setHasSidecar] = useState(true);
 	const [showLicenses, setShowLicenses] = useState<string | null>(null);
+	/** What the last conversion was made with, to show that there are changes that are not applied yet. */
+	const [appliedSig, setAppliedSig] = useState("");
 	const busyRef = useRef(false);
 	const optsRef = useRef(opts);
 	optsRef.current = opts;
+	const overlayRef = useRef<SVGSVGElement | null>(null);
+	const liveRef = useRef<BrushStroke | null>(null);
+
+	const targetNodes = useMemo((): number | null => {
+		if (targetChoice === "auto") return null;
+		const n = targetChoice === "custom" ? Number.parseInt(customTarget, 10) : Number.parseInt(targetChoice, 10);
+		return Number.isFinite(n) && n > 0 ? n : null;
+	}, [targetChoice, customTarget]);
+
+	/** All the settings that change the result, as one string. */
+	const signature = useMemo(() => JSON.stringify({ ...opts, customPalette: palette, targetNodes, brushStrokes: strokes }), [opts, palette, targetNodes, strokes]);
 
 	useEffect(() => {
 		void sidecarAvailable().then(setHasSidecar);
-		const subs: Array<Promise<() => void>> = [onProgress((s, f) => { setStage(s); setFraction(f); }), onDrop(paths => { const p = paths.find(isImage); if (p) void run(p); else setError("File itu bukan gambar yang didukung (PNG, JPG, WEBP, BMP)."); }, setOver)];
+		const subs: Array<Promise<() => void>> = [onProgress((s, f) => { setStage(s); setFraction(f); }), onDrop(paths => { const p = paths.find(isImage); if (p) openPicture(p); else setError("File itu bukan gambar yang didukung (PNG, JPG, WEBP, BMP)."); }, setOver)];
 		return () => { subs.forEach(s => void s.then(u => u())); };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	const run = useCallback(async (p: string, o: Options = optsRef.current) => {
+	const run = useCallback(async (p: string, o: Options) => {
 		if (busyRef.current) return;
 		busyRef.current = true;
 		setBusy(true);
@@ -48,7 +76,9 @@ export default function App() {
 		setFraction(0);
 		setPath(p);
 		try {
-			setResult(await processImage(p, o));
+			const r = await processImage(p, o);
+			setResult(r);
+			setAppliedSig(JSON.stringify(o));
 		} catch (e) {
 			setError(errText(e));
 		} finally {
@@ -57,9 +87,22 @@ export default function App() {
 		}
 	}, []);
 
+	/** A new picture: brush strokes and palette belong to the old one. */
+	const openPicture = (p: string) => {
+		setStrokes([]);
+		setLive(null);
+		setPalette(null);
+		setTool("pan");
+		void run(p, { ...optsRef.current, customPalette: null, brushStrokes: [] });
+	};
+
+	const apply = () => {
+		if (path) void run(path, { ...opts, customPalette: palette, targetNodes, brushStrokes: strokes });
+	};
+
 	const choose = async () => {
 		const p = await pickImage();
-		if (p) void run(p);
+		if (p) openPicture(p);
 	};
 
 	const exportAs = async (kind: ExportKind) => {
@@ -86,10 +129,80 @@ export default function App() {
 	const svgUrl = useMemo(() => (result ? URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })) : ""), [result]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);
 
+	// ---- palette editing (the change waits for "Terapkan ulang")
+	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
+	const removeColor = (hex: string) => {
+		const base = currentPalette();
+		if (base.length <= 2) return;
+		setPalette(base.filter(c => c !== hex));
+	};
+	/** Merge into the nearest other colour: removing a colour maps its pixels to the nearest colour that is left. */
+	const nearestOf = (hex: string): string | null => {
+		const others = currentPalette().filter(c => c !== hex);
+		if (others.length === 0) return null;
+		const a = rgb(hex);
+		let best: string | null = others[0] ?? null;
+		let bd = Infinity;
+		for (const o of others) {
+			const b = rgb(o);
+			const d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+			if (d < bd) { bd = d; best = o; }
+		}
+		return best;
+	};
+	const addColor = (hex: string) => {
+		const base = currentPalette();
+		if (base.includes(hex)) { setInfo(`Warna ${hex} sudah ada di palet.`); return; }
+		setPalette([...base, hex]);
+		setInfo(`Warna ${hex} ditambahkan. Klik Terapkan ulang untuk memakainya.`);
+	};
+
+	// ---- painting on the preview
+	const toImage = (e: ReactPointerEvent<SVGSVGElement>): [number, number] => {
+		const r = (overlayRef.current as SVGSVGElement).getBoundingClientRect();
+		return [((e.clientX - r.left) / r.width) * (result?.width ?? 1), ((e.clientY - r.top) / r.height) * (result?.height ?? 1)];
+	};
+	const onDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+		if (!result || busy || e.button !== 0) return;
+		const [x, y] = toImage(e);
+		if (tool === "pipet") {
+			void pickColor(Math.round(x), Math.round(y)).then(addColor).catch(err => setError(errText(err)));
+			return;
+		}
+		if (tool === "detail" || tool === "smooth") {
+			e.currentTarget.setPointerCapture(e.pointerId);
+			const s: BrushStroke = { kind: tool, radius: brushSize, points: [[x, y]] };
+			liveRef.current = s;
+			setLive(s);
+		}
+	};
+	const onMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+		const s = liveRef.current;
+		if (!s) return;
+		const [x, y] = toImage(e);
+		const last = s.points[s.points.length - 1];
+		if (!last) return;
+		if (Math.hypot(x - last[0], y - last[1]) < 2) return;
+		const next: BrushStroke = { ...s, points: [...s.points, [x, y]] };
+		liveRef.current = next;
+		setLive(next);
+	};
+	const onUp = () => {
+		const s = liveRef.current;
+		liveRef.current = null;
+		setLive(null);
+		if (s) setStrokes(list => [...list, s]);
+	};
+
+	const dirty = result !== null && appliedSig !== "" && JSON.stringify({ ...opts, customPalette: palette, targetNodes, brushStrokes: strokes }) !== appliedSig;
+	const paletteDirty = result !== null && palette !== null && JSON.stringify(palette) !== JSON.stringify(result.palette);
+	const painting = tool === "detail" || tool === "smooth";
+	const shown = live ? [...strokes, live] : strokes;
+
 	return (
-		<div className={`app ${over ? "dragging" : ""}`}>
+		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.3.0 · offline</small></div>
+				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.4.0 · offline</small></div>
 				<div className="row">
 					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
 					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>
@@ -112,17 +225,58 @@ export default function App() {
 							<div className="muted">Pembersihan AI bisa memakan 10–40 detik pada gambar besar.</div>
 						</div>
 					)}
-					{result && (
-						<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
-							<img className="layer" src={result.original} alt="Gambar asli" draggable={false} />
-							<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
-							<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
-							{showText && result.textRegions.map((r, i) => (
-								<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
-							))}
-							<span className="tag left">Asli</span>
-							<span className="tag right">Vektor</span>
-							<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" />
+					{result && !busy && (
+						<div className="stagebox">
+							<div className="toolbar" role="toolbar" aria-label="Alat kanvas">
+								<div className="group" role="group" aria-label="Mode">
+									<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Geser</button>
+									<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">Kuas Detail</button>
+									<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">Kuas Halus</button>
+									<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>Pipet Warna</button>
+								</div>
+								{painting && (
+									<div className="group">
+										<label className="brushsize" htmlFor="brush">Ukuran <b>{brushSize}</b> px</label>
+										<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
+										<button onClick={() => setStrokes(s => s.slice(0, -1))} disabled={strokes.length === 0}>Undo</button>
+										<button onClick={() => setStrokes([])} disabled={strokes.length === 0}>Bersihkan sapuan</button>
+									</div>
+								)}
+								<div className="group" role="group" aria-label="Overlay">
+									<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>Heatmap node</button>
+									<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>Latar kotak-kotak</button>
+								</div>
+							</div>
+							{tool === "pipet" && <div className="hint">Klik pada gambar untuk mengambil warna dan menambahkannya ke palet.</div>}
+							{painting && <div className="hint">Sapukan di atas gambar: {tool === "detail" ? "area biru memakai kurva lebih rapat (lebih detail)" : "area oranye dirampingkan (lebih sedikit node)"}. Lalu klik Terapkan ulang.</div>}
+							<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
+								<img className="layer" src={result.original} alt="Gambar asli" draggable={false} />
+								<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
+								<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
+								{showText && result.textRegions.map((r, i) => (
+									<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
+								))}
+								<svg ref={overlayRef} className="overlay" viewBox={`0 0 ${result.width} ${result.height}`} preserveAspectRatio="none" aria-hidden="true" data-testid="overlay"
+									style={{ pointerEvents: tool === "pan" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
+									onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+									{showHeat && (() => {
+										const hm = result.heatmap;
+										const cell = Math.max(result.width, result.height) / 32;
+										return hm.cells.map((v, i) => v > 0 ? <rect key={i} className="heatcell" x={(i % hm.cols) * cell} y={Math.floor(i / hm.cols) * cell} width={cell} height={cell} fill={heatColor(v / Math.max(1, hm.maxCell))} fillOpacity={0.25 + 0.35 * (v / Math.max(1, hm.maxCell))} /> : null);
+									})()}
+									{shown.map((s, i) => !s.points[0] ? null : s.points.length === 1
+										? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
+										: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
+								</svg>
+								<span className="tag left">Asli</span>
+								<span className="tag right">Vektor</span>
+								<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
+							</div>
+							{showHeat && (
+								<div className="legend" aria-label="Legenda heatmap">
+									<span>sedikit node</span><span className="ramp" aria-hidden="true" /><span>padat ({result.heatmap.maxCell} node/kotak)</span>
+								</div>
+							)}
 						</div>
 					)}
 				</section>
@@ -134,6 +288,16 @@ export default function App() {
 					<label htmlFor="smooth">Kehalusan <b>{opts.smooth < 34 ? "detail" : opts.smooth > 66 ? "halus" : "sedang"}</b></label>
 					<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) })} />
 					<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
+					<label htmlFor="target">Target node (maks)</label>
+					<select id="target" value={targetChoice} onChange={e => setTargetChoice(e.target.value as TargetChoice)}>
+						<option value="auto">Otomatis</option>
+						<option value="500">500</option>
+						<option value="1000">1000</option>
+						<option value="2000">2000</option>
+						<option value="custom">Angka sendiri…</option>
+					</select>
+					{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label="Target node" />}
+					<div className="hint">Trasea menghaluskan hasil sampai jumlah node masuk anggaran, tanpa membersihkan gambar ulang.</div>
 					<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
 					<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked })} /> Kenali bentuk dasar</label>
 					<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
@@ -148,11 +312,30 @@ export default function App() {
 					<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
 					<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
 					{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
-					<button className="primary" onClick={() => path && void run(path, opts)} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
-					<label className="check"><input type="checkbox" checked={checker} onChange={e => setChecker(e.target.checked)} /> Latar kotak-kotak</label>
+					<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
+					{dirty && <div className="pending" role="status">Perubahan belum diterapkan{palette !== null || strokes.length > 0 ? ` (${[palette !== null ? "palet" : "", strokes.length > 0 ? `${strokes.length} sapuan` : ""].filter(Boolean).join(", ")})` : ""}.</div>}
 
 					{result && (
 						<>
+							<div className="palette-head">
+								<h2>Palet</h2>
+								<div className="row">
+									<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(t => (t === "pipet" ? "pan" : "pipet"))}>+ Pipet</button>
+									<button className="small" onClick={() => setPalette(null)} disabled={palette === null}>Reset palet</button>
+								</div>
+							</div>
+							<ul className="palette" aria-label="Palet warna">
+								{currentPalette().map(c => (
+									<li key={c} className="swatch">
+										<span className="chip" style={{ background: c }} aria-hidden="true" />
+										<code>{c}</code>
+										<button className="small" title="Gabung ke warna terdekat" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2 || nearestOf(c) === null} aria-label={`Gabung ${c} ke ${nearestOf(c) ?? "-"}`}>Gabung</button>
+										<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`Hapus ${c}`}>Hapus</button>
+									</li>
+								))}
+							</ul>
+							<div className="hint">Gabung dan Hapus memindahkan piksel warna itu ke warna terdekat yang tersisa (minimal 2 warna). {paletteDirty ? "Palet berubah, klik Terapkan ulang." : palette !== null ? "Palet manual dipakai." : "Palet otomatis."}</div>
+
 							<h2>Statistik</h2>
 							<dl className="stats">
 								<dt>Path</dt><dd>{result.paths}</dd>
@@ -160,11 +343,11 @@ export default function App() {
 								<dt>Ukuran SVG</dt><dd>{fmtKb(result.bytes)}</dd>
 								<dt>Bentuk dasar</dt><dd>{result.primitives}</dd>
 								{result.symmetryApplied && <><dt>Simetri</dt><dd>{result.symmetryApplied === "vertical" ? "kiri = kanan" : "atas = bawah"}</dd></>}
+								{result.budgetMet !== null && <><dt>Target node</dt><dd>{result.budgetMet ? "tercapai" : "tidak tercapai"}</dd><dt>Kehalusan dipakai</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
 								<dt>Selisih warna (MAE)</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
-								<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk</dd>
+								<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk{result.reused ? " (tanpa muat/bersihkan ulang)" : ""}</dd>
 								<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
 							</dl>
-							<div className="swatches" aria-label="Palet">{result.palette.map(c => <span key={c} title={c} style={{ background: c }} />)}</div>
 							<h2>Ekspor</h2>
 							<label htmlFor="linesAs">Garis tipis sebagai</label>
 							<select id="linesAs" value={exp.linesAs} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>

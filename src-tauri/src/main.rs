@@ -4,15 +4,27 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use trasea_core::export::{palette_of, to_ase, to_svg, Doc, ExportOptions, LinesAs};
-use trasea_core::{export, hex, load, vectorize, Params, SymmetryMode, TextRegion};
+use trasea_core::{export, hex, load, prepare, vectorize_prepared, BrushStroke, NodeHeatmap, Params, PreparedImage, SymmetryMode, TextRegion};
+
+/// The expensive first half of the conversion (loading, thin lines, clean / Real-ESRGAN) for the picture that is open.
+/// Changing the palette, the brush strokes or the node target runs only the second half again.
+struct CachedPrep {
+    path: String,
+    ai_clean: bool,
+    keep_lines: bool,
+    prep: Arc<PreparedImage>,
+    /// The loaded picture as a PNG data URL (encoded once).
+    original: String,
+}
 
 #[derive(Default)]
 struct Last {
     doc: Mutex<Option<Doc>>,
+    prepared: Mutex<Option<CachedPrep>>,
 }
 
 #[derive(Deserialize)]
@@ -29,6 +41,15 @@ struct UiParams {
     symmetry: String,
     /// Warn when the picture seems to hold text.
     detect_text: bool,
+    /// The designer's own palette as `#RRGGBB` strings (empty / absent = automatic).
+    #[serde(default)]
+    custom_palette: Option<Vec<String>>,
+    /// Node budget (absent = automatic).
+    #[serde(default)]
+    target_nodes: Option<usize>,
+    /// Correction brush strokes in source pixels.
+    #[serde(default)]
+    brush_strokes: Vec<BrushStroke>,
 }
 
 #[derive(Serialize)]
@@ -54,6 +75,14 @@ struct Processed {
     symmetry_applied: Option<String>,
     /// Suspected text areas in source pixels. Only for the preview; never exported.
     text_regions: Vec<TextRegion>,
+    /// Node density for the preview overlay. Never exported.
+    heatmap: NodeHeatmap,
+    /// Smoothness (0..100) that was really used (differs from the slider when a node target was applied).
+    effective_smooth: f32,
+    /// `true` / `false` when a node target was given and met / not met.
+    budget_met: Option<bool>,
+    /// The picture was already prepared: loading and cleaning were not run again.
+    reused: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -80,13 +109,30 @@ fn png_data_url(img: &image::RgbImage) -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf)))
 }
 
+/// `#RRGGBB` to a colour.
+fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(h, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
 #[tauri::command]
 async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
     let sidecar = sidecar_dir(&app);
     let handle = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
+    // take what is cached for this picture (if anything) out of the lock before the long work starts
+    let cached: Option<(Arc<PreparedImage>, String)> = {
+        let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
+        guard.as_ref().filter(|c| c.path == path && c.ai_clean == params.ai_clean && c.keep_lines == params.keep_lines).map(|c| (c.prep.clone(), c.original.clone()))
+    };
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc, Option<CachedPrep>), String> {
         let t0 = Instant::now();
-        let img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
+        let progress = |stage: &str, fraction: f32| {
+            let _ = handle.emit("progress", ProgressEvent { stage: stage.to_string(), fraction });
+        };
         let p = Params {
             colors: params.colors.clamp(2, 16),
             smooth: (params.smooth / 100.0).clamp(0.0, 1.0),
@@ -98,16 +144,26 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             detect_primitives: params.detect_primitives,
             symmetry: SymmetryMode::parse(&params.symmetry).unwrap_or_default(),
             detect_text: params.detect_text,
+            custom_palette: params.custom_palette.as_ref().map(|v| v.iter().filter_map(|s| parse_hex(s)).collect::<Vec<_>>()).filter(|v| v.len() >= 2),
+            target_nodes: params.target_nodes.filter(|n| *n > 0),
+            brush_strokes: params.brush_strokes.clone(),
         };
-        let out = vectorize(&img, &p, &|stage, fraction| {
-            let _ = handle.emit("progress", ProgressEvent { stage: stage.to_string(), fraction });
-        })
-        .map_err(|e| e.to_string())?;
+        let (prep, original, reused, fresh) = match cached {
+            Some((prep, original)) => (prep, original, true, None),
+            None => {
+                let img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
+                let original = png_data_url(&img)?;
+                let prep = Arc::new(prepare(img, &p, &progress).map_err(|e| e.to_string())?);
+                let entry = CachedPrep { path: path.clone(), ai_clean: params.ai_clean, keep_lines: params.keep_lines, prep: prep.clone(), original: original.clone() };
+                (prep, original, false, Some(entry))
+            }
+        };
+        let out = vectorize_prepared(&prep, &p, &progress).map_err(|e| e.to_string())?;
         let processed = Processed {
             svg: out.svg.clone(),
-            original: png_data_url(&img)?,
-            width: img.width(),
-            height: img.height(),
+            original,
+            width: prep.src.width(),
+            height: prep.src.height(),
             paths: out.stats.paths,
             nodes: out.stats.nodes,
             bytes: out.stats.bytes,
@@ -120,13 +176,30 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             primitives: out.stats.primitives,
             symmetry_applied: out.symmetry_applied.clone(),
             text_regions: out.text_regions.clone(),
+            heatmap: out.heatmap.clone(),
+            effective_smooth: out.effective_smooth * 100.0,
+            budget_met: out.budget_met,
+            reused,
         };
-        Ok((processed, out.doc))
+        Ok((processed, out.doc, fresh))
     })
     .await
     .map_err(|e| format!("the conversion stopped unexpectedly: {e}"))??;
     *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    if let Some(entry) = result.2 {
+        *last.prepared.lock().map_err(|_| "internal error".to_string())? = Some(entry);
+    }
     Ok(result.0)
+}
+
+/// Colour of one pixel of the open picture (the eyedropper): exact, from the loaded image in memory.
+#[tauri::command]
+fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
+    let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
+    let c = guard.as_ref().ok_or("Open a picture first.")?;
+    let img = &c.prep.src;
+    let p = img.get_pixel(x.min(img.width() - 1), y.min(img.height() - 1));
+    Ok(hex([p[0], p[1], p[2]]))
 }
 
 /// Export options chosen in the UI.
@@ -173,7 +246,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Last::default())
-        .invoke_handler(tauri::generate_handler![process, save_file, sidecar_available, third_party_licenses])
+        .invoke_handler(tauri::generate_handler![process, pick_color, save_file, sidecar_available, third_party_licenses])
         .run(tauri::generate_context!())
         .expect("error while running Trasea");
 }

@@ -2,7 +2,7 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop Windows offline** yang mengubah ilustrasi flat atau logo (JPG/PNG) menjadi **SVG atau PDF** bersih dengan node yang rapi, supaya terbuka tanpa peringatan di Affinity dan Adobe Illustrator. Prototipe 0.3.0 ("Geometri rapi"). Repo lokal, tanpa server, tanpa akun, **tanpa permintaan jaringan**.
+**Aplikasi desktop Windows offline** yang mengubah ilustrasi flat atau logo (JPG/PNG) menjadi **SVG atau PDF** bersih dengan node yang rapi, supaya terbuka tanpa peringatan di Affinity dan Adobe Illustrator. Prototipe 0.4.0 ("Kendali desainer"; sebelumnya bernama Vektora sampai 0.3.0). Repo lokal, tanpa server, tanpa akun, **tanpa permintaan jaringan**.
 
 ## Cara kerja
 
@@ -25,6 +25,15 @@ Tanpa CSS, `<style>`, filter, atau transform. Juga **PDF** (ukuran halaman = uku
 
 Kontrol: jumlah warna (2-16), kehalusan (sedikit node <-> detail), "jaga garis tipis", "kenali bentuk dasar" (nyala), "tegas simetri" (mati / otomatis / vertikal / horizontal), "bersihkan dengan AI". Statistik di layar: path, node, bentuk dasar, ukuran SVG, selisih warna, waktu.
 
+Baru di 0.4.0 ("Kendali desainer"; produk ini bernama Vektora sampai 0.3.0, sekarang **Trasea**):
+
+- **Kuas koreksi.** Di atas pratinjau: `Kuas Detail` (biru: kurva lebih rapat, detail kecil dipertahankan) dan `Kuas Halus` (oranye: node lebih sedikit, bintik digabung), ukuran kuas 10-120 px, `Undo`, `Bersihkan sapuan`. Sapuan tidak ikut diekspor. Semuanya tetap ditrace dari satu peta label, jadi tidak ada celah di tepi area sapuan.
+- **Palet manual.** Buang warna, gabung ke warna terdekat, ambil warna dari gambar dengan **Pipet** (`+ Pipet`), atau `Reset palet`. Perubahan menunggu **Terapkan ulang** (ada penanda perubahan yang belum diterapkan). SVG, PDF, dan `.ase` memakai persis warna pilihan; warna aksen kecil yang kamu pertahankan tidak digabung.
+- **Heatmap node.** Tombol `Heatmap node` (mati secara bawaan) menampilkan kotak hijau sampai merah di area padat node. Hanya alat bantu pratinjau, tidak pernah diekspor.
+- **Target node.** `Target node (maks)`: Otomatis / 500 / 1000 / 2000 / angka sendiri (CLI `--target-nodes N`). Trasea menaikkan kehalusan (lalu melonggarkan kurva) sampai jumlah node masuk anggaran, dan berkata jujur bila tidak bisa.
+- **Polesan lebih cepat.** Pemuatan dan pembersihan (Real-ESRGAN) disimpan di memori untuk gambar yang terbuka: mengubah palet, kuas, atau target node tidak menjalankannya lagi.
+- **File lebih ringan.** Pulau kecil satu warna yang tadinya diulang (tersembunyi) di setiap layer di bawahnya kini ditulis sekali.
+
 Baru di 0.3.0:
 
 - **Bentuk dasar.** Lingkaran, elips, atau persegi (bersudut membulat) yang pas ditulis sebagai `<circle>`, `<ellipse>`, atau `<rect>` murni; sisi lurus memakai `L`. Bentuk organik tetap berupa path.
@@ -35,7 +44,7 @@ Baru di 0.3.0:
 
 ## Pakai
 
-1. Jalankan installer (`Trasea_0.3.0_x64-setup.exe`, per pengguna, tanpa admin) lalu buka Trasea.
+1. Jalankan installer (`Trasea_0.4.0_x64-setup.exe`, per pengguna, tanpa admin) lalu buka Trasea.
 2. Seret gambar ke jendela (atau **Buka gambar**), tunggu konversi (sekitar 1-3 dtk dengan pengaturan bawaan, 10-40 dtk dengan AI menyala, di GPU terintegrasi PC uji).
 3. Geser slider untuk membandingkan asli dan vektor, ubah kontrol, tekan **Terapkan ulang** bila perlu.
 4. Pilih cara ekspor garis tipis dan trap, lalu **Ekspor SVG**, **Ekspor PDF** atau **Palet .ase** (berkas .ase disimpan di samping SVG/PDF bila "Sertakan palet .ase" dicentang).
@@ -55,8 +64,8 @@ npx tauri build --target x86_64-pc-windows-gnu   # installer di target/<triple>/
 Alat pengembang:
 
 ```
-npm test                                   # tes cargo V1-V7, W1-W6 dan G1-G8 (gambar sintetis, tanpa data uji)
-cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
+npm test                                   # tes cargo V1-V7, W1-W6, G1-G8 dan D0-D6 (gambar sintetis, tanpa data uji)
+cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette "#RRGGBB,#RRGGBB"] [--png out.png] [--sidecar DIR]
 cargo run --release --bin bench -- --dir <folder vectorize-bench> --sidecar <folder realesrgan>   # menulis bench/RESULTS.md
 ```
 
@@ -66,7 +75,7 @@ Intinya ada di crate `crates/trasea-core` (tanpa UI, tanpa jaringan). Aplikasi d
 
 Inti dan aplikasi tidak berisi kode jaringan (diperiksa dengan `cargo tree` di sebuah tes), halaman hanya bisa bicara ke IPC lokal (CSP), dan WebView2 dijalankan dengan jaringan latar, pembaruan, sinkronisasi, dan SmartScreen mati, semua lalu lintas non-lokal diarahkan ke proxy lokal yang mati (`127.0.0.1:9`), dan DNS nama non-lokal diblokir. **Yang tidak bisa dihilangkan:** lihat laporan; runtime Edge WebView2 bawaan Windows mungkin masih membuka satu koneksi sendiri sesaat setelah mulai. Trasea tidak pernah mengirim data gambar ke mana pun.
 
-## Batas versi 0.3.0
+## Batas versi 0.4.0
 
 - Hanya Windows x64. Real-ESRGAN butuh GPU Vulkan; bila tidak ada dipakai median (node lebih banyak, sedikit lebih noisy).
 - Masukan berupa gambar raster (PNG, JPG, WEBP, BMP), sisi terpanjang dibatasi 1600 px. Foto bukan sasaran.

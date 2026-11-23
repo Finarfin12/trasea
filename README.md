@@ -2,7 +2,7 @@
 
 *Bahasa Indonesia: [README.id.md](README.id.md)*
 
-An **offline Windows desktop app** that turns a flat illustration or a logo (JPG/PNG) into a clean **SVG or PDF** with tidy nodes, meant to open without warnings in Affinity and Adobe Illustrator. Prototype 0.3.0 ("Geometri rapi"). Local repository, no server, no account, **no network request**.
+An **offline Windows desktop app** that turns a flat illustration or a logo (JPG/PNG) into a clean **SVG or PDF** with tidy nodes, meant to open without warnings in Affinity and Adobe Illustrator. Prototype 0.4.0 ("Kendali desainer"; known as Vektora until 0.3.0). Local repository, no server, no account, **no network request**.
 
 ## What it does
 
@@ -25,6 +25,15 @@ No CSS, `<style>`, filter or transform. Also **PDF** (page size = image size) an
 
 Controls: number of colours (2-16), smoothness (few nodes <-> detail), "keep thin lines", "recognise basic shapes" (on), "enforce symmetry" (off / automatic / vertical / horizontal), "clean with AI". Statistics on screen: paths, nodes, basic shapes, SVG size, colour error, time.
 
+New in 0.4.0 ("Kendali desainer"; the product was called Vektora until 0.3.0, it is **Trasea** now):
+
+- **Correction brush.** Above the preview: `Kuas Detail` (blue: tighter curves, small details kept) and `Kuas Halus` (orange: fewer nodes, specks merged away), brush size 10-120 px, `Undo`, `Bersihkan sapuan`. The strokes are not exported. Everything is still traced from one label picture, so there is no gap at the edge of a painted area.
+- **Manual palette.** Remove a colour, merge it into the nearest one, pick a colour from the picture with the **Pipet** (`+ Pipet`), or `Reset palet`. The change waits for **Terapkan ulang** (a marker shows what is not applied yet). The SVG, PDF and `.ase` use exactly the chosen colours; a tiny accent colour you kept is not merged away.
+- **Node heatmap.** The `Heatmap node` button (off by default) overlays green-to-red cells where nodes pile up. It is a preview aid and is never exported.
+- **Node target.** `Target node (maks)`: Otomatis / 500 / 1000 / 2000 / your own number (CLI `--target-nodes N`). Trasea raises the smoothness (then loosens the curve fit) until the node count fits, and says so honestly when it cannot.
+- **Faster polishing.** Loading and cleaning (Real-ESRGAN) are kept in memory for the open picture: changing the palette, brush or node target does not run them again.
+- **Lighter files.** A small island of a colour that was repeated, hidden, in every layer below it is now written once.
+
 New in 0.3.0:
 
 - **Basic shapes.** A circle, ellipse or (rounded) rectangle that matches closely is written as a pure `<circle>`, `<ellipse>` or `<rect>`; straight edges use `L`. Organic shapes stay paths.
@@ -35,7 +44,7 @@ New in 0.3.0:
 
 ## Use
 
-1. Run the installer (`Trasea_0.3.0_x64-setup.exe`, per-user, no admin needed) and start Trasea.
+1. Run the installer (`Trasea_0.4.0_x64-setup.exe`, per-user, no admin needed) and start Trasea.
 2. Drag an image onto the window (or **Buka gambar**), wait for the conversion (about 1-3 s with the default settings, 10-40 s with AI on, on the integrated GPU of the test PC).
 3. Drag the slider to compare the original and the vector, adjust the controls and press **Terapkan ulang** if you want.
 4. Choose how thin lines and trap are exported, then **Ekspor SVG**, **Ekspor PDF** or **Palet .ase** (the .ase is saved next to the SVG/PDF when "Sertakan palet .ase" is ticked).
@@ -55,8 +64,8 @@ npx tauri build --target x86_64-pc-windows-gnu   # installer in target/<triple>/
 Developer tools:
 
 ```
-npm test                                   # cargo tests V1-V7, W1-W6 and G1-G8 (synthetic images, no test data needed)
-cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
+npm test                                   # cargo tests V1-V7, W1-W6, G1-G8 and D0-D6 (synthetic images, no test data needed)
+cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette "#RRGGBB,#RRGGBB"] [--png out.png] [--sidecar DIR]
 cargo run --release --bin bench -- --dir <vectorize-bench folder> --sidecar <realesrgan folder>   # writes bench/RESULTS.md
 ```
 
@@ -66,7 +75,7 @@ The core is the crate `crates/trasea-core` (no UI, no network). The app in `src-
 
 The core and the app contain no network code (checked with `cargo tree` in a test), the page can only talk to the local IPC (CSP), and WebView2 is started with background networking, updates, sync and SmartScreen off, all non-local traffic sent to a dead local proxy (`127.0.0.1:9`) and DNS for non-local names blocked. **What could not be removed:** see the report; the Edge WebView2 runtime that Windows provides may still open a connection of its own right after start-up. Trasea never sends image data anywhere.
 
-## Limits of 0.3.0
+## Limits of 0.4.0
 
 - Windows x64 only. Real-ESRGAN needs a Vulkan GPU; otherwise the median fallback is used (more nodes, a bit more noise).
 - Inputs are raster images (PNG, JPG, WEBP, BMP), longest side limited to 1600 px. Photos are not the target.
