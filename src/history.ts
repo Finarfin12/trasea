@@ -1,4 +1,4 @@
-import type { BrushStroke, ExportOptions, Options, PathEdit } from "./api";
+import type { BrushStroke, ExportOptions, NodeEdit, Options, PathEdit } from "./api";
 
 export type TargetChoice = "auto" | "500" | "1000" | "2000" | "custom";
 
@@ -8,6 +8,7 @@ export interface EditorSnapshot {
 	paletteMerges: Array<[string, string]>;
 	strokes: BrushStroke[];
 	pathEdits: PathEdit[];
+	nodeEdits: NodeEdit[];
 	targetChoice: TargetChoice;
 	customTarget: string;
 	exp: ExportOptions;

@@ -39,6 +39,17 @@ export function IconPointer() {
 	);
 }
 
+/** Node tool: an anchor square with a Bezier handle line. */
+export function IconNode() {
+	return (
+		<Svg>
+			<rect x="3" y="14" width="5" height="5" rx="0.5" />
+			<path d="M8 16.5C11 16.5 11 7.5 15 7.5" />
+			<circle cx="18" cy="7.5" r="2.5" />
+		</Svg>
+	);
+}
+
 export function IconDetailBrush() {
 	return (
 		<Svg>
