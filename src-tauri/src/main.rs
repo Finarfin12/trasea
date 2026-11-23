@@ -6,24 +6,36 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 use trasea_core::batch::{is_supported_image, run_batch as core_run_batch, scan_image_files, BatchConfig, BatchSummary};
 use trasea_core::clean::plain_path;
-use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_eps, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs};
-use trasea_core::license::{verify_embedded, LicenseInfo};
-use trasea_core::project::{
-    load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject, ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION,
+use trasea_core::color::ColorSpace;
+use trasea_core::dxf::DxfUnit;
+use trasea_core::export::{
+    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    to_separation_pdfs, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs,
 };
-use trasea_core::{export, hex, load, prepare, vectorize_prepared, BrushStroke, NodeHeatmap, Params, PreparedImage, ProductionMode, ProductionOptions, SymmetryMode, TextRegion};
+use trasea_core::license::{verify_embedded, LicenseInfo};
+use trasea_core::preprocess::PreprocessOptions;
+use trasea_core::project::{
+    load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject,
+    ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION,
+};
+use trasea_core::watch::{watch_folder, WatchConfig};
+use trasea_core::{
+    hex, load, prepare, vectorize_prepared, BrushStroke, NodeHeatmap, Params, PreparedImage,
+    ProductionMode, ProductionOptions, SymmetryMode, TextRegion,
+};
 
-/// The expensive first half of the conversion (loading, thin lines, clean / Real-ESRGAN) for the picture that is open.
+/// The expensive first half of the conversion (loading, preprocess, thin lines, clean / Real-ESRGAN) for the picture that is open.
 struct CachedPrep {
     path: String,
     ai_clean: bool,
     keep_lines: bool,
+    preprocess: PreprocessOptions,
     prep: Arc<PreparedImage>,
-    /// The loaded picture as a PNG data URL (encoded once).
+    /// The (optionally preprocessed) picture as a PNG data URL (encoded once).
     original: String,
 }
 
@@ -43,6 +55,20 @@ impl Default for BatchControl {
         Self {
             cancel: Arc::new(AtomicBool::new(false)),
             running: AtomicBool::new(false),
+        }
+    }
+}
+
+struct WatchControl {
+    stop: Mutex<Option<Arc<AtomicBool>>>,
+    running: Arc<AtomicBool>,
+}
+
+impl Default for WatchControl {
+    fn default() -> Self {
+        Self {
+            stop: Mutex::new(None),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -74,6 +100,10 @@ struct UiParams {
     strip_background: Option<bool>,
     #[serde(default)]
     registration_marks: Option<bool>,
+    #[serde(default)]
+    sablon_knockout: bool,
+    #[serde(default)]
+    preprocess: PreprocessOptions,
 }
 
 #[derive(Serialize)]
@@ -101,6 +131,14 @@ struct Processed {
     reused: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RawImagePreview {
+    data_url: String,
+    width: u32,
+    height: u32,
+}
+
 #[derive(Serialize, Clone)]
 struct ProgressEvent {
     stage: String,
@@ -116,6 +154,12 @@ struct UiExport {
     registration_marks: bool,
     #[serde(default)]
     strip_background: bool,
+    #[serde(default)]
+    color_space: ColorSpace,
+    #[serde(default)]
+    dxf_unit: DxfUnit,
+    #[serde(default)]
+    dxf_target_width_mm: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -128,8 +172,41 @@ struct UiBatchConfig {
     write_pdf: bool,
     #[serde(default)]
     write_eps: bool,
+    #[serde(default)]
+    write_dxf: bool,
     write_ase: bool,
     write_separations: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UiWatchConfig {
+    in_dir: String,
+    out_dir: String,
+    #[serde(default)]
+    include_subfolders: bool,
+    params: UiParams,
+    export: UiExport,
+    #[serde(default)]
+    write_pdf: bool,
+    #[serde(default)]
+    write_eps: bool,
+    #[serde(default)]
+    write_dxf: bool,
+    #[serde(default)]
+    write_ase: bool,
+    #[serde(default)]
+    write_separations: bool,
+    #[serde(default)]
+    poll_ms: Option<u64>,
+    #[serde(default)]
+    debounce_ms: Option<u64>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WatchStoppedEvent {
+    error: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -148,9 +225,34 @@ struct UserPreset {
     export_options: ProjectExportOptions,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppSettings {
+    #[serde(default = "default_language")]
+    language: String,
+}
+
+fn default_language() -> String {
+    "id".to_string()
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            language: default_language(),
+        }
+    }
+}
+
 fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_config_dir().map_err(|e| format!("Gagal menemukan folder konfigurasi: {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Gagal membuat folder konfigurasi: {e}"))?;
+    Ok(dir)
+}
+
+fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_cache_dir().map_err(|e| format!("Gagal menemukan folder cache: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Gagal membuat folder cache: {e}"))?;
     Ok(dir)
 }
 
@@ -160,6 +262,10 @@ fn license_file(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn presets_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("presets.json"))
+}
+
+fn settings_file(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(config_dir(app)?.join("settings.json"))
 }
 
 fn read_active_license(app: &AppHandle) -> Option<LicenseInfo> {
@@ -226,9 +332,16 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
     if let Some(rm) = params.registration_marks {
         prod.registration_marks = rm;
     }
+    prod.sablon_knockout = params.sablon_knockout;
+
+    let colors = match mode {
+        ProductionMode::Shading => params.colors.clamp(2, 32),
+        ProductionMode::ScreenPrint => params.colors.clamp(2, 8),
+        ProductionMode::Standard | ProductionMode::CutEmbroidery => params.colors.clamp(2, 16),
+    };
 
     Params {
-        colors: params.colors.clamp(2, 16),
+        colors,
         smooth: (params.smooth / 100.0).clamp(0.0, 1.0),
         keep_lines: params.keep_lines,
         ai_clean: params.ai_clean,
@@ -241,6 +354,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         target_nodes: params.target_nodes.filter(|&n| n > 0),
         brush_strokes: params.brush_strokes.clone(),
         production: prod,
+        preprocess: params.preprocess.clone(),
         ..Params::default()
     }
 }
@@ -248,11 +362,25 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
 fn to_core_export(options: &UiExport) -> ExportOptions {
     ExportOptions {
         lines_as: if options.lines_as == "shape" { LinesAs::Shape } else { LinesAs::Stroke },
-        trap_pt: options.trap_pt.clamp(0.0, 1.0),
+        trap_pt: options.trap_pt.clamp(0.0, 2.0),
         registration_marks: options.registration_marks,
         strip_background: options.strip_background,
-        ..ExportOptions::default()
+        color_space: options.color_space,
+        dxf_unit: options.dxf_unit,
+        dxf_target_width_mm: options.dxf_target_width_mm.filter(|v| v.is_finite() && *v > 0.0),
     }
+}
+
+fn merge_batch_export(p: &Params, options: &UiExport) -> ExportOptions {
+    let mut eo = to_core_export(options);
+    if p.production.mode == ProductionMode::CutEmbroidery {
+        let prod_eo = export_options_for_production(&p.production);
+        eo.lines_as = prod_eo.lines_as;
+        eo.trap_pt = prod_eo.trap_pt;
+        eo.registration_marks = prod_eo.registration_marks;
+        eo.strip_background = prod_eo.strip_background;
+    }
+    eo
 }
 
 #[tauri::command]
@@ -263,7 +391,12 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
         let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
         guard
             .as_ref()
-            .filter(|c| c.path == path && c.ai_clean == params.ai_clean && c.keep_lines == params.keep_lines)
+            .filter(|c| {
+                c.path == path
+                    && c.ai_clean == params.ai_clean
+                    && c.keep_lines == params.keep_lines
+                    && c.preprocess == params.preprocess
+            })
             .map(|c| (c.prep.clone(), c.original.clone()))
     };
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc, Option<CachedPrep>), String> {
@@ -278,12 +411,13 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             None => {
                 emit("Memuat gambar", 0.02);
                 let img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
-                let original = png_data_url(&img)?;
                 let prep = Arc::new(prepare(img, &p, &progress).map_err(|e| e.to_string())?);
+                let original = png_data_url(&prep.src)?;
                 let entry = CachedPrep {
                     path: path.clone(),
                     ai_clean: params.ai_clean,
                     keep_lines: params.keep_lines,
+                    preprocess: params.preprocess.clone(),
                     prep: prep.clone(),
                     original: original.clone(),
                 };
@@ -325,6 +459,18 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
 }
 
 #[tauri::command]
+async fn load_raw_image_preview(path: String) -> Result<RawImagePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<RawImagePreview, String> {
+        let img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
+        let (width, height) = img.dimensions();
+        let data_url = png_data_url(&img)?;
+        Ok(RawImagePreview { data_url, width, height })
+    })
+    .await
+    .map_err(|e| format!("Gagal memuat pratinjau gambar: {e}"))?
+}
+
+#[tauri::command]
 fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
     let c = guard.as_ref().ok_or("Open a picture first.")?;
@@ -348,25 +494,110 @@ fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     Ok(hex([med(&mut r), med(&mut g), med(&mut b)]))
 }
 
-/// Write the last result. `kind` is "svg", "pdf", "eps" or "ase".
+/// Write the last result. `kind` is "svg", "pdf", "eps", "dxf", or "ase".
+/// Per QT-1=B, all 1.1.0 features (DXF, CMYK PDF/ASE) are open without a Pro key.
 #[tauri::command]
 fn save_file(app: AppHandle, last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
     if kind == "eps" {
         require_pro_license(&app, "Ekspor EPS")?;
     }
-    let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("Belum ada hasil untuk diekspor. Konversi gambar dulu.")?;
+    let doc = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .ok_or("Belum ada hasil untuk diekspor. Konversi gambar dulu.")?;
     let opts = to_core_export(&options);
     let write = |bytes: Vec<u8>| std::fs::write(&path, bytes).map_err(|e| format!("Gagal menulis {path}: {e}"));
     match kind.as_str() {
         "svg" => write(to_svg(&doc, &opts).into_bytes()),
-        "pdf" => write(export::svg_to_pdf(&to_svg(&doc, &opts)).map_err(|e| e.to_string())?),
+        "pdf" => write(to_pdf(&doc, &opts).map_err(|e| e.to_string())?),
         "eps" => write(to_eps(&doc, &opts).into_bytes()),
-        "ase" => write(to_ase(&palette_of(&doc))),
+        "dxf" => write(to_dxf(&doc, &opts).into_bytes()),
+        "ase" => write(to_ase_with_color_space(&palette_of(&doc), opts.color_space)),
         _ => Err("unknown export format".into()),
     }
 }
 
-/// Export 100%-black per-colour separation films (Pro feature).
+/// Dedicated DXF export command (open without Pro key per QT-1=B).
+#[tauri::command]
+fn export_dxf(last: State<'_, Last>, path: String, options: UiExport) -> Result<(), String> {
+    let doc = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .ok_or("Belum ada hasil untuk diekspor. Konversi gambar dulu.")?;
+    let opts = to_core_export(&options);
+    let dxf = to_dxf(&doc, &opts);
+    std::fs::write(&path, dxf.into_bytes()).map_err(|e| format!("Gagal menulis {path}: {e}"))
+}
+
+/// Paste a raster image from the system clipboard into a local cache PNG and return its path (open, no Pro key).
+#[tauri::command]
+fn paste_clipboard_image(app: AppHandle) -> Result<String, String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Gagal mengakses clipboard sistem: {e}"))?;
+    let img_data = cb
+        .get_image()
+        .map_err(|_| "Clipboard tidak berisi gambar. Salin gambar atau tangkapan layar terlebih dahulu.".to_string())?;
+    let w = img_data.width as u32;
+    let h = img_data.height as u32;
+    if w == 0 || h == 0 {
+        return Err("Gambar di clipboard kosong.".into());
+    }
+    let rgba = image::RgbaImage::from_raw(w, h, img_data.bytes.into_owned())
+        .ok_or_else(|| "Format piksel gambar clipboard tidak valid.".to_string())?;
+    let dir = cache_dir(&app)?;
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = dir.join(format!("clipboard-{ts}.png"));
+    rgba.save(&dest)
+        .map_err(|e| format!("Gagal menyimpan gambar clipboard ke cache: {e}"))?;
+
+    // Best-effort cleanup of older clipboard PNGs (keep the newest 20).
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut old: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("clipboard-") && n.ends_with(".png"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        old.sort();
+        if old.len() > 20 {
+            for p in &old[..old.len() - 20] {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+
+    Ok(plain_path(&dest).to_string_lossy().to_string())
+}
+
+/// Copy clean SVG markup of the last vectorized document to the system clipboard (open, no Pro key).
+#[tauri::command]
+fn copy_svg_to_clipboard(last: State<'_, Last>, options: UiExport) -> Result<usize, String> {
+    let doc = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .ok_or("Belum ada hasil vektor untuk disalin. Konversi gambar dulu.")?;
+    let opts = to_core_export(&options);
+    let svg = to_svg(&doc, &opts);
+    let len = svg.len();
+    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Gagal mengakses clipboard sistem: {e}"))?;
+    cb.set_text(svg)
+        .map_err(|e| format!("Gagal menyalin SVG ke clipboard: {e}"))?;
+    Ok(len)
+}
+
+/// Export 100%-black per-colour separation films (Pro feature, supports RGB and pure CMYK K=100% PDFs).
 #[tauri::command]
 fn save_separations(app: AppHandle, last: State<'_, Last>, dir: String, base_name: String, kind: String, options: UiExport) -> Result<Vec<String>, String> {
     require_pro_license(&app, "Ekspor Film Separasi")?;
@@ -382,20 +613,48 @@ fn save_separations(app: AppHandle, last: State<'_, Last>, dir: String, base_nam
     let write_svg = kind == "svg" || kind == "both";
     let write_pdf = kind == "pdf" || kind == "both";
     let mut written = Vec::new();
-    for film in films {
-        if write_svg {
+    if write_svg {
+        for film in &films {
             let p = out_dir.join(format!("{stem}_{}.svg", film.suffix));
             std::fs::write(&p, &film.svg).map_err(|e| format!("Gagal menulis {}: {e}", p.display()))?;
             written.push(p.to_string_lossy().to_string());
         }
-        if write_pdf {
+    }
+    if write_pdf {
+        let pdfs = to_separation_pdfs(&doc, &opts).map_err(|e| e.to_string())?;
+        for (film, bytes) in pdfs {
             let p = out_dir.join(format!("{stem}_{}.pdf", film.suffix));
-            let bytes = export::svg_to_pdf(&film.svg).map_err(|e| e.to_string())?;
             std::fs::write(&p, bytes).map_err(|e| format!("Gagal menulis {}: {e}", p.display()))?;
             written.push(p.to_string_lossy().to_string());
         }
     }
     Ok(written)
+}
+
+#[tauri::command]
+fn get_app_settings(app: AppHandle) -> AppSettings {
+    let Ok(p) = settings_file(&app) else {
+        return AppSettings::default();
+    };
+    let Ok(raw) = std::fs::read_to_string(p) else {
+        return AppSettings::default();
+    };
+    let mut s: AppSettings = serde_json::from_str(&raw).unwrap_or_default();
+    if s.language != "en" && s.language != "id" {
+        s.language = "id".to_string();
+    }
+    s
+}
+
+#[tauri::command]
+fn save_app_settings(app: AppHandle, mut settings: AppSettings) -> Result<AppSettings, String> {
+    if settings.language != "en" && settings.language != "id" {
+        settings.language = "id".to_string();
+    }
+    let p = settings_file(&app)?;
+    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(&p, json).map_err(|e| format!("Gagal menyimpan pengaturan aplikasi: {e}"))?;
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -540,24 +799,23 @@ async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: 
 
     let res = tauri::async_runtime::spawn_blocking(move || -> Result<BatchSummary, String> {
         let p = to_core_params(&config.params, sidecar);
-        let mut eo = to_core_export(&config.export);
-        let prod_eo = export_options_for_production(&p.production);
-        if p.production.mode == ProductionMode::CutEmbroidery {
-            eo = prod_eo;
-        }
+        let eo = merge_batch_export(&p, &config.export);
         let cfg = BatchConfig {
             inputs: config.inputs.into_iter().map(PathBuf::from).collect(),
             output_dir: PathBuf::from(config.output_dir),
             params: p,
-            export: eo,
+            export: eo.clone(),
             write_pdf: config.write_pdf,
             write_eps: config.write_eps,
+            write_dxf: config.write_dxf,
             write_ase: config.write_ase,
             write_separations: config.write_separations,
             write_report_csv: true,
             write_report_md: true,
+            color_space: eo.color_space,
+            dxf_unit: eo.dxf_unit,
+            dxf_target_width_mm: eo.dxf_target_width_mm,
             max_workers: None,
-            ..BatchConfig::default()
         };
         core_run_batch(&cfg, cancel, |prog| {
             let _ = handle.emit("batch-progress", prog);
@@ -574,6 +832,78 @@ async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: 
 #[tauri::command]
 fn cancel_batch(batch_ctrl: State<'_, BatchControl>) -> Result<(), String> {
     batch_ctrl.cancel.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Start Watch Folder background polling (open without Pro key per QT-1=B).
+#[tauri::command]
+fn start_watch_folder(app: AppHandle, watch_ctrl: State<'_, WatchControl>, config: UiWatchConfig) -> Result<(), String> {
+    let in_path = PathBuf::from(&config.in_dir);
+    let out_path = PathBuf::from(&config.out_dir);
+    if !in_path.is_dir() {
+        return Err(format!("Folder pantauan tidak ditemukan: {}", config.in_dir));
+    }
+    if config.out_dir.trim().is_empty() {
+        return Err("Folder output belum dipilih.".into());
+    }
+    if watch_ctrl.running.swap(true, Ordering::SeqCst) {
+        return Err("Pemantauan folder lain sedang berjalan.".into());
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let mut slot = watch_ctrl.stop.lock().map_err(|_| "internal error".to_string())?;
+        *slot = Some(stop.clone());
+    }
+    let running_flag = watch_ctrl.running.clone();
+    let sidecar = sidecar_dir(&app);
+    let handle = app.clone();
+
+    let p = to_core_params(&config.params, sidecar);
+    let eo = merge_batch_export(&p, &config.export);
+    let batch = BatchConfig {
+        inputs: Vec::new(),
+        output_dir: out_path.clone(),
+        params: p,
+        export: eo.clone(),
+        write_pdf: config.write_pdf,
+        write_eps: config.write_eps,
+        write_dxf: config.write_dxf,
+        write_ase: config.write_ase,
+        write_separations: config.write_separations,
+        write_report_csv: true,
+        write_report_md: true,
+        color_space: eo.color_space,
+        dxf_unit: eo.dxf_unit,
+        dxf_target_width_mm: eo.dxf_target_width_mm,
+        max_workers: None,
+    };
+    let mut wcfg = WatchConfig::new(in_path, out_path, batch);
+    wcfg.include_subfolders = config.include_subfolders;
+    if let Some(ms) = config.poll_ms {
+        wcfg.poll_ms = ms.max(100);
+    }
+    if let Some(ms) = config.debounce_ms {
+        wcfg.debounce_ms = ms;
+    }
+
+    std::thread::spawn(move || {
+        let res = watch_folder(&wcfg, stop, |ev| {
+            let _ = handle.emit("watch-event", ev);
+        });
+        running_flag.store(false, Ordering::SeqCst);
+        let error = res.err().map(|e| e.to_string());
+        let _ = handle.emit("watch-stopped", WatchStoppedEvent { error });
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_watch_folder(watch_ctrl: State<'_, WatchControl>) -> Result<(), String> {
+    let slot = watch_ctrl.stop.lock().map_err(|_| "internal error".to_string())?;
+    if let Some(flag) = slot.as_ref() {
+        flag.store(true, Ordering::Relaxed);
+    }
     Ok(())
 }
 
@@ -628,11 +958,18 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Last::default())
         .manage(BatchControl::default())
+        .manage(WatchControl::default())
         .invoke_handler(tauri::generate_handler![
             process,
+            load_raw_image_preview,
             pick_color,
             save_file,
+            export_dxf,
+            paste_clipboard_image,
+            copy_svg_to_clipboard,
             save_separations,
+            get_app_settings,
+            save_app_settings,
             license_status,
             activate_license,
             deactivate_license,
@@ -646,6 +983,8 @@ fn main() {
             collect_dropped_images,
             run_batch,
             cancel_batch,
+            start_watch_folder,
+            stop_watch_folder,
             open_folder,
             sidecar_available,
             third_party_licenses

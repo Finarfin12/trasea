@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Trasea 1.0.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
+Trasea 1.1.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
 
 ## Bundled programs, models, and frontend libraries
 
@@ -65,7 +65,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-## Rust crates linked into the Windows app (345)
+## Rust crates linked into the Windows app (353)
 
 | Crate | Version | License |
 |---|---|---|
@@ -74,17 +74,18 @@ DEALINGS IN THE SOFTWARE.
 | alloc-no-stdlib | 3.0.0 | BSD-3-Clause |
 | alloc-stdlib | 0.3.0 | BSD-3-Clause |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
+| arboard | 3.7.0 | MIT OR Apache-2.0 |
 | arrayref | 0.3.9 | BSD-2-Clause |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | base64 | 0.23.1 | MIT OR Apache-2.0 |
 | base64ct | 1.8.3 | Apache-2.0 OR MIT |
+| bitflags | 1.3.2 | MIT/Apache-2.0 |
+| bitflags | 2.13.2 | MIT OR Apache-2.0 |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT |
 | bit-vec | 0.6.3 | MIT/Apache-2.0 |
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT |
-| bitflags | 1.3.2 | MIT/Apache-2.0 |
-| bitflags | 2.13.2 | MIT OR Apache-2.0 |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 |
 | block-buffer | 0.12.1 | MIT OR Apache-2.0 |
 | brotli | 9.1.3 | BSD-3-Clause AND MIT |
@@ -103,6 +104,7 @@ DEALINGS IN THE SOFTWARE.
 | cfb | 0.14.0 | MIT |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 |
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
+| clipboard-win | 5.4.3 | BSL-1.0 |
 | color_quant | 1.1.0 | MIT |
 | const-oid | 0.10.3 | Apache-2.0 OR MIT |
 | const-oid | 0.9.6 | Apache-2.0 OR MIT |
@@ -149,8 +151,10 @@ DEALINGS IN THE SOFTWARE.
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT |
 | erased-serde | 0.4.11 | MIT OR Apache-2.0 |
+| error-code | 3.4.0 | BSL-1.0 |
 | euclid | 0.22.14 | MIT OR Apache-2.0 |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT |
+| fax | 0.2.7 | MIT |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 |
 | find-msvc-tools | 0.1.15 | MIT OR Apache-2.0 |
 | flate2 | 1.1.11 | MIT OR Apache-2.0 |
@@ -158,8 +162,8 @@ DEALINGS IN THE SOFTWARE.
 | float-cmp | 0.9.0 | MIT |
 | fnv | 1.0.7 | Apache-2.0 / MIT |
 | foldhash | 0.2.0 | Zlib |
-| font-types | 0.11.3 | MIT OR Apache-2.0 |
 | fontdb | 0.23.0 | MIT |
+| font-types | 0.11.3 | MIT OR Apache-2.0 |
 | form_urlencoded | 1.2.3 | MIT OR Apache-2.0 |
 | generic-array | 0.14.7 | MIT |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 |
@@ -168,6 +172,7 @@ DEALINGS IN THE SOFTWARE.
 | gif | 0.13.3 | MIT OR Apache-2.0 |
 | gif | 0.14.2 | MIT OR Apache-2.0 |
 | glob | 0.3.4 | MIT OR Apache-2.0 |
+| half | 2.7.1 | MIT OR Apache-2.0 |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 |
 | hashbrown | 0.17.2 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
@@ -187,8 +192,8 @@ DEALINGS IN THE SOFTWARE.
 | idna | 1.1.0 | MIT OR Apache-2.0 |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
 | image | 0.25.10 | MIT OR Apache-2.0 |
-| image-webp | 0.2.4 | MIT OR Apache-2.0 |
 | imagesize | 0.13.0 | MIT |
+| image-webp | 0.2.4 | MIT OR Apache-2.0 |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT |
 | infer | 0.22.0 | MIT |
@@ -339,6 +344,7 @@ DEALINGS IN THE SOFTWARE.
 | tendril | 0.5.1 | MIT OR Apache-2.0 |
 | thiserror | 2.0.21 | MIT OR Apache-2.0 |
 | thiserror-impl | 2.0.21 | MIT OR Apache-2.0 |
+| tiff | 0.11.3 | MIT |
 | time | 0.3.55 | MIT OR Apache-2.0 |
 | time-core | 0.1.9 | MIT OR Apache-2.0 |
 | time-macros | 0.2.32 | MIT OR Apache-2.0 |
@@ -381,7 +387,6 @@ DEALINGS IN THE SOFTWARE.
 | webview2-com-sys | 0.39.1 | MIT |
 | weezl | 0.1.12 | MIT OR Apache-2.0 |
 | winapi-util | 0.1.11 | Unlicense OR MIT |
-| window-vibrancy | 0.8.1 | Apache-2.0 OR MIT |
 | windows | 0.62.2 | MIT OR Apache-2.0 |
 | windows-collections | 0.3.2 | MIT OR Apache-2.0 |
 | windows-core | 0.62.2 | MIT OR Apache-2.0 |
@@ -395,13 +400,16 @@ DEALINGS IN THE SOFTWARE.
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 |
 | windows-threading | 0.2.1 | MIT OR Apache-2.0 |
 | windows-version | 0.1.7 | MIT OR Apache-2.0 |
+| window-vibrancy | 0.8.1 | Apache-2.0 OR MIT |
 | winnow | 1.0.5 | MIT |
-| write-fonts | 0.48.1 | MIT OR Apache-2.0 |
 | writeable | 0.6.4 | Unicode-3.0 |
+| write-fonts | 0.48.1 | MIT OR Apache-2.0 |
 | wry | 0.57.3 | Apache-2.0 OR MIT |
 | xmlwriter | 0.1.0 | MIT |
 | yoke | 0.8.4 | Unicode-3.0 |
 | yoke-derive | 0.8.4 | Unicode-3.0 |
+| zerocopy | 0.8.64 | BSD-2-Clause OR Apache-2.0 OR MIT |
+| zerocopy-derive | 0.8.64 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | zerofrom | 0.1.8 | Unicode-3.0 |
 | zerofrom-derive | 0.1.8 | Unicode-3.0 |
 | zeroize | 1.9.2 | Apache-2.0 OR MIT |
