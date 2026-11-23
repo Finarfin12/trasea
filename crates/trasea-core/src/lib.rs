@@ -18,6 +18,7 @@ pub mod heatmap;
 pub mod license;
 pub mod lines;
 pub mod load;
+pub mod node_edit;
 pub mod palette;
 pub mod path_edit;
 pub mod pipeline;
@@ -26,6 +27,7 @@ pub mod primitives;
 pub mod production;
 pub mod project;
 pub mod stats;
+pub mod svg_import;
 pub mod symmetry;
 pub mod text_detect;
 pub mod trace;
@@ -41,8 +43,9 @@ pub use dxf::{to_dxf, DxfUnit};
 pub use export::{to_ase_with_spots, to_pdf};
 pub use heatmap::NodeHeatmap;
 pub use license::{LicenseError, LicenseInfo};
+pub use node_edit::{apply_node_edits, inspect_path_nodes, HandleSide, NodeEdit, PathNodeGeometry};
 pub use path_edit::{apply_path_edits, PathEdit};
-pub use pipeline::{prepare, vectorize, vectorize_prepared, Output, Params, PreparedImage, Progress};
+pub use pipeline::{prepare, vectorize, vectorize_prepared, vectorize_svg, Output, Params, PreparedImage, Progress};
 pub use preprocess::{
     apply_preprocess, apply_preprocess_ex, apply_preprocess_rgb, apply_preprocess_rgb_with_mask,
     remove_background_rgba, PreprocessOptions, RemoveBgReport,

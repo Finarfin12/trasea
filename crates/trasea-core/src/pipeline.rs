@@ -10,6 +10,7 @@ use crate::export::{export_options_for_production, to_svg, Doc, ExportOptions, S
 use crate::heatmap::{node_heatmap, NodeHeatmap};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
 use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex, rgb_to_lab};
+use crate::node_edit::{apply_node_edits, NodeEdit};
 use crate::path_edit::{apply_path_edits, PathEdit};
 use crate::preprocess::{apply_preprocess_rgb_with_mask, PreprocessOptions};
 use crate::primitives;
@@ -60,6 +61,8 @@ pub struct Params {
     pub preprocess: PreprocessOptions,
     /// Non-destructive per-path edits (`Delete`, `ReassignColor`) applied deterministically after tracing.
     pub path_edits: Vec<PathEdit>,
+    /// Non-destructive node edits (move node/handle, delete node, toggle smooth, simplify) applied after `path_edits`.
+    pub node_edits: Vec<NodeEdit>,
 }
 
 impl Default for Params {
@@ -82,6 +85,7 @@ impl Default for Params {
             production: ProductionOptions::default(),
             preprocess: PreprocessOptions::default(),
             path_edits: Vec::new(),
+            node_edits: Vec::new(),
         }
     }
 }
@@ -677,6 +681,9 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         if !params.path_edits.is_empty() {
             doc = apply_path_edits(&doc, &params.path_edits);
         }
+        if !params.node_edits.is_empty() {
+            doc = apply_node_edits(&doc, &params.node_edits);
+        }
         progress("Writing SVG", 0.95);
         let svg = to_svg(&doc, &exp_opts);
         let (paths, nodes) = count_svg(&svg);
@@ -804,6 +811,9 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
     if !params.path_edits.is_empty() {
         doc = apply_path_edits(&doc, &params.path_edits);
     }
+    if !params.node_edits.is_empty() {
+        doc = apply_node_edits(&doc, &params.node_edits);
+    }
 
     let svg = to_svg(&doc, &exp_opts);
     // Measure MAE without registration margins so the comparison aligns pixel-for-pixel with the source.
@@ -839,4 +849,42 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         effective_smooth: knobs.t as f32,
         budget_met,
     })
+}
+/// Turn an imported `.svg` (see `svg_import`) into an `Output` with the same edits and statistics as a traced drawing:
+/// `path_edits` and `node_edits` are applied, then the SVG, node counts and node heatmap are produced. No raster
+/// pipeline runs, so there is no MAE (`stats.mae == None`).
+pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_opts: &ExportOptions) -> Output {
+    let crate::svg_import::SvgImport { doc, notes } = import;
+    let mut doc = doc;
+    if !params.path_edits.is_empty() {
+        doc = apply_path_edits(&doc, &params.path_edits);
+    }
+    if !params.node_edits.is_empty() {
+        doc = apply_node_edits(&doc, &params.node_edits);
+    }
+    let svg = to_svg(&doc, exp_opts);
+    let (paths, nodes) = count_svg(&svg);
+    let stats = Stats { paths, nodes, bytes: svg.len(), mae: None, primitives: count_primitives(&svg) };
+    let heatmap = node_heatmap(&doc);
+    let mut palette: Vec<Rgb> = doc.fields.iter().map(|l| l.color).collect();
+    for sl in &doc.strokes {
+        if !palette.contains(&sl.color) {
+            palette.push(sl.color);
+        }
+    }
+    Output {
+        svg,
+        doc,
+        stats,
+        palette,
+        notes,
+        used_ai: false,
+        thin_pixels: 0,
+        primitives_count: 0,
+        symmetry_applied: None,
+        text_regions: Vec::new(),
+        heatmap,
+        effective_smooth: params.smooth,
+        budget_met: None,
+    }
 }

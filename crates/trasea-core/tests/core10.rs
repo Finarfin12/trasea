@@ -257,6 +257,7 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             centerline_invert: false,
             centerline_stroke_pt: 1.0,
             path_edits: vec![],
+            node_edits: vec![],
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),
@@ -317,6 +318,7 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             centerline_invert: false,
             centerline_stroke_pt: 1.0,
             path_edits: vec![],
+            node_edits: vec![],
         },
         export_options: ProjectExportOptions {
             lines_as: "shape".into(),
