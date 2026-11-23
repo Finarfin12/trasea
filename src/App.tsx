@@ -96,6 +96,12 @@ export default function App() {
 		void run(p, { ...optsRef.current, customPalette: null, brushStrokes: [] });
 	};
 
+	/** Back to the automatic palette: the list would show the old manual colours until the next run, so run it now. */
+	const resetPalette = () => {
+		setPalette(null);
+		if (path && !busyRef.current) void run(path, { ...opts, customPalette: null, targetNodes, brushStrokes: strokes });
+	};
+
 	const apply = () => {
 		if (path) void run(path, { ...opts, customPalette: palette, targetNodes, brushStrokes: strokes });
 	};
@@ -321,7 +327,7 @@ export default function App() {
 								<h2>Palet</h2>
 								<div className="row">
 									<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(t => (t === "pipet" ? "pan" : "pipet"))}>+ Pipet</button>
-									<button className="small" onClick={() => setPalette(null)} disabled={palette === null}>Reset palet</button>
+									<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>Reset palet</button>
 								</div>
 							</div>
 							<ul className="palette" aria-label="Palet warna">
