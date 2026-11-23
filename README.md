@@ -29,7 +29,7 @@ Supported outputs:
 - **`.trasea` project files.** Save (`Ctrl+S` / `Ctrl+Shift+S`) and reopen (`Ctrl+O` or drag-and-drop) complete sessions including brush strokes and manual palette merges, with friendly source-image relinking if moved.
 - **Full Undo / Redo (`Ctrl+Z` / `Ctrl+Y`).** 50-step history across brush strokes, palette edits, production modes, and settings.
 - **Custom Presets.** Save and reuse your own parameter presets across both the single-image Editor and Batch Folder view.
-- **1-click sample illustration.** Click **Coba contoh gambar** on the welcome screen to try Trasea immediately with a bundled copyright-free sample.
+- **1-click sample illustration & smart mode switching.** Click **Coba contoh gambar** on the welcome screen to try Trasea immediately with a bundled copyright-free sample; returning to Standard mode automatically restores your previous color count and smoothness, and shallow curved thin lines stay continuous.
 - **Commercial release readiness.** Full dependency license audit ([docs/LICENSE-AUDIT-1.0.0.md](docs/LICENSE-AUDIT-1.0.0.md)), complete BSD-3-Clause & MIT texts in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), macOS Universal config (`icon.icns` + `bundle.macOS`), and signing guide ([docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md)).
 
 ### Earlier milestones

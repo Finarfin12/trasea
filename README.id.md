@@ -29,7 +29,7 @@ Format keluaran yang didukung:
 - **File proyek `.trasea`.** Simpan (`Ctrl+S` / `Ctrl+Shift+S`) dan buka kembali (`Ctrl+O` atau seret-lepas) seluruh pekerjaan termasuk goresan kuas dan palet manual, lengkap dengan dialog taut ulang bila gambar sumber dipindahkan.
 - **Undo / Redo penuh (`Ctrl+Z` / `Ctrl+Y`).** Riwayat hingga 50 langkah untuk goresan kuas, edit palet, pergantian mode produksi, dan pengaturan.
 - **Custom Presets.** Simpan, pakai ulang, dan hapus setelan favorit di Editor tunggal maupun Batch Folder.
-- **Coba contoh gambar 1 klik.** Layar awal menyediakan tombol **Coba contoh gambar** dengan ilustrasi sampel bebas hak cipta bawaan.
+- **Coba contoh gambar 1 klik & pergantian mode cerdas.** Layar awal menyediakan tombol **Coba contoh gambar** dengan ilustrasi sampel bebas hak cipta bawaan; kembali ke mode Standar otomatis memulihkan jumlah warna dan kehalusan sebelumnya, serta garis tipis melengkung landai tetap tersambung utuh.
 - **Kesiapan distribusi komersial.** Audit lisensi dependensi lengkap ([docs/LICENSE-AUDIT-1.0.0.md](docs/LICENSE-AUDIT-1.0.0.md)), teks penuh BSD-3-Clause & MIT di [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), konfigurasi macOS Universal (`icon.icns` + `bundle.macOS`), dan panduan code signing ([docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md)).
 
 ### Pencapaian versi sebelumnya

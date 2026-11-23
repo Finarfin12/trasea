@@ -106,6 +106,7 @@ export default function App() {
 	const busyRef = useRef(false);
 	const optsRef = useRef(opts);
 	optsRef.current = opts;
+	const standardBackupRef = useRef({ colors: DEFAULTS.colors, smooth: DEFAULTS.smooth });
 	const overlayRef = useRef<SVGSVGElement | null>(null);
 	const liveRef = useRef<BrushStroke | null>(null);
 
@@ -362,15 +363,28 @@ export default function App() {
 
 	const switchProductionMode = (mode: ProductionMode) => {
 		recordHistory(`Ubah Mode ${mode === "screenPrint" ? "Sablon" : mode === "cutEmbroidery" ? "Cutting" : "Standar"}`);
+		setSelectedPresetId("");
 		setOpts(o => {
+			if (o.productionMode === "standard" && mode !== "standard") {
+				standardBackupRef.current = { colors: o.colors, smooth: o.smooth };
+			}
 			if (mode === "standard") {
-				return { ...o, productionMode: "standard", minStrokePt: 0, stripBackground: false, registrationMarks: false };
+				return {
+					...o,
+					productionMode: "standard",
+					colors: o.productionMode === "standard" ? o.colors : standardBackupRef.current.colors,
+					smooth: o.productionMode === "standard" ? o.smooth : standardBackupRef.current.smooth,
+					minStrokePt: 0,
+					stripBackground: false,
+					registrationMarks: false,
+				};
 			}
 			if (mode === "screenPrint") {
 				return {
 					...o,
 					productionMode: "screenPrint",
 					colors: o.productionMode === "screenPrint" ? Math.min(8, Math.max(2, o.colors)) : 4,
+					smooth: o.productionMode === "cutEmbroidery" ? standardBackupRef.current.smooth : o.smooth,
 					minStrokePt: o.productionMode === "screenPrint" ? o.minStrokePt : 1.0,
 					stripBackground: false,
 					registrationMarks: true,
@@ -379,6 +393,7 @@ export default function App() {
 			return {
 				...o,
 				productionMode: "cutEmbroidery",
+				colors: o.productionMode === "screenPrint" ? standardBackupRef.current.colors : o.colors,
 				smooth: o.productionMode === "cutEmbroidery" ? o.smooth : 70,
 				minStrokePt: o.productionMode === "cutEmbroidery" ? o.minStrokePt : 1.5,
 				stripBackground: true,
@@ -400,6 +415,9 @@ export default function App() {
 	const applyPreset = (preset: UserPreset) => {
 		recordHistory(`Terapkan preset "${preset.name}"`);
 		setSelectedPresetId(preset.id);
+		if (preset.options.productionMode === "standard") {
+			standardBackupRef.current = { colors: preset.options.colors, smooth: preset.options.smooth };
+		}
 		setOpts({ ...preset.options, customPalette: palette, paletteMerges, brushStrokes: strokes });
 		setExp(preset.exportOptions);
 		setChecker(preset.options.productionMode === "cutEmbroidery" && preset.options.stripBackground);
@@ -510,7 +528,14 @@ export default function App() {
 
 	const set = (patch: Partial<Options>, label = "Ubah pengaturan") => {
 		recordHistory(label);
-		setOpts(o => ({ ...o, ...patch }));
+		setSelectedPresetId("");
+		setOpts(o => {
+			const next = { ...o, ...patch };
+			if (next.productionMode === "standard") {
+				standardBackupRef.current = { colors: next.colors, smooth: next.smooth };
+			}
+			return next;
+		});
 	};
 	const svgUrl = useMemo(() => (result ? URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })) : ""), [result]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);

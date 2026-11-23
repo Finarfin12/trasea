@@ -274,6 +274,37 @@ fn bridge_gaps(thin: &mut [bool], w: usize, h: usize, max_gap: usize) {
             }
         }
     }
+    // Bridge 1-px knight's-move gaps on shallow/steep thin curves (e.g. slope 1:2 or 1:3 where scanlines
+    // step by 2 px so 8-connectivity breaks). Require continuation away from the gap so parallel lines never fuse.
+    for y in 0..h as i64 {
+        for x in 0..w as i64 {
+            if !at(x, y) {
+                continue;
+            }
+            for sy in [-1i64, 1] {
+                if at(x + 2, y + sy)
+                    && !at(x + 1, y)
+                    && !at(x + 1, y + sy)
+                    && !at(x, y + sy)
+                    && !at(x + 2, y)
+                    && (at(x - 1, y) || at(x + 3, y + sy))
+                {
+                    thin[y as usize * w + (x + 1) as usize] = true;
+                }
+            }
+            for sx in [-1i64, 1] {
+                if at(x + sx, y + 2)
+                    && !at(x, y + 1)
+                    && !at(x + sx, y + 1)
+                    && !at(x + sx, y)
+                    && !at(x, y + 2)
+                    && (at(x, y - 1) || at(x + sx, y + 3))
+                {
+                    thin[(y + 1) as usize * w + x as usize] = true;
+                }
+            }
+        }
+    }
 }
 
 /// Detect thin dark lines in `img`.

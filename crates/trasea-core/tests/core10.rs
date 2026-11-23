@@ -368,3 +368,63 @@ fn thin_circle_outline_stays_continuous_without_diagonal_breaks() {
         "circular outline should not shatter into broken dashes (strokes={total_strokes}, fallback={total_fallback})"
     );
 }
+
+#[test]
+fn shallow_curved_thin_line_bridges_knights_move_gaps() {
+    // 1:2.5 shallow curve drawn 2 px wide per scanline (creates 1-px knight's-move breaks).
+    let (w, h) = (260u32, 180u32);
+    let mut img = RgbImage::from_pixel(w, h, image::Rgb([243, 232, 210]));
+    for y in 30..150i32 {
+        let t = (y - 30) as f32 / 120.0;
+        let cx = (30.0 + t * 200.0 + (t * std::f32::consts::PI).sin() * 18.0).round() as i32;
+        for dx in 0..2 {
+            let x = cx + dx;
+            if x >= 0 && x < w as i32 {
+                img.put_pixel(x as u32, y as u32, image::Rgb([24, 30, 42]));
+            }
+        }
+    }
+    let out = trasea_core::pipeline::vectorize(
+        &img,
+        &Params { measure: false, detect_text: false, ..Params::default() },
+        &|_, _| {},
+    )
+    .unwrap();
+    let total_strokes: usize = out.doc.strokes.iter().map(|s| s.strokes.len()).sum();
+    assert!(
+        total_strokes >= 1 && total_strokes <= 2,
+        "shallow curve should bridge knight's-move gaps into 1-2 continuous strokes (got {total_strokes})"
+    );
+    assert!(out.thin_pixels >= 180, "expected most curve pixels kept (got {})", out.thin_pixels);
+}
+
+#[test]
+fn sample_illustration_keeps_trees_mountains_and_continuous_river() {
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../src-tauri/resources/sample/sample-illustration.png");
+    let img = image::open(&sample).expect("load sample").to_rgb8();
+    let out = trasea_core::pipeline::vectorize(
+        &img,
+        &Params { colors: 10, smooth: 0.5, measure: true, detect_text: false, ..Params::default() },
+        &|_, _| {},
+    )
+    .unwrap();
+    // All key scene colours must remain distinct (sky, grass, dark tree green, 2 mountain blues, river blue, sun orange).
+    assert!(out.palette.len() >= 7, "expected >=7 colours in sample palette, got {}", out.palette.len());
+    let has_near = |target: [u8; 3], max_d: i32| {
+        out.palette.iter().any(|c| {
+            let d = (c[0] as i32 - target[0] as i32).abs()
+                + (c[1] as i32 - target[1] as i32).abs()
+                + (c[2] as i32 - target[2] as i32).abs();
+            d <= max_d
+        })
+    };
+    assert!(has_near([0x26, 0x56, 0x3E], 25), "pine tree dark green missing from palette: {:?}", out.palette);
+    assert!(has_near([0x22, 0x3A, 0x5E], 25), "center mountain dark blue missing: {:?}", out.palette);
+    assert!(has_near([0x3E, 0x5C, 0x8A], 25), "side mountain blue missing: {:?}", out.palette);
+    assert!(has_near([0x6A, 0xAE, 0xCA], 25), "river light blue missing: {:?}", out.palette);
+    let mae = out.stats.mae.expect("mae measured");
+    assert!(mae < 1.8, "sample illustration MAE too high: {mae:.2}");
+    let total_strokes: usize = out.doc.strokes.iter().map(|s| s.strokes.len()).sum();
+    assert!(total_strokes <= 15, "river/mountain strokes fragmented into too many segments: {total_strokes}");
+}
