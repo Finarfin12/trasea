@@ -20,6 +20,10 @@ const MIN_H: f64 = 8.0;
 const MAX_H: f64 = 120.0;
 const MIN_ASPECT: f64 = 0.15;
 const MAX_ASPECT: f64 = 2.2;
+/// Letters that touch (or were merged by the palette) make a blob up to this wide relative to its height: a word.
+const MAX_WORD_ASPECT: f64 = 9.0;
+/// Average width of one letter relative to the line height, to estimate how many letters a merged blob holds.
+const LETTER_PITCH: f64 = 0.75;
 const MIN_FILL: f64 = 0.15;
 const MAX_FILL: f64 = 0.85;
 /// Luminance difference (0..255) between a blob and what surrounds it.
@@ -41,6 +45,15 @@ impl Blob {
     }
     fn h(&self) -> f64 {
         (self.y1 - self.y0 + 1) as f64
+    }
+    /// How many letters this blob probably holds: 1, or more when it is a merged word.
+    fn glyph_estimate(&self) -> usize {
+        let aspect = self.w() / self.h();
+        if aspect > MAX_ASPECT {
+            ((self.w() / (LETTER_PITCH * self.h())).round() as usize).max(2)
+        } else {
+            1
+        }
     }
     fn cy(&self) -> f64 {
         (self.y0 + self.y1) as f64 / 2.0
@@ -143,7 +156,11 @@ pub fn detect(labels: &[u8], ww: usize, wh: usize, up: usize, palette: &[Rgb]) -
         let (bw, bh) = (b.w(), b.h());
         let aspect = bw / bh;
         let fill = b.area as f64 / (bw * bh);
-        if !(MIN_ASPECT..=MAX_ASPECT).contains(&aspect) || !(MIN_FILL..=MAX_FILL).contains(&fill) {
+        let is_word = aspect > MAX_ASPECT && aspect <= MAX_WORD_ASPECT;
+        if !((MIN_ASPECT..=MAX_ASPECT).contains(&aspect) || is_word) || !(MIN_FILL..=MAX_FILL).contains(&fill) {
+            continue;
+        }
+        if is_word && !has_text_baseline(&b, &small, w) {
             continue;
         }
         let Some(sl) = surround_label(&b, &small, w, h) else { continue };
@@ -188,13 +205,14 @@ pub fn detect(labels: &[u8], ww: usize, wh: usize, up: usize, palette: &[Rgb]) -
     let mut out = Vec::new();
     for ln in lines {
         let n = ln.members.len();
+        let glyphs: usize = ln.members.iter().map(|m| m.glyph_estimate()).sum();
         let regular = n >= 3 && {
             let gaps: Vec<f64> = ln.members.windows(2).map(|p| p[1].x0 as f64 - p[0].x1 as f64).collect();
             let mean = gaps.iter().sum::<f64>() / gaps.len() as f64;
             let sd = (gaps.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gaps.len() as f64).sqrt();
             mean > 0.0 && sd / mean < 0.25 && mean < 0.8 * ln.avg_h
         };
-        if n < 4 && !regular {
+        if glyphs < 4 && !regular {
             continue;
         }
         let x0 = ln.members.iter().map(|m| m.x0).min().unwrap();
@@ -203,7 +221,38 @@ pub fn detect(labels: &[u8], ww: usize, wh: usize, up: usize, palette: &[Rgb]) -
         let y1 = ln.members.iter().map(|m| m.y1).max().unwrap();
         let (x0, y0) = (x0.saturating_sub(2), y0.saturating_sub(2));
         let (x1, y1) = ((x1 + 3).min(w), (y1 + 3).min(h));
-        out.push(TextRegion { x: x0 as f64, y: y0 as f64, w: (x1 - x0) as f64, h: (y1 - y0) as f64, glyph_count: n });
+        out.push(TextRegion { x: x0 as f64, y: y0 as f64, w: (x1 - x0) as f64, h: (y1 - y0) as f64, glyph_count: glyphs });
     }
     out
+}
+
+/// A merged word sits on a flat baseline and has a flat cap line; a wave, a ribbon or a brush stroke does not. For every
+/// column of the blob the lowest and highest pixel of its colour are found: most of them must lie within 2 px of the box
+/// bottom, and the tops must be mostly level too (or the bottoms very level).
+fn has_text_baseline(b: &Blob, labels: &[u8], w: usize) -> bool {
+    let (mut cols, mut flat_bottom, mut flat_top) = (0usize, 0usize, 0usize);
+    for x in b.x0..=b.x1 {
+        let mut top = None;
+        let mut bottom = None;
+        for y in b.y0..=b.y1 {
+            if labels[y * w + x] == b.label {
+                top.get_or_insert(y);
+                bottom = Some(y);
+            }
+        }
+        if let (Some(t), Some(bt)) = (top, bottom) {
+            cols += 1;
+            if b.y1 - bt <= 2 {
+                flat_bottom += 1;
+            }
+            if t - b.y0 <= 2 {
+                flat_top += 1;
+            }
+        }
+    }
+    if cols == 0 {
+        return false;
+    }
+    let (fb, ft) = (flat_bottom as f64 / cols as f64, flat_top as f64 / cols as f64);
+    fb >= 0.6 && (ft >= 0.4 || fb >= 0.8)
 }

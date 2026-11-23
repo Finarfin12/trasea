@@ -1,0 +1,222 @@
+[
+  {
+    "file": "a5ace655e0efac144731489e3c42ec6f",
+    "kb": 53,
+    "mae": 8.079113618824762,
+    "nodes": 1383,
+    "paths": 107,
+    "recall": 0.8439329699172219,
+    "secs": 33.6677275,
+    "target_nodes": 1903,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "a5ace655e0efac144731489e3c42ec6f",
+    "kb": 65,
+    "mae": 8.006258238493476,
+    "nodes": 1726,
+    "paths": 106,
+    "recall": 0.8596810014132849,
+    "secs": 0.6012993,
+    "target_nodes": 1903,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "Coastal Drift",
+    "kb": 57,
+    "mae": 5.010900132288927,
+    "nodes": 1541,
+    "paths": 95,
+    "recall": 0.8818633279709029,
+    "secs": 99.1878347,
+    "target_nodes": 2208,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "Coastal Drift",
+    "kb": 57,
+    "mae": 4.6309398148263385,
+    "nodes": 1517,
+    "paths": 95,
+    "recall": 0.8703923900118906,
+    "secs": 1.5784406,
+    "target_nodes": 2208,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "d92c7c3eca71dddd688db2988652f362",
+    "kb": 121,
+    "mae": 7.454401301447215,
+    "nodes": 3303,
+    "paths": 254,
+    "recall": 0.7706788362806617,
+    "secs": 84.828407,
+    "target_nodes": 4337,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "d92c7c3eca71dddd688db2988652f362",
+    "kb": 121,
+    "mae": 7.324766111633217,
+    "nodes": 3313,
+    "paths": 254,
+    "recall": 0.7674191182462717,
+    "secs": 1.3131481,
+    "target_nodes": 4337,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "Drifting Leaf",
+    "kb": 80,
+    "mae": 6.76252380951894,
+    "nodes": 2329,
+    "paths": 159,
+    "recall": 0.8750989789539487,
+    "secs": 104.2282234,
+    "target_nodes": 6159,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "Drifting Leaf",
+    "kb": 92,
+    "mae": 6.855327380977808,
+    "nodes": 2562,
+    "paths": 158,
+    "recall": 0.8724734319649927,
+    "secs": 2.1710531,
+    "target_nodes": 6159,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "logo taekwondo",
+    "kb": 2,
+    "mae": 2.1867380344310257,
+    "nodes": 94,
+    "paths": 2,
+    "recall": 0.0,
+    "secs": 104.2874178,
+    "target_nodes": 113,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "logo taekwondo",
+    "kb": 2,
+    "mae": 0.38182347934263966,
+    "nodes": 94,
+    "paths": 2,
+    "recall": 0.0,
+    "secs": 1.8900158,
+    "target_nodes": 113,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "logo atrione golf",
+    "kb": 18,
+    "mae": 3.24664473253451,
+    "nodes": 673,
+    "paths": 20,
+    "recall": 0.624378698224852,
+    "secs": 105.2554228,
+    "target_nodes": 413,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "logo atrione golf",
+    "kb": 17,
+    "mae": 2.2599094807844162,
+    "nodes": 666,
+    "paths": 20,
+    "recall": 0.6447337278106509,
+    "secs": 2.0620803,
+    "target_nodes": 413,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "Logo_Bangga_Buatan_Indonesia",
+    "kb": 19,
+    "mae": 3.029728703702718,
+    "nodes": 543,
+    "paths": 3,
+    "recall": 0.0,
+    "secs": 139.457636,
+    "target_nodes": 645,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "Logo_Bangga_Buatan_Indonesia",
+    "kb": 19,
+    "mae": 1.2572601851864484,
+    "nodes": 537,
+    "paths": 3,
+    "recall": 0.0,
+    "secs": 1.0524336,
+    "target_nodes": 645,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "Logo of Ari Reliyanto 1",
+    "kb": 6,
+    "mae": 2.5988122685185173,
+    "nodes": 167,
+    "paths": 12,
+    "recall": 0.8349780701754386,
+    "secs": 141.7185582,
+    "target_nodes": null,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "Logo of Ari Reliyanto 1",
+    "kb": 6,
+    "mae": 0.6932023148148106,
+    "nodes": 163,
+    "paths": 12,
+    "recall": 0.8267543859649122,
+    "secs": 1.0156292,
+    "target_nodes": null,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "logo kos kausar -Recovered-",
+    "kb": 98,
+    "mae": 5.829024539434751,
+    "nodes": 2319,
+    "paths": 394,
+    "recall": 0.7919335224969599,
+    "secs": 90.760423,
+    "target_nodes": null,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "logo kos kausar -Recovered-",
+    "kb": 100,
+    "mae": 5.028689910765076,
+    "nodes": 2349,
+    "paths": 394,
+    "recall": 0.7916903121199838,
+    "secs": 1.1324651000000001,
+    "target_nodes": null,
+    "variant": "Vektora (median, no AI)"
+  },
+  {
+    "file": "atrione takewondo",
+    "kb": 2,
+    "mae": 2.1352541666666665,
+    "nodes": 97,
+    "paths": 2,
+    "recall": 0.0,
+    "secs": 138.2498939,
+    "target_nodes": null,
+    "variant": "Vektora (AI clean)"
+  },
+  {
+    "file": "atrione takewondo",
+    "kb": 2,
+    "mae": 0.34868125,
+    "nodes": 96,
+    "paths": 2,
+    "recall": 0.0,
+    "secs": 0.9324029,
+    "target_nodes": null,
+    "variant": "Vektora (median, no AI)"
+  }
+]
