@@ -1,20 +1,58 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import BatchView from "./BatchView";
 import Licenses from "./Licenses";
-import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickColor, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type BrushStroke, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
+import {
+	collectDroppedImages,
+	licenses,
+	onDrop,
+	onProgress,
+	pickColor,
+	pickFolder,
+	pickImage,
+	pickSavePath,
+	processImage,
+	saveFile,
+	saveSeparations,
+	sidecarAvailable,
+	type BrushStroke,
+	type ExportKind,
+	type ExportOptions,
+	type Options,
+	type Processed,
+	type ProductionMode,
+} from "./api";
 
-const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false, detectPrimitives: true, symmetry: "off", detectText: true, customPalette: null, targetNodes: null, brushStrokes: [] };
+const DEFAULTS: Options = {
+	colors: 10,
+	smooth: 50,
+	keepLines: true,
+	aiClean: false,
+	detectPrimitives: true,
+	symmetry: "off",
+	detectText: true,
+	customPalette: null,
+	paletteMerges: [],
+	targetNodes: null,
+	brushStrokes: [],
+	productionMode: "standard",
+	minStrokePt: 0,
+	stripBackground: false,
+	registrationMarks: false,
+};
 
+type View = "editor" | "batch";
 type Tool = "pan" | "detail" | "smooth" | "pipet";
 type TargetChoice = "auto" | "500" | "1000" | "2000" | "custom";
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
-const isImage = (p: string): boolean => IMAGE_EXTENSIONS.includes((p.split(".").pop() ?? "").toLowerCase());
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : "Terjadi kesalahan yang tidak dikenal.");
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 const heatColor = (r: number): string => `hsl(${Math.round(120 * (1 - Math.min(1, Math.max(0, r))))}, 90%, 50%)`;
 
 export default function App() {
+	const [view, setView] = useState<View>("editor");
+	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
 	const [opts, setOpts] = useState<Options>(DEFAULTS);
 	const [result, setResult] = useState<Processed | null>(null);
@@ -25,8 +63,9 @@ export default function App() {
 	const [info, setInfo] = useState("");
 	const [over, setOver] = useState(false);
 	const [split, setSplit] = useState(50);
-	const [exp, setExp] = useState<ExportOptions>({ linesAs: "stroke", trapPt: 0 });
+	const [exp, setExp] = useState<ExportOptions>({ linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false });
 	const [withAse, setWithAse] = useState(true);
+	const [sepPdf, setSepPdf] = useState(false);
 	const [checker, setChecker] = useState(false);
 	/** Show boxes around suspected text areas in the preview (off by default; never exported). */
 	const [showText, setShowText] = useState(false);
@@ -38,6 +77,9 @@ export default function App() {
 	const [live, setLive] = useState<BrushStroke | null>(null);
 	/** The designer's palette; null = automatic. Changes wait for "Terapkan ulang". */
 	const [palette, setPalette] = useState<string[] | null>(null);
+	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
+	/** Swatch currently showing the target-colour merge picker. */
+	const [mergeSource, setMergeSource] = useState<string | null>(null);
 	const [targetChoice, setTargetChoice] = useState<TargetChoice>("auto");
 	const [customTarget, setCustomTarget] = useState("800");
 	const [hasSidecar, setHasSidecar] = useState(true);
@@ -57,14 +99,10 @@ export default function App() {
 	}, [targetChoice, customTarget]);
 
 	/** All the settings that change the result, as one string. */
-	const signature = useMemo(() => JSON.stringify({ ...opts, customPalette: palette, targetNodes, brushStrokes: strokes }), [opts, palette, targetNodes, strokes]);
-
-	useEffect(() => {
-		void sidecarAvailable().then(setHasSidecar);
-		const subs: Array<Promise<() => void>> = [onProgress((s, f) => { setStage(s); setFraction(f); }), onDrop(paths => { const p = paths.find(isImage); if (p) openPicture(p); else setError("File itu bukan gambar yang didukung (PNG, JPG, WEBP, BMP)."); }, setOver)];
-		return () => { subs.forEach(s => void s.then(u => u())); };
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	const signature = useMemo(
+		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes }),
+		[opts, palette, paletteMerges, targetNodes, strokes],
+	);
 
 	const run = useCallback(async (p: string, o: Options) => {
 		if (busyRef.current) return;
@@ -88,22 +126,91 @@ export default function App() {
 	}, []);
 
 	/** A new picture: brush strokes and palette belong to the old one. */
-	const openPicture = (p: string) => {
-		setStrokes([]);
-		setLive(null);
-		setPalette(null);
-		setTool("pan");
-		void run(p, { ...optsRef.current, customPalette: null, brushStrokes: [] });
+	const openPicture = useCallback(
+		(p: string) => {
+			setView("editor");
+			setStrokes([]);
+			setLive(null);
+			setPalette(null);
+			setPaletteMerges([]);
+			setMergeSource(null);
+			setTool("pan");
+			void run(p, { ...optsRef.current, customPalette: null, paletteMerges: [], brushStrokes: [] });
+		},
+		[run],
+	);
+
+	useEffect(() => {
+		void sidecarAvailable().then(setHasSidecar);
+		const subs: Array<Promise<() => void>> = [
+			onProgress((s, f) => {
+				setStage(s);
+				setFraction(f);
+			}),
+			onDrop(paths => {
+				void collectDroppedImages(paths, false).then(imgs => {
+					if (imgs.length === 0) {
+						setError("File atau folder itu tidak berisi gambar yang didukung (PNG, JPG, WEBP, BMP).");
+					} else if (imgs.length === 1 && paths.length === 1 && imgs[0] && imgs[0] === paths[0]) { openPicture(imgs[0]);
+					} else {
+						setBatchInitialFiles(imgs);
+						setView("batch");
+					}
+				});
+			}, setOver),
+		];
+		return () => {
+			subs.forEach(s => void s.then(u => u()));
+		};
+	}, [openPicture]);
+
+	const switchProductionMode = (mode: ProductionMode) => {
+		setOpts(o => {
+			if (mode === "standard") {
+				return { ...o, productionMode: "standard", minStrokePt: 0, stripBackground: false, registrationMarks: false };
+			}
+			if (mode === "screenPrint") {
+				return {
+					...o,
+					productionMode: "screenPrint",
+					colors: o.productionMode === "screenPrint" ? Math.min(8, Math.max(2, o.colors)) : 4,
+					minStrokePt: o.productionMode === "screenPrint" ? o.minStrokePt : 1.0,
+					stripBackground: false,
+					registrationMarks: true,
+				};
+			}
+			return {
+				...o,
+				productionMode: "cutEmbroidery",
+				smooth: o.productionMode === "cutEmbroidery" ? o.smooth : 70,
+				minStrokePt: o.productionMode === "cutEmbroidery" ? o.minStrokePt : 1.5,
+				stripBackground: true,
+				registrationMarks: false,
+			};
+		});
+		if (mode === "standard") {
+			setExp({ linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false });
+			setChecker(false);
+		} else if (mode === "screenPrint") {
+			setExp({ linesAs: "stroke", trapPt: 0.5, registrationMarks: true, stripBackground: false });
+			setChecker(false);
+		} else {
+			setExp({ linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: true });
+			setChecker(true);
+		}
 	};
 
-	/** Back to the automatic palette: the list would show the old manual colours until the next run, so run it now. */
+	/** Back to the automatic palette: recompute at once. */
 	const resetPalette = () => {
 		setPalette(null);
-		if (path && !busyRef.current) void run(path, { ...opts, customPalette: null, targetNodes, brushStrokes: strokes });
+		setPaletteMerges([]);
+		setMergeSource(null);
+		if (path && !busyRef.current) void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes });
 	};
 
 	const apply = () => {
-		if (path) void run(path, { ...opts, customPalette: palette, targetNodes, brushStrokes: strokes });
+		setMergeSource(null);
+		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes });
 	};
 
 	const choose = async () => {
@@ -115,17 +222,38 @@ export default function App() {
 		if (!path) return;
 		setError("");
 		setInfo("");
+		const effExp: ExportOptions =
+			opts.productionMode === "cutEmbroidery"
+				? { linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: opts.stripBackground }
+				: opts.productionMode === "screenPrint"
+					? { ...exp, registrationMarks: opts.registrationMarks, stripBackground: false }
+					: { ...exp, registrationMarks: false, stripBackground: false };
 		try {
 			const target = await pickSavePath(kind, `${baseName(path)}.${kind}`);
 			if (!target) return;
-			await saveFile(kind, target, exp);
+			await saveFile(kind, target, effExp);
 			let msg = `Tersimpan: ${target}`;
 			if (kind !== "ase" && withAse) {
 				const ase = target.replace(/\.[^.\\/]+$/, "") + ".ase";
-				await saveFile("ase", ase, exp);
+				await saveFile("ase", ase, effExp);
 				msg += ` dan ${ase}`;
 			}
 			setInfo(msg);
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const exportSeparationFilms = async () => {
+		if (!path) return;
+		setError("");
+		setInfo("");
+		try {
+			const dir = await pickFolder("Pilih folder untuk menyimpan film separasi");
+			if (!dir) return;
+			const effExp: ExportOptions = { ...exp, registrationMarks: true, stripBackground: false };
+			const written = await saveSeparations(dir, baseName(path), sepPdf ? "both" : "svg", effExp);
+			setInfo(`Tersimpan ${written.length} file film separasi di ${dir}`);
 		} catch (e) {
 			setError(errText(e));
 		}
@@ -141,24 +269,35 @@ export default function App() {
 		const base = currentPalette();
 		if (base.length <= 2) return;
 		setPalette(base.filter(c => c !== hex));
+		setMergeSource(null);
 	};
-	/** Merge into the nearest other colour: removing a colour maps its pixels to the nearest colour that is left. */
-	const nearestOf = (hex: string): string | null => {
-		const others = currentPalette().filter(c => c !== hex);
-		if (others.length === 0) return null;
+	/** Other palette colours sorted by RGB distance from `hex` (nearest first). */
+	const othersByDistance = (hex: string): string[] => {
 		const a = rgb(hex);
-		let best: string | null = others[0] ?? null;
-		let bd = Infinity;
-		for (const o of others) {
-			const b = rgb(o);
-			const d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
-			if (d < bd) { bd = d; best = o; }
-		}
-		return best;
+		return currentPalette()
+			.filter(c => c !== hex)
+			.sort((x, y) => {
+				const bx = rgb(x);
+				const by = rgb(y);
+				const dx = (a[0] - bx[0]) ** 2 + (a[1] - bx[1]) ** 2 + (a[2] - bx[2]) ** 2;
+				const dy = (a[0] - by[0]) ** 2 + (a[1] - by[1]) ** 2 + (a[2] - by[2]) ** 2;
+				return dx - dy;
+			});
+	};
+	const mergeColorInto = (fromHex: string, targetHex: string) => {
+		const base = currentPalette();
+		if (base.length <= 2 || fromHex === targetHex) return;
+		setPalette(base.filter(c => c !== fromHex));
+		setPaletteMerges(prev => [...prev.map(([a, b]): [string, string] => [a, b === fromHex ? targetHex : b]), [fromHex, targetHex]]);
+		setMergeSource(null);
+		setInfo(`Warna ${fromHex} digabung ke ${targetHex}. Klik Terapkan ulang untuk memakainya.`);
 	};
 	const addColor = (hex: string) => {
 		const base = currentPalette();
-		if (base.includes(hex)) { setInfo(`Warna ${hex} sudah ada di palet.`); return; }
+		if (base.includes(hex)) {
+			setInfo(`Warna ${hex} sudah ada di palet.`);
+			return;
+		}
 		setPalette([...base, hex]);
 		setInfo(`Warna ${hex} ditambahkan. Klik Terapkan ulang untuk memakainya.`);
 	};
@@ -200,194 +339,260 @@ export default function App() {
 		if (s) setStrokes(list => [...list, s]);
 	};
 
-	const dirty = result !== null && appliedSig !== "" && JSON.stringify({ ...opts, customPalette: palette, targetNodes, brushStrokes: strokes }) !== appliedSig;
+	const dirty = result !== null && appliedSig !== "" && signature !== appliedSig;
 	const paletteDirty = result !== null && palette !== null && JSON.stringify(palette) !== JSON.stringify(result.palette);
 	const painting = tool === "detail" || tool === "smooth";
 	const shown = live ? [...strokes, live] : strokes;
+	const maxColors = opts.productionMode === "screenPrint" ? 8 : 16;
 
 	return (
 		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.4.0 · offline</small></div>
+				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.5.0 · offline</small></div>
 				<div className="row">
+					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>Batch folder</button>
 					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
 					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>
 				</div>
 			</header>
 
-			<main className="work">
-				<section className="stage" aria-label="Pratinjau">
-					{!result && !busy && (
-						<div className="drop" role="button" tabIndex={0} onClick={() => void choose()} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") void choose(); }}>
-							<div className="drop-title">Seret gambar ke sini</div>
-							<div className="drop-sub">atau klik untuk memilih · PNG, JPG, WEBP, BMP</div>
-							<div className="drop-sub">Ilustrasi flat dan logo hasilnya paling bagus. Semua diproses di komputer ini.</div>
-						</div>
-					)}
-					{busy && (
-						<div className="progress" role="status" aria-live="polite">
-							<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
-							<div>{stage}… {Math.round(fraction * 100)}%</div>
-							<div className="muted">Pembersihan AI bisa memakan 10–40 detik pada gambar besar.</div>
-						</div>
-					)}
-					{result && !busy && (
-						<div className="stagebox">
-							<div className="toolbar" role="toolbar" aria-label="Alat kanvas">
-								<div className="group" role="group" aria-label="Mode">
-									<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Geser</button>
-									<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">Kuas Detail</button>
-									<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">Kuas Halus</button>
-									<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>Pipet Warna</button>
+			{view === "batch" ? (
+				<BatchView
+					opts={opts}
+					exp={exp}
+					initialFiles={batchInitialFiles}
+					onChangeMode={switchProductionMode}
+					onOpenInEditor={p => openPicture(p)}
+					onBack={() => setView("editor")}
+				/>
+			) : (
+				<main className="work">
+					<section className="stage" aria-label="Pratinjau">
+						{!result && !busy && (
+							<div className="drop-wrap">
+								<div className="drop" role="button" tabIndex={0} onClick={() => void choose()} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") void choose(); }}>
+									<div className="drop-title">Seret gambar atau folder ke sini</div>
+									<div className="drop-sub">atau klik untuk memilih · PNG, JPG, WEBP, BMP</div>
+									<div className="drop-sub">Ilustrasi flat dan logo hasilnya paling bagus. Semua diproses di komputer ini.</div>
 								</div>
-								{painting && (
-									<div className="group">
-										<label className="brushsize" htmlFor="brush">Ukuran <b>{brushSize}</b> px</label>
-										<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
-										<button onClick={() => setStrokes(s => s.slice(0, -1))} disabled={strokes.length === 0}>Undo</button>
-										<button onClick={() => setStrokes([])} disabled={strokes.length === 0}>Bersihkan sapuan</button>
+								<div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
+									<button onClick={() => setView("batch")}>Proses folder (Batch)…</button>
+								</div>
+							</div>
+						)}
+						{busy && (
+							<div className="progress" role="status" aria-live="polite">
+								<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
+								<div>{stage}… {Math.round(fraction * 100)}%</div>
+								<div className="muted">Pembersihan AI bisa memakan 10–40 detik pada gambar besar.</div>
+							</div>
+						)}
+						{result && !busy && (
+							<div className="stagebox">
+								<div className="toolbar" role="toolbar" aria-label="Alat kanvas">
+									<div className="group" role="group" aria-label="Mode">
+										<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>Geser</button>
+										<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">Kuas Detail</button>
+										<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">Kuas Halus</button>
+										<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>Pipet Warna</button>
+									</div>
+									{painting && (
+										<div className="group">
+											<label className="brushsize" htmlFor="brush">Ukuran <b>{brushSize}</b> px</label>
+											<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
+											<button onClick={() => setStrokes(s => s.slice(0, -1))} disabled={strokes.length === 0}>Undo</button>
+											<button onClick={() => setStrokes([])} disabled={strokes.length === 0}>Bersihkan sapuan</button>
+										</div>
+									)}
+									<div className="group" role="group" aria-label="Overlay">
+										<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>Heatmap node</button>
+										<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>Latar kotak-kotak</button>
+									</div>
+								</div>
+								{tool === "pipet" && <div className="hint">Klik pada gambar untuk mengambil warna dan menambahkannya ke palet.</div>}
+								{painting && <div className="hint">Sapukan di atas gambar: {tool === "detail" ? "area biru memakai kurva lebih rapat (lebih detail)" : "area oranye dirampingkan (lebih sedikit node)"}. Lalu klik Terapkan ulang.</div>}
+								<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
+									<img className="layer" src={result.original} alt="Gambar asli" draggable={false} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
+									<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
+									<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
+									{showText && result.textRegions.map((r, i) => (
+										<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
+									))}
+									<svg ref={overlayRef} className="overlay" viewBox={`0 0 ${result.width} ${result.height}`} preserveAspectRatio="none" aria-hidden="true" data-testid="overlay"
+										style={{ pointerEvents: tool === "pan" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
+										onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+										{showHeat && (() => {
+											const hm = result.heatmap;
+											const cell = Math.max(result.width, result.height) / 32;
+											return hm.cells.map((v, i) => v > 0 ? <rect key={i} className="heatcell" x={(i % hm.cols) * cell} y={Math.floor(i / hm.cols) * cell} width={cell} height={cell} fill={heatColor(v / Math.max(1, hm.maxCell))} fillOpacity={0.25 + 0.35 * (v / Math.max(1, hm.maxCell))} /> : null);
+										})()}
+										{shown.map((s, i) => !s.points[0] ? null : s.points.length === 1
+											? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
+											: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
+									</svg>
+									<span className="tag left">Asli</span>
+									<span className="tag right">Vektor</span>
+									<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
+								</div>
+								{showHeat && (
+									<div className="legend" aria-label="Legenda heatmap">
+										<span>sedikit node</span><span className="ramp" aria-hidden="true" /><span>padat ({result.heatmap.maxCell} node/kotak)</span>
 									</div>
 								)}
-								<div className="group" role="group" aria-label="Overlay">
-									<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>Heatmap node</button>
-									<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>Latar kotak-kotak</button>
-								</div>
 							</div>
-							{tool === "pipet" && <div className="hint">Klik pada gambar untuk mengambil warna dan menambahkannya ke palet.</div>}
-							{painting && <div className="hint">Sapukan di atas gambar: {tool === "detail" ? "area biru memakai kurva lebih rapat (lebih detail)" : "area oranye dirampingkan (lebih sedikit node)"}. Lalu klik Terapkan ulang.</div>}
-							<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
-								<img className="layer" src={result.original} alt="Gambar asli" draggable={false} />
-								<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
-								<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
-								{showText && result.textRegions.map((r, i) => (
-									<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
-								))}
-								<svg ref={overlayRef} className="overlay" viewBox={`0 0 ${result.width} ${result.height}`} preserveAspectRatio="none" aria-hidden="true" data-testid="overlay"
-									style={{ pointerEvents: tool === "pan" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
-									onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-									{showHeat && (() => {
-										const hm = result.heatmap;
-										const cell = Math.max(result.width, result.height) / 32;
-										return hm.cells.map((v, i) => v > 0 ? <rect key={i} className="heatcell" x={(i % hm.cols) * cell} y={Math.floor(i / hm.cols) * cell} width={cell} height={cell} fill={heatColor(v / Math.max(1, hm.maxCell))} fillOpacity={0.25 + 0.35 * (v / Math.max(1, hm.maxCell))} /> : null);
-									})()}
-									{shown.map((s, i) => !s.points[0] ? null : s.points.length === 1
-										? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
-										: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
-								</svg>
-								<span className="tag left">Asli</span>
-								<span className="tag right">Vektor</span>
-								<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
-							</div>
-							{showHeat && (
-								<div className="legend" aria-label="Legenda heatmap">
-									<span>sedikit node</span><span className="ramp" aria-hidden="true" /><span>padat ({result.heatmap.maxCell} node/kotak)</span>
-								</div>
-							)}
+						)}
+					</section>
+
+					<aside className="panel" aria-label="Pengaturan">
+						<h2>Mode Produksi</h2>
+						<div className="seg" role="group" aria-label="Mode produksi">
+							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>Standar</button>
+							<button aria-pressed={opts.productionMode === "screenPrint"} onClick={() => switchProductionMode("screenPrint")}>Sablon</button>
+							<button aria-pressed={opts.productionMode === "cutEmbroidery"} onClick={() => switchProductionMode("cutEmbroidery")}>Cutting / Bordir</button>
 						</div>
-					)}
-				</section>
 
-				<aside className="panel" aria-label="Pengaturan">
-					<h2>Pengaturan</h2>
-					<label htmlFor="colors">Jumlah warna <b>{opts.colors}</b></label>
-					<input id="colors" type="range" min={2} max={16} value={opts.colors} onChange={e => set({ colors: Number(e.target.value) })} />
-					<label htmlFor="smooth">Kehalusan <b>{opts.smooth < 34 ? "detail" : opts.smooth > 66 ? "halus" : "sedang"}</b></label>
-					<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) })} />
-					<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
-					<label htmlFor="target">Target node (maks)</label>
-					<select id="target" value={targetChoice} onChange={e => setTargetChoice(e.target.value as TargetChoice)}>
-						<option value="auto">Otomatis</option>
-						<option value="500">500</option>
-						<option value="1000">1000</option>
-						<option value="2000">2000</option>
-						<option value="custom">Angka sendiri…</option>
-					</select>
-					{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label="Target node" />}
-					<div className="hint">Trasea menghaluskan hasil sampai jumlah node masuk anggaran, tanpa membersihkan gambar ulang.</div>
-					<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
-					<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked })} /> Kenali bentuk dasar</label>
-					<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
-					<label htmlFor="symmetry">Tegas simetri</label>
-					<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] })}>
-						<option value="off">Mati</option>
-						<option value="auto">Otomatis</option>
-						<option value="vertical">Vertikal (kiri = kanan)</option>
-						<option value="horizontal">Horizontal (atas = bawah)</option>
-					</select>
-					<div className="hint">Untuk logo yang seharusnya simetris. Satu sisi disalin ke sisi lain.</div>
-					<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
-					<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
-					{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
-					<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
-					{dirty && <div className="pending" role="status">Perubahan belum diterapkan{palette !== null || strokes.length > 0 ? ` (${[palette !== null ? "palet" : "", strokes.length > 0 ? `${strokes.length} sapuan` : ""].filter(Boolean).join(", ")})` : ""}.</div>}
+						{opts.productionMode === "screenPrint" && (
+							<div className="mode-box">
+								<label htmlFor="minStroke">Garis minimum (pt)</label>
+								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) })} />
+								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> Tanda registrasi (4 sudut)</label>
+								{opts.colors > 6 && <div className="warn">Lebih dari 6 warna spot dapat menaikkan biaya film sablon.</div>}
+								<div className="hint">Warna dibatasi 2–8 spot, bintik mikro diserap, garis tipis ditebalkan ke batas aman afdruk.</div>
+							</div>
+						)}
 
-					{result && (
-						<>
-							<div className="palette-head">
-								<h2>Palet</h2>
-								<div className="row">
-									<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(t => (t === "pipet" ? "pan" : "pipet"))}>+ Pipet</button>
-									<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>Reset palet</button>
+						{opts.productionMode === "cutEmbroidery" && (
+							<div className="mode-box">
+								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> Hapus latar belakang</label>
+								<label htmlFor="minStrokeCut">Garis minimum (pt)</label>
+								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) })} />
+								<div className="hint">Bebas tumpang tindih (knockout), semua garis jadi bentuk isi tertutup, trap dikunci 0 pt.</div>
+							</div>
+						)}
+
+						<h2>Pengaturan</h2>
+						<label htmlFor="colors">Jumlah warna <b>{Math.min(opts.colors, maxColors)}</b></label>
+						<input id="colors" type="range" min={2} max={maxColors} value={Math.min(opts.colors, maxColors)} onChange={e => set({ colors: Number(e.target.value) })} />
+						<label htmlFor="smooth">Kehalusan <b>{opts.smooth < 34 ? "detail" : opts.smooth > 66 ? "halus" : "sedang"}</b></label>
+						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) })} />
+						<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
+						<label htmlFor="target">Target node (maks)</label>
+						<select id="target" value={targetChoice} onChange={e => setTargetChoice(e.target.value as TargetChoice)}>
+							<option value="auto">Otomatis</option>
+							<option value="500">500</option>
+							<option value="1000">1000</option>
+							<option value="2000">2000</option>
+							<option value="custom">Angka sendiri…</option>
+						</select>
+						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label="Target node" />}
+						<div className="hint">Trasea menghaluskan hasil sampai jumlah node masuk anggaran, tanpa membersihkan gambar ulang.</div>
+						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
+						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked })} /> Kenali bentuk dasar</label>
+						<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
+						<label htmlFor="symmetry">Tegas simetri</label>
+						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] })}>
+							<option value="off">Mati</option>
+							<option value="auto">Otomatis</option>
+							<option value="vertical">Vertikal (kiri = kanan)</option>
+							<option value="horizontal">Horizontal (atas = bawah)</option>
+						</select>
+						<div className="hint">Untuk logo yang seharusnya simetris. Satu sisi disalin ke sisi lain.</div>
+						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
+						<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
+						{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
+						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
+						{dirty && <div className="pending" role="status">Perubahan belum diterapkan{palette !== null || strokes.length > 0 ? ` (${[palette !== null ? "palet" : "", strokes.length > 0 ? `${strokes.length} sapuan` : ""].filter(Boolean).join(", ")})` : ""}.</div>}
+
+						{result && (
+							<>
+								<div className="palette-head">
+									<h2>Palet</h2>
+									<div className="row">
+										<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(t => (t === "pipet" ? "pan" : "pipet"))}>+ Pipet</button>
+										<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>Reset palet</button>
+									</div>
+								</div>
+								<ul className="palette" aria-label="Palet warna">
+									{currentPalette().map(c => (
+										<li key={c} className="swatch-item">
+											<div className="swatch">
+												<span className="chip" style={{ background: c }} aria-hidden="true" />
+												<code>{c}</code>
+												<button className="small" aria-expanded={mergeSource === c} onClick={() => setMergeSource(s => (s === c ? null : c))} disabled={currentPalette().length <= 2} aria-label={`Gabung ${c}`}>Gabung</button>
+												<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`Hapus ${c}`}>Hapus</button>
+											</div>
+											{mergeSource === c && (
+												<div className="merge-pop" role="region" aria-label={`Pilih target gabung untuk ${c}`}>
+													<div className="hint">Gabung <code>{c}</code> ke warna:</div>
+													<div className="merge-targets">
+														{othersByDistance(c).map((t, i) => (
+															<button key={t} className="small merge-opt" onClick={() => mergeColorInto(c, t)} aria-label={`Gabung ${c} ke ${t}`}>
+																<span className="chip-sm" style={{ background: t }} aria-hidden="true" />
+																<span>{t}{i === 0 ? " (terdekat)" : ""}</span>
+															</button>
+														))}
+													</div>
+												</div>
+											)}
+										</li>
+									))}
+								</ul>
+								<div className="hint">Klik Gabung untuk memilih warna target (warna terdekat disarankan pertama). {paletteDirty ? "Palet berubah, klik Terapkan ulang." : palette !== null ? "Palet manual dipakai." : "Palet otomatis."}</div>
+
+								<h2>Statistik</h2>
+								<dl className="stats">
+									<dt>Path</dt><dd>{result.paths}</dd>
+									<dt>Node</dt><dd>{result.nodes.toLocaleString("id-ID")}</dd>
+									<dt>Ukuran SVG</dt><dd>{fmtKb(result.bytes)}</dd>
+									<dt>Bentuk dasar</dt><dd>{result.primitives}</dd>
+									{result.symmetryApplied && <><dt>Simetri</dt><dd>{result.symmetryApplied === "vertical" ? "kiri = kanan" : "atas = bawah"}</dd></>}
+									{result.budgetMet !== null && <><dt>Target node</dt><dd>{result.budgetMet ? "tercapai" : "tidak tercapai"}</dd><dt>Kehalusan dipakai</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
+									<dt>Selisih warna (MAE)</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
+									<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk{result.reused ? " (tanpa muat/bersihkan ulang)" : ""}</dd>
+									<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
+								</dl>
+								<h2>Ekspor</h2>
+								<label htmlFor="linesAs">Garis tipis sebagai</label>
+								<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
+									<option value="stroke">Stroke (tebal bisa diubah)</option>
+									<option value="shape">Bentuk isi (outline)</option>
+								</select>
+								<label htmlFor="trap">Trap untuk cetak</label>
+								<select id="trap" value={opts.productionMode === "cutEmbroidery" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
+									<option value={0}>Tanpa trap (0 pt)</option>
+									<option value={0.25}>0,25 pt</option>
+									<option value={0.5}>0,5 pt</option>
+									<option value={1}>1 pt</option>
+								</select>
+								{opts.productionMode === "cutEmbroidery" && <div className="hint">Trap dikunci 0 pt dan garis jadi bentuk isi agar aman untuk pisau cutting / bordir.</div>}
+								<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> Sertakan palet .ase</label>
+								<div className="row" style={{ marginTop: 8 }}>
+									<button onClick={() => void exportAs("svg")}>Ekspor SVG</button>
+									<button onClick={() => void exportAs("pdf")}>Ekspor PDF</button>
+									<button onClick={() => void exportAs("ase")}>Palet .ase</button>
+								</div>
+								{opts.productionMode === "screenPrint" && (
+									<div className="sep-box">
+										<label className="check"><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> Sertakan PDF per film</label>
+										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>Ekspor film separasi…</button>
+									</div>
+								)}
+							</>
+						)}
+						{result && result.textRegions.length > 0 && (
+							<div className="warn" role="status" id="text-warning">
+								Terdeteksi kemungkinan teks ({result.textRegions.length} area). Teks hasil vektorisasi hampir selalu kalah rapi dibanding mengetik ulang dengan font aslinya.
+								<div className="row" style={{ marginTop: 8 }}>
+									<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? "Sembunyikan area teks" : "Sorot area teks"}</button>
 								</div>
 							</div>
-							<ul className="palette" aria-label="Palet warna">
-								{currentPalette().map(c => (
-									<li key={c} className="swatch">
-										<span className="chip" style={{ background: c }} aria-hidden="true" />
-										<code>{c}</code>
-										<button className="small" title="Gabung ke warna terdekat" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2 || nearestOf(c) === null} aria-label={`Gabung ${c} ke ${nearestOf(c) ?? "-"}`}>Gabung</button>
-										<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`Hapus ${c}`}>Hapus</button>
-									</li>
-								))}
-							</ul>
-							<div className="hint">Gabung dan Hapus memindahkan piksel warna itu ke warna terdekat yang tersisa (minimal 2 warna). {paletteDirty ? "Palet berubah, klik Terapkan ulang." : palette !== null ? "Palet manual dipakai." : "Palet otomatis."}</div>
-
-							<h2>Statistik</h2>
-							<dl className="stats">
-								<dt>Path</dt><dd>{result.paths}</dd>
-								<dt>Node</dt><dd>{result.nodes.toLocaleString("id-ID")}</dd>
-								<dt>Ukuran SVG</dt><dd>{fmtKb(result.bytes)}</dd>
-								<dt>Bentuk dasar</dt><dd>{result.primitives}</dd>
-								{result.symmetryApplied && <><dt>Simetri</dt><dd>{result.symmetryApplied === "vertical" ? "kiri = kanan" : "atas = bawah"}</dd></>}
-								{result.budgetMet !== null && <><dt>Target node</dt><dd>{result.budgetMet ? "tercapai" : "tidak tercapai"}</dd><dt>Kehalusan dipakai</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
-								<dt>Selisih warna (MAE)</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
-								<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk{result.reused ? " (tanpa muat/bersihkan ulang)" : ""}</dd>
-								<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
-							</dl>
-							<h2>Ekspor</h2>
-							<label htmlFor="linesAs">Garis tipis sebagai</label>
-							<select id="linesAs" value={exp.linesAs} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
-								<option value="stroke">Stroke (tebal bisa diubah)</option>
-								<option value="shape">Bentuk isi (outline)</option>
-							</select>
-							<label htmlFor="trap">Trap untuk cetak</label>
-							<select id="trap" value={exp.trapPt} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
-								<option value={0}>Tanpa trap</option>
-								<option value={0.25}>0,25 pt</option>
-								<option value={0.5}>0,5 pt</option>
-								<option value={1}>1 pt</option>
-							</select>
-							<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> Sertakan palet .ase</label>
-							<div className="row" style={{ marginTop: 8 }}>
-								<button onClick={() => void exportAs("svg")}>Ekspor SVG</button>
-								<button onClick={() => void exportAs("pdf")}>Ekspor PDF</button>
-								<button onClick={() => void exportAs("ase")}>Palet .ase</button>
-							</div>
-						</>
-					)}
-					{result && result.textRegions.length > 0 && (
-						<div className="warn" role="status" id="text-warning">
-							Terdeteksi kemungkinan teks ({result.textRegions.length} area). Teks hasil vektorisasi hampir selalu kalah rapi dibanding mengetik ulang dengan font aslinya.
-							<div className="row" style={{ marginTop: 8 }}>
-								<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? "Sembunyikan area teks" : "Sorot area teks"}</button>
-							</div>
-						</div>
-					)}
-					{result?.notes.map(n => <div className="warn" key={n}>{n}</div>)}
-					{error && <div className="error" role="alert">{error}</div>}
-					{info && <div className="ok" role="status">{info}</div>}
-				</aside>
-			</main>
+						)}
+						{result?.notes.map(n => <div className="warn" key={n}>{n}</div>)}
+						{error && <div className="error" role="alert">{error}</div>}
+						{info && <div className="ok" role="status">{info}</div>}
+					</aside>
+				</main>
+			)}
 
 			{showLicenses !== null && (
 				<div className="modal" role="dialog" aria-modal="true" aria-label="Lisensi pihak ketiga" onClick={() => setShowLicenses(null)}>

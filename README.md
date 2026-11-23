@@ -1,59 +1,53 @@
-# Trasea (working name)
+# Trasea
 
 *Bahasa Indonesia: [README.id.md](README.id.md)*
 
-An **offline Windows desktop app** that turns a flat illustration or a logo (JPG/PNG) into a clean **SVG or PDF** with tidy nodes, meant to open without warnings in Affinity and Adobe Illustrator. Prototype 0.4.0 ("Kendali desainer"; known as Vektora until 0.3.0). Local repository, no server, no account, **no network request**.
+An **offline Windows desktop app** that turns flat illustrations or logos (PNG/JPG/WEBP/BMP) into clean **SVG or PDF** vectors with tidy nodes, ready for Affinity Designer, Adobe Illustrator, screen printing, and cutting plotters. Version **0.5.0 ("Produksi")**. Local repository, no server, no account, **no network request**.
 
 ## What it does
 
-Four stages (all on your computer), plus three checks added in 0.3.0 (basic shapes, symmetry, text warning):
+Four stages (all on your computer), plus production profiles, designer controls, and batch folder processing:
 
-1. **Thin-line guard.** Dark strokes thinner than a few pixels (eyes, smiles, outlines) are found in the ORIGINAL image first, because every cleaning step after that tends to erase them. A stroke must be darker than the pixels on both sides of it, so the dark rim that JPEG leaves at the edge of a colour shape is not mistaken for a line.
-2. **Clean (optional, off by default).** Real-ESRGAN (anime x4, bundled sidecar) removes JPEG noise and is scaled to 2x. Off: a 3 px median filter is used (about as good on most images, 20-40x faster). If it is on but the sidecar or a GPU is missing, the app falls back to the median filter and says so.
-3. **Palette lock + tracing.** 2-16 flat colours (k-means in Lab, edge pixels left out of the estimate so no halo colours appear; low-contrast specks merged away). Each colour is one stacked layer (a smaller colour always sits on top of a bigger one, so there are no gaps), traced with visioncortex (the engine of VTracer) and fitted with as few cubic Beziers as the tolerance allows.
-4. **Lines on top.** Each thin line becomes ONE open path: its centerline (from a skeleton) with a measured `stroke-width` and round caps. Lines of uneven width stay filled shapes.
+1. **Thin-line guard.** Dark strokes thinner than a few pixels (eyes, smiles, outlines) are found in the ORIGINAL image first, because cleaning steps tend to erase them.
+2. **Clean (optional, off by default).** Real-ESRGAN (anime x4, bundled sidecar) removes JPEG noise and scales to 2x. Off: a 3 px median filter runs 20–40x faster and is usually just as good.
+3. **Palette lock + tracing.** Flat colours (k-means in Lab, edge pixels excluded so no halo colours appear; low-contrast specks merged away) traced with visioncortex (VTracer engine) into compact cubic Beziers.
+4. **Lines on top.** Each thin line becomes an editable open stroke (centerline + measured `stroke-width`) or a closed filled outline depending on export/production mode.
 
-Export, SVG layers (names readable in Illustrator and Affinity):
+Export SVG layer layout:
 
 ```
-Latar            the background colour
+Latar            background colour (omitted when "Hapus latar belakang" is active)
 Bidang warna     one sub-group per colour: id="Warna_02_EBD9C1", data-name="Warna 02 #EBD9C1"
-Garis            thin lines: <path fill="none" stroke="#223F64" stroke-width="4.12" stroke-linecap="round" ...>
+Garis            thin lines (editable strokes or closed filled shapes)
+Registrasi       4 corner registration marks (optional, default on in Screen Print mode)
 ```
 
-No CSS, `<style>`, filter or transform. Also **PDF** (page size = image size) and the palette as **.ase** (Adobe Swatch Exchange, colours named `Trasea 01 #RRGGBB`; import in Illustrator via Swatches and in Affinity via Swatches > Import Palette; not tested by the author, see Limits). Options: thin lines as stroke or as filled shapes; trap 0 / 0.25 / 0.5 / 1 pt for print.
+Also exports **PDF** (page size = drawing size), **.ase** (Adobe Swatch Exchange, group `Trasea`, swatches `Trasea 01 #RRGGBB`), and **100%-black separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`).
 
-Controls: number of colours (2-16), smoothness (few nodes <-> detail), "keep thin lines", "recognise basic shapes" (on), "enforce symmetry" (off / automatic / vertical / horizontal), "clean with AI". Statistics on screen: paths, nodes, basic shapes, SVG size, colour error, time.
+### New in 0.5.0 ("Produksi")
 
-New in 0.4.0 ("Kendali desainer"; the product was called Vektora until 0.3.0, it is **Trasea** now):
+- **Batch folder processing + per-file reports.** Process an entire folder (with optional 1-level subfolders) or drag-and-drop multiple files/folders onto the window. Runs sequentially when AI cleaning is enabled and with bounded parallelism (`min(cpu/2, 4)`) otherwise. Isolates corrupt files without stopping the batch, avoids filename collisions (`logo_2.svg`), supports clean cancellation, exports `laporan-trasea.csv` and `laporan-trasea.md`, and lets you click any report row to open that file directly in the single-image editor.
+- **Screen Print mode (`Sablon`).** Caps spot colours to 2–8 (default 4; warns above 6), enables 0.5 pt print trap, absorbs micro-specks, thickens thin strokes to at least `min_stroke_pt` (default 1.0 pt), adds 4 corner registration marks on layer `Registrasi`, and exports per-colour 100%-black (`#000000`) separation film SVGs/PDFs with matching registration marks and film labels.
+- **Cutting Sticker / Embroidery mode (`Cutting / Bordir`).** Non-overlapping knockout tracing (no stacked layers underneath), strips the background layer by default (toggleable), turns all thin lines into closed filled shapes thickened to `min_stroke_pt` (default 1.5 pt), filters small weeding regions, nudges smoothness to 70, and locks print trap to `0 pt`.
+- **0.4.0 polish.** Manual palette **Gabung** lets you pick any target colour (suggesting the nearest colour first) and remaps merged pixels to that exact target; macOS `icon.icns` updated to the Trasea `T` logo.
 
-- **Correction brush.** Above the preview: `Kuas Detail` (blue: tighter curves, small details kept) and `Kuas Halus` (orange: fewer nodes, specks merged away), brush size 10-120 px, `Undo`, `Bersihkan sapuan`. The strokes are not exported. Everything is still traced from one label picture, so there is no gap at the edge of a painted area.
-- **Manual palette.** Remove a colour, merge it into the nearest one, pick a colour from the picture with the **Pipet** (`+ Pipet`), or `Reset palet` (recomputes the automatic palette at once). The change waits for **Terapkan ulang** (a marker shows what is not applied yet). The SVG, PDF and `.ase` use exactly the chosen colours; a tiny accent colour you kept is not merged away.
-- **Node heatmap.** The `Heatmap node` button (off by default) overlays green-to-red cells where nodes pile up. It is a preview aid and is never exported.
-- **Node target.** `Target node (maks)`: Otomatis / 500 / 1000 / 2000 / your own number (CLI `--target-nodes N`). Trasea raises the smoothness (then loosens the curve fit) until the node count fits, and says so honestly when it cannot.
-- **Faster polishing.** Loading and cleaning (Real-ESRGAN) are kept in memory for the open picture: changing the palette, brush or node target does not run them again.
-- **Lighter files.** A small island of a colour that was repeated, hidden, in every layer below it is now written once.
+### Earlier milestones
 
-New in 0.3.0:
-
-- **Basic shapes.** A circle, ellipse or (rounded) rectangle that matches closely is written as a pure `<circle>`, `<ellipse>` or `<rect>`; straight edges use `L`. Organic shapes stay paths.
-- **Symmetry.** Off by default. When on, one half of a logo is mirrored onto the other, as pixels before tracing and as vectors afterwards, so both sides are identical and no seam is left on the axis.
-- **Sharp corners vs smooth curves**, decided per point: star tips and letter corners stay sharp, leaf edges and ripples stay smooth.
-- **Text warning.** If the picture seems to hold text, a warning shows how many areas and a **Sorot area teks** button (off by default) outlines them in the preview. The outlines are never exported. Text traced from a picture is always less tidy than retyping it with the real font.
-- **Thin lines stay whole** (a fading vein no longer breaks into dots) and strokes that continue through a junction are one path.
+- **0.4.0 ("Kendali desainer"):** Rebrand Vektora → Trasea, correction brush (`Kuas Detail` / `Kuas Halus`), interactive manual palette + 5×5 median eyedropper, node density heatmap (off by default, preview only), node budget target (`--target-nodes`), in-memory `PreparedImage` cache for fast iterations, hidden-duplicate contour removal.
+- **0.3.0 ("Geometri rapi"):** Pure `<circle>`/`<ellipse>`/`<rect>` basic-shape detection, symmetry enforcer, per-point sharp corners vs smooth curves, offline text-area warning + preview highlight, unbroken thin-line hysteresis.
 
 ## Use
 
-1. Run the installer (`Trasea_0.4.0_x64-setup.exe`, per-user, no admin needed) and start Trasea.
-2. Drag an image onto the window (or **Buka gambar**), wait for the conversion (about 1-3 s with the default settings, 10-40 s with AI on, on the integrated GPU of the test PC).
-3. Drag the slider to compare the original and the vector, adjust the controls and press **Terapkan ulang** if you want.
-4. Choose how thin lines and trap are exported, then **Ekspor SVG**, **Ekspor PDF** or **Palet .ase** (the .ase is saved next to the SVG/PDF when "Sertakan palet .ase" is ticked).
+1. Run the installer (`Trasea_0.5.0_x64-setup.exe`, per-user, no admin needed) and start Trasea.
+2. Drag an image onto the window (or click **Buka gambar…**), or click **Batch folder** (or drop a folder/multiple images) to process a batch.
+3. Choose a **Mode Produksi** (**Standar**, **Sablon**, or **Cutting / Bordir**), adjust controls, and press **Terapkan ulang** if needed.
+4. Export **SVG**, **PDF**, **Palet .ase**, or (in Sablon mode) **Ekspor film separasi…**.
 
-The interface is in Indonesian.
+The desktop interface is in Indonesian.
 
 ## Build from source
 
-Needs Rust (this repo is built with the `x86_64-pc-windows-gnu` toolchain and a MinGW-w64 in `PATH`; the MSVC toolchain also works), Node 22+ and WebView2 (included in Windows 11).
+Needs Rust (`x86_64-pc-windows-gnu` toolchain + MinGW-w64 in `PATH`, or MSVC toolchain), Node 22+, and WebView2 (included in Windows 11).
 
 ```
 npm ci
@@ -64,8 +58,9 @@ npx tauri build --target x86_64-pc-windows-gnu   # installer in target/<triple>/
 Developer tools:
 
 ```
-npm test                                   # cargo tests V1-V7, W1-W6, G1-G8 and D0-D6 (synthetic images, no test data needed)
-cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette "#RRGGBB,#RRGGBB"] [--png out.png] [--sidecar DIR]
+npm test                                   # cargo tests V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09 (synthetic images)
+cargo run --release --bin trasea-cli -- in.jpg out.svg [--mode standard|sablon|cutting] [--pdf out.pdf] [--ase out.ase] [--separations dir] [--colors 8] [--smooth 0.5] [--min-stroke 1.0] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette "#RRGGBB,#RRGGBB"] [--png out.png] [--sidecar DIR]
+cargo run --release --bin trasea-cli -- --batch <input-dir> <output-dir> [--mode standard|sablon|cutting] [--subfolders] [--pdf] [--ase] [--separations] [--no-report] [options...]
 cargo run --release --bin bench -- --dir <vectorize-bench folder> --sidecar <realesrgan folder>   # writes bench/RESULTS.md
 ```
 
@@ -73,23 +68,17 @@ The core is the crate `crates/trasea-core` (no UI, no network). The app in `src-
 
 ## Offline
 
-The core and the app contain no network code (checked with `cargo tree` in a test), the page can only talk to the local IPC (CSP), and WebView2 is started with background networking, updates, sync and SmartScreen off, all non-local traffic sent to a dead local proxy (`127.0.0.1:9`) and DNS for non-local names blocked. **What could not be removed:** see the report; the Edge WebView2 runtime that Windows provides may still open a connection of its own right after start-up. Trasea never sends image data anywhere.
+The core and app contain no network code (verified with `cargo tree` in a test), the page can only talk to local IPC (CSP), and WebView2 starts with background networking, updates, sync, and SmartScreen disabled, non-local traffic sent to a dead local proxy (`127.0.0.1:9`), and non-local DNS blocked. Trasea never sends image data anywhere.
 
-## Limits of 0.4.0
+## Limits of 0.5.0
 
-- Windows x64 only. Real-ESRGAN needs a Vulkan GPU; otherwise the median fallback is used (more nodes, a bit more noise).
+- Windows x64 installer only (macOS `.icns` icon is updated, full macOS build planned for 1.0.0). Real-ESRGAN needs a Vulkan GPU; otherwise median fallback is used.
 - Inputs are raster images (PNG, JPG, WEBP, BMP), longest side limited to 1600 px. Photos are not the target.
-- Thin lines are the **dark** strokes only; light strokes on dark areas are traced as ordinary colour fields.
-- Whether the SVG, PDF and `.ase` open and import without warnings in Affinity and Illustrator was **not tested by the author**; it is the owner's check (see the report). The PDF has plain grouping, no PDF layers (the converter does not write optional content groups).
-- Light thin lines on dark areas (for example white foam lines on navy) are traced as colour fields; where their edges blend, a field may get a neighbouring palette colour (a beige patch instead of white).
-- Text detection is a geometric heuristic (rows of letter-sized blobs); it can miss a single big letter or flag a pattern of small shapes. It never changes the drawing.
-- Symmetry mirrors the whole picture across one axis; it is meant for logos, not for illustrations. The thin lines are mirrored at pixel level only (their stroke fits are not mirrored as vectors).
-- Text detection is a geometric heuristic (rows of letter-sized blobs); it can miss a single big letter or flag a pattern of small shapes. It never changes the drawing.
-- Symmetry mirrors the whole picture across one axis; it is meant for logos, not for illustrations. The thin lines are mirrored at pixel level only (their stroke fits are not mirrored as vectors).
-- Benchmark numbers are in `bench/RESULTS.md`; the targets of the test plan are not all met (see the report).
+- Thin lines detect **dark** strokes only; light strokes on dark areas are traced as colour fields.
+- Cutting / Embroidery mode exports clean knockout SVG/PDF ready for plotting/digitizing apps (Cricut, Silhouette, Hatch, Wilcom, Affinity, Illustrator); binary stitch formats (`.dst`, `.pes`, `.jef`) and EPS are out of scope for 0.5.0.
+- Opening exported SVG/PDF/`.ase`/separation films in Affinity Designer, Adobe Illustrator, or Cricut Design Space is a manual owner check (`M-01`..`M-03`).
+- Text detection is a geometric heuristic (no OCR) and never modifies the drawing.
 
 ## Third-party licenses
 
-MIT for this project. Bundled: Real-ESRGAN model (BSD-3-Clause; check the model-file terms before selling), Real-ESRGAN-ncnn-vulkan (MIT), ncnn (BSD-3-Clause), VTracer/visioncortex (MIT), the OpenMP runtime `vcomp140.dll` (Microsoft redistributable). **No Potrace (GPL).** The full list of linked crates is in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and in the app (button **Lisensi**).
-
-Test image note: some benchmark images carry a stock-photo watermark. They are used for testing only and are not part of this repository or of the app.
+MIT for this project. Bundled: Real-ESRGAN model (BSD-3-Clause), Real-ESRGAN-ncnn-vulkan (MIT), ncnn (BSD-3-Clause), VTracer/visioncortex (MIT), OpenMP runtime `vcomp140.dll` (Microsoft redistributable). **No Potrace (GPL).** Full crate list in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and inside the app (**Lisensi**).

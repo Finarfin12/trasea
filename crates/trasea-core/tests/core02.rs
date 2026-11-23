@@ -140,7 +140,7 @@ fn w2_svg_has_named_ordered_layers_and_stroke_paths() {
         assert!(l.contains("fill=\"none\"") && l.contains("stroke=\"#") && l.contains("stroke-linecap=\"round\"") && l.contains("stroke-linejoin=\"round\""), "bad stroke path: {l}");
     }
     // "lines as shapes" gives filled paths instead
-    let shapes = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Shape, trap_pt: 0.0 });
+    let shapes = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Shape, trap_pt: 0.0, ..Default::default() });
     assert!(!shapes[shapes.find("id=\"Garis\"").unwrap()..].contains("stroke-width"));
     // strokes need far fewer nodes than the outlines of the same lines
     let g_nodes = |s: &str| { let g = &s[s.find("id=\"Garis\"").unwrap()..]; count_svg(g).1 };
@@ -248,7 +248,7 @@ fn w5_trap_grows_the_fields_by_a_measurable_amount() {
     let img = scene_with_lines();
     let o = vectorize(&img, &Params { keep_lines: false, ..params() }, &|_, _| {}).unwrap();
     let plain = to_svg(&o.doc, &ExportOptions::default());
-    let trapped = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Stroke, trap_pt: 1.0 });
+    let trapped = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Stroke, trap_pt: 1.0, ..Default::default() });
     assert!(!plain.contains("stroke-linejoin=\"round\"") || !plain.contains("stroke-width"));
     assert!(trapped.contains("stroke-width=\"1.33\""), "trap 1 pt must be 1.33 px");
     // blue disc: count the pixels of its colour in both renders

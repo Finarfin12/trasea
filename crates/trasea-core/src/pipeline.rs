@@ -1,28 +1,30 @@
 //! The whole pipeline, in two halves so the app can keep the expensive first half in memory:
 //! `prepare` = (a) thin-line guard + (b) clean (median or Real-ESRGAN), run once per picture;
 //! `vectorize_prepared` = (c) palette + layer tracing + (d) lines on top, run again whenever a setting changes
-//! (palette, brush, node budget, smoothness ...) without cleaning the picture again.
+//! (palette, brush, node budget, smoothness, production profile ...) without cleaning the picture again.
 
 use crate::brush::{BrushMap, BrushStroke};
 use crate::centerline::{centerline_opts, CenterOpts};
 use crate::clean::clean;
-use crate::export::{to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
+use crate::export::{export_options_for_production, to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::heatmap::{node_heatmap, NodeHeatmap};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
 use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex};
 use crate::primitives;
-use crate::stats::{count_svg, stats_for, Stats};
+use crate::production::{cut_min_area_px, enforce_min_stroke, filter_micro_regions, screen_print_min_spot_px, ProductionMode, ProductionOptions};
+use crate::stats::{compare, count_primitives, count_svg, render_svg, Stats};
 use crate::symmetry::{self, SymmetryMode};
 use crate::text_detect::{self, TextRegion};
-use crate::trace::{trace_layers_ex, trace_mask, Layer, TraceCtx, TraceParams};
+use crate::trace::{trace_layers_ex, trace_layers_knockout, trace_mask, Layer, TraceCtx, TraceParams};
 use crate::{Result, Rgb};
 use image::{imageops::FilterType, GrayImage, RgbImage};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use visioncortex::BinaryImage;
 
 #[derive(Debug, Clone)]
 pub struct Params {
-    /// Palette size, 2..=16.
+    /// Palette size, 2..=16 (clamped to 2..=8 in ScreenPrint mode).
     pub colors: usize,
     /// 0.0 = most detail (more nodes) .. 1.0 = smoothest (fewest nodes).
     pub smooth: f32,
@@ -44,10 +46,14 @@ pub struct Params {
     pub detect_text: bool,
     /// The designer's own palette. With at least two different colours it replaces the automatic one.
     pub custom_palette: Option<Vec<Rgb>>,
+    /// Explicit colour merges `(from, to)`: pixels matching `from` are remapped to `to` instead of nearest remaining colour.
+    pub palette_merges: Vec<(Rgb, Rgb)>,
     /// Stop smoothing when the drawing has at most this many nodes (`None` = just use `smooth`).
     pub target_nodes: Option<usize>,
     /// Correction brush strokes, in source pixels (later strokes paint over earlier ones).
     pub brush_strokes: Vec<BrushStroke>,
+    /// Production profile (`Standard`, `ScreenPrint`, `CutEmbroidery`).
+    pub production: ProductionOptions,
 }
 
 impl Default for Params {
@@ -64,8 +70,10 @@ impl Default for Params {
             symmetry: SymmetryMode::Off,
             detect_text: true,
             custom_palette: None,
+            palette_merges: Vec::new(),
             target_nodes: None,
             brush_strokes: Vec::new(),
+            production: ProductionOptions::default(),
         }
     }
 }
@@ -112,9 +120,9 @@ pub type Progress<'a> = &'a dyn Fn(&str, f32);
 
 /// Reference size the trace thresholds are written for: thresholds are scaled by working size / this.
 const REF_LONG_SIDE: f64 = 1200.0;
-/// Low-contrast specks (JPEG residue, watermark ghosts) are removed up to this many times the normal speck size.
 /// Regions up to this many working pixels (at the reference size) are checked for a better palette colour.
 const REF_THIN_AREA: f64 = 1500.0;
+/// Low-contrast specks (JPEG residue, watermark ghosts) are removed up to this many times the normal speck size.
 const SPECK_BOOST: f64 = 25.0;
 /// Strokes shorter than this (source px) are dropped (degenerate skeleton bits).
 const MIN_STROKE_LEN: f64 = 1.0;
@@ -164,6 +172,18 @@ fn upscale_bool(mask: &[bool], w: usize, h: usize, ww: usize, wh: usize) -> Vec<
     out
 }
 
+fn nearest_in_palette(c: Rgb, palette: &[Rgb]) -> Rgb {
+    palette
+        .iter()
+        .copied()
+        .min_by_key(|p| {
+            let dr = c[0] as i32 - p[0] as i32;
+            let dg = c[1] as i32 - p[1] as i32;
+            let db = c[2] as i32 - p[2] as i32;
+            dr * dr + dg * dg + db * db
+        })
+        .unwrap_or(c)
+}
 
 /// Run the first half once: thin-line guard (from the ORIGINAL) and clean.
 pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<PreparedImage> {
@@ -224,15 +244,76 @@ fn base<'a>(prep: &'a PreparedImage, params: &Params, notes: &mut Vec<String>) -
         Some(tm) => dilate_mask(&upscale_bool(&tm.mask, w, h, ww, wh), ww, wh, (1.5 * up as f64).round() as i32),
         None => vec![false; ww * wh],
     };
-    let custom = params.custom_palette.as_ref().map(|p| dedupe(p)).filter(|p| p.len() >= 2);
+
+    let is_screen_print = params.production.mode == ProductionMode::ScreenPrint;
+    let mut custom = params.custom_palette.as_ref().map(|p| dedupe(p)).filter(|p| p.len() >= 2);
     if params.custom_palette.is_some() && custom.is_none() {
         notes.push("The manual palette needs at least 2 different colours; the automatic palette was used.".to_string());
     }
+    if is_screen_print {
+        if let Some(ref mut cp) = custom {
+            if cp.len() > 8 {
+                cp.truncate(8);
+                notes.push("Mode Sablon membatasi palet maksimal 8 warna spot.".to_string());
+            }
+        }
+    }
+
     let palette = match &custom {
         Some(p) => p.clone(),
-        None => kmeans_palette(work, Some(&excl), params.colors.clamp(2, 16)),
+        None => {
+            let max_c = if is_screen_print {
+                if params.colors > 8 {
+                    notes.push("Mode Sablon membatasi warna spot maksimal 8 warna.".to_string());
+                }
+                params.colors.clamp(2, 8)
+            } else {
+                params.colors.clamp(2, 16)
+            };
+            kmeans_palette(work, Some(&excl), max_c)
+        }
     };
-    let mut labels = assign(work, &palette);
+    if is_screen_print && palette.len() > 6 {
+        notes.push(format!("{} warna spot dipilih (> 6 warna dapat menaikkan biaya film sablon).", palette.len()));
+    }
+
+    // Optional explicit merges (`src -> dst`): assign against `palette + merged_srcs`, then remap merged labels to `dst`.
+    let mut labels = if params.palette_merges.is_empty() || custom.is_none() {
+        assign(work, &palette)
+    } else {
+        let mut raw_map: HashMap<Rgb, Rgb> = HashMap::new();
+        for &(from, to) in &params.palette_merges {
+            if from != to {
+                raw_map.insert(from, to);
+            }
+        }
+        let mut assign_pal = palette.clone();
+        let mut remap: Vec<u8> = (0..palette.len() as u8).collect();
+        for &(from, _) in &params.palette_merges {
+            if assign_pal.contains(&from) || assign_pal.len() >= 255 {
+                continue;
+            }
+            let mut cur = from;
+            let mut hops = 0;
+            while let Some(&next) = raw_map.get(&cur) {
+                cur = next;
+                hops += 1;
+                if hops > 32 || palette.contains(&cur) {
+                    break;
+                }
+            }
+            if let Some(dst_idx) = palette.iter().position(|&c| c == cur) {
+                assign_pal.push(from);
+                remap.push(dst_idx as u8);
+            }
+        }
+        let mut assigned = assign(work, &assign_pal);
+        for l in &mut assigned {
+            *l = remap[*l as usize];
+        }
+        assigned
+    };
+
     fill_masked(&mut labels, &excl, ww, wh);
     refine_thin_regions(&mut labels, work, &palette, ww, wh, (REF_THIN_AREA * s * s) as usize);
 
@@ -264,6 +345,7 @@ struct FieldsOut {
     symmetry_applied: Option<String>,
     text_regions: Vec<TextRegion>,
     primitives_count: usize,
+    micro_removed: usize,
     sym_plan: Option<symmetry::SymPlan>,
     tp: TraceParams,
 }
@@ -272,6 +354,7 @@ struct LinesOut {
     line_shapes: Vec<Layer>,
     line_fallback: Vec<Layer>,
     strokes: Vec<StrokeLayer>,
+    cut_thickened: usize,
 }
 
 fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsOut {
@@ -281,6 +364,13 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
     let speck = 1.0 + (k.extra - 1.0) * 0.5;
     let min_area = (((40.0 + 200.0 * t) * s * s * speck).round()).max(8.0) as usize;
     remove_small_regions_ex(&mut labels, ww, wh, min_area, b.palette.len(), &b.palette, SPECK_BOOST, b.brush.as_ref().map(|m| m.zones.as_slice()), &b.protect);
+
+    // Production micro-region cleanup (Standard keeps 0.4.0 behaviour unchanged).
+    let micro_removed = match params.production.mode {
+        ProductionMode::Standard => 0,
+        ProductionMode::ScreenPrint => filter_micro_regions(&mut labels, ww as u32, wh as u32, screen_print_min_spot_px(ww as u32, wh as u32)),
+        ProductionMode::CutEmbroidery => filter_micro_regions(&mut labels, ww as u32, wh as u32, cut_min_area_px(ww as u32, wh as u32)),
+    };
 
     // symmetry: one side is copied onto the other on the label picture, so both sides trace to the same geometry
     let mut symmetry_applied = None;
@@ -294,28 +384,44 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
 
     let tp = TraceParams { corner_deg: lerp(50.0, 80.0, t) + (k.extra - 1.0) * 14.0, sigma: lerp(0.9, 1.8, t) * s, tol: lerp(0.8, 4.0, t) * s * k.extra, min_area };
     let ctx = TraceCtx { prim_scale: params.detect_primitives.then_some(scale), zones: b.brush.as_ref(), protect: Some(&b.protect) };
-    let mut fields = trace_layers_ex(&labels, ww, wh, &b.palette, &tp, &ctx);
-    if let Some(pl) = &sym_plan {
-        symmetry::mirror_layers(&mut fields, pl, (ww as f64, wh as f64));
-    }
-    let primitives_count = if params.detect_primitives { primitives::extract(&mut fields, scale, (ww as f64, wh as f64)) } else { 0 };
-    crate::trace::drop_hidden_duplicates(&mut fields);
-    FieldsOut { fields, symmetry_applied, text_regions, primitives_count, sym_plan, tp }
+
+    let (mut fields, primitives_count) = if params.production.mode == ProductionMode::CutEmbroidery {
+        let mut f = trace_layers_knockout(&labels, ww, wh, &b.palette, &tp, &ctx, params.production.strip_background);
+        if let Some(pl) = &sym_plan {
+            symmetry::mirror_layers(&mut f, pl, (ww as f64, wh as f64));
+        }
+        (f, 0)
+    } else {
+        let mut f = trace_layers_ex(&labels, ww, wh, &b.palette, &tp, &ctx);
+        if let Some(pl) = &sym_plan {
+            symmetry::mirror_layers(&mut f, pl, (ww as f64, wh as f64));
+        }
+        let pc = if params.detect_primitives { primitives::extract(&mut f, scale, (ww as f64, wh as f64)) } else { 0 };
+        crate::trace::drop_hidden_duplicates(&mut f);
+        (f, pc)
+    };
+    let _ = &mut fields;
+    FieldsOut { fields, symmetry_applied, text_regions, primitives_count, micro_removed, sym_plan, tp }
 }
 
 /// Thin lines on top: as strokes (centerline + measured width) and, for the "shapes" export, as outlines.
-fn trace_lines(b: &Base, k: Knobs, fo: &FieldsOut) -> LinesOut {
+fn trace_lines(b: &Base, params: &Params, k: Knobs, fo: &FieldsOut) -> LinesOut {
     let (w, h) = (b.prep.src.width() as usize, b.prep.src.height() as usize);
     let up = b.prep.up.max(1);
     let (ww, wh, s, scale, t) = (b.ww, b.wh, b.s, b.scale, k.t);
-    let mut out = LinesOut { line_shapes: Vec::new(), line_fallback: Vec::new(), strokes: Vec::new() };
+    let mut out = LinesOut { line_shapes: Vec::new(), line_fallback: Vec::new(), strokes: Vec::new(), cut_thickened: 0 };
     let copts = CenterOpts { merge: true, width_tol: 0.75 * scale };
     let Some(tm) = b.thin else { return out };
     let (assign_c, colors) = line_colors(tm, 3);
     let min_line = ((tm.comps.iter().map(|c| c.area).min().unwrap_or(8) as f64) * (up * up) as f64 * 0.5) as usize;
     let lp = TraceParams { sigma: lerp(0.6, 1.0, t) * s, tol: lerp(0.5, 1.5, t) * s * k.extra, min_area: min_line, ..fo.tp.clone() };
     let stroke_tol = lerp(0.7, 2.0, t) * s * k.extra;
-    for (ci, color) in colors.iter().enumerate() {
+    let is_cut = params.production.mode == ProductionMode::CutEmbroidery;
+    let is_screen = params.production.mode == ProductionMode::ScreenPrint;
+    let cut_min_px = if is_cut { params.production.effective_min_stroke_pt() * 96.0 / 72.0 * scale } else { 0.0 };
+
+    for (ci, raw_color) in colors.iter().enumerate() {
+        let color = if is_screen { nearest_in_palette(*raw_color, &b.palette) } else { *raw_color };
         let mut group = vec![false; w * h];
         for (i, &l) in tm.labels.iter().enumerate() {
             if l != 0 && assign_c[l as usize - 1] == ci {
@@ -326,21 +432,39 @@ fn trace_lines(b: &Base, k: Knobs, fo: &FieldsOut) -> LinesOut {
         if let Some(pl) = &fo.sym_plan {
             symmetry::apply(&mut big, ww, wh, pl);
         }
-        let contours = trace_mask(&to_binary(&big, ww, wh), &lp);
-        if !contours.is_empty() {
-            out.line_shapes.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false, prims: vec![] });
-        }
         let cl = centerline_opts(&big, ww, wh, stroke_tol, 0.5, &copts);
+        // In CutEmbroidery mode, thicken thin-line masks below min_stroke_pt before tracing closed shapes.
+        let shape_mask_for_cut = if is_cut && cut_min_px > 0.0 {
+            let min_w = cl
+                .strokes
+                .iter()
+                .map(|st| st.width + STROKE_WIDTH_BIAS * scale)
+                .fold(f64::INFINITY, f64::min);
+            if min_w.is_finite() && min_w + 1e-6 < cut_min_px {
+                let r = ((cut_min_px - min_w) / 2.0).ceil().clamp(1.0, 6.0) as i32;
+                out.cut_thickened += cl.strokes.iter().filter(|st| st.width + STROKE_WIDTH_BIAS * scale + 1e-6 < cut_min_px).count();
+                Some(dilate_mask(&big, ww, wh, r))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let shape_src = shape_mask_for_cut.as_deref().unwrap_or(&big);
+        let contours = trace_mask(&to_binary(shape_src, ww, wh), &lp);
+        if !contours.is_empty() {
+            out.line_shapes.push(Layer { id: crate::hex(color), color, contours, canvas: false, prims: vec![] });
+        }
         if cl.shape_mask.iter().any(|&b| b) {
             let contours = trace_mask(&to_binary(&cl.shape_mask, ww, wh), &lp);
             if !contours.is_empty() {
-                out.line_fallback.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false, prims: vec![] });
+                out.line_fallback.push(Layer { id: crate::hex(color), color, contours, canvas: false, prims: vec![] });
             }
         }
         let min_len = MIN_STROKE_LEN * ww as f64 / w as f64;
         let kept: Vec<_> = cl.strokes.iter().filter(|st| { let mut l = 0.0; for cv in &st.curves { l += ((cv[3].0 - cv[0].0).powi(2) + (cv[3].1 - cv[0].1).powi(2)).sqrt(); } l >= min_len }).collect();
         if !kept.is_empty() {
-            out.strokes.push(StrokeLayer { color: *color, strokes: kept.iter().map(|st| { let mut d = StrokeData::from(*st); d.width += STROKE_WIDTH_BIAS * scale; d }).collect() });
+            out.strokes.push(StrokeLayer { color, strokes: kept.iter().map(|st| { let mut d = StrokeData::from(*st); d.width += STROKE_WIDTH_BIAS * scale; d }).collect() });
         }
     }
     out
@@ -358,8 +482,10 @@ fn make_doc(b: &Base, fields: Vec<Layer>, lines: &LinesOut) -> Doc {
     }
 }
 
-fn count_nodes(doc: &Doc) -> usize {
-    count_svg(&to_svg(doc, &ExportOptions::default())).1
+fn count_nodes(doc: &Doc, exp: &ExportOptions) -> usize {
+    let mut e = exp.clone();
+    e.registration_marks = false;
+    count_svg(&to_svg(doc, &e)).1
 }
 
 /// The knobs of a position `p` in 0..=1 along the "smoother and smoother" path: the first half raises the smoothness from
@@ -372,39 +498,36 @@ fn knobs_at(t0: f64, p: f64) -> Knobs {
     }
 }
 
-/// The second half: palette, brush zones, tracing, lines, and (with `target_nodes`) the node budget.
+/// The second half: palette, brush zones, tracing, lines, production profile rules, and (with `target_nodes`) the node budget.
 pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progress) -> Result<Output> {
     let mut notes = prep.notes.clone();
     progress("Locking the palette", 0.55);
     let b = base(prep, params, &mut notes);
     let t0 = params.smooth.clamp(0.0, 1.0) as f64;
+    let exp_opts = export_options_for_production(&params.production);
 
     progress("Tracing", 0.7);
     let mut knobs = Knobs { t: t0, extra: 1.0 };
     let mut fo = trace_fields(&b, params, knobs, true);
-    let mut lines = trace_lines(&b, knobs, &fo);
+    let mut lines = trace_lines(&b, params, knobs, &fo);
     let mut budget_met = None;
     if let Some(limit) = params.target_nodes.map(|n| n.max(1)) {
-        let first = count_nodes(&make_doc(&b, fo.fields.clone(), &lines));
+        let first = count_nodes(&make_doc(&b, fo.fields.clone(), &lines), &exp_opts);
         if first <= limit {
             budget_met = Some(true);
         } else {
             progress("Fitting the node budget", 0.8);
-            // While searching, the thin lines stay as traced for the first pass (they are a small, steady part of the
-            // total), so only the colour fields are traced again. The final pass then redoes everything at the winner.
             let nodes_at = |p: f64| -> (Knobs, FieldsOut, usize) {
                 let k = knobs_at(t0, p);
                 let f = trace_fields(&b, params, k, false);
-                let n = count_nodes(&make_doc(&b, f.fields.clone(), &lines));
+                let n = count_nodes(&make_doc(&b, f.fields.clone(), &lines), &exp_opts);
                 (k, f, n)
             };
             let (kmax, fmax, nmax) = nodes_at(1.0);
-            // the thin lines of the first pass weigh a bit more than those at full smoothness: measure that difference once
-            let lines_max = trace_lines(&b, kmax, &fmax);
-            let real_max = count_nodes(&make_doc(&b, fmax.fields.clone(), &lines_max));
+            let lines_max = trace_lines(&b, params, kmax, &fmax);
+            let real_max = count_nodes(&make_doc(&b, fmax.fields.clone(), &lines_max), &exp_opts);
             let bias = nmax.saturating_sub(real_max);
             if real_max > limit {
-                // not reachable: keep the lightest result and say so
                 knobs = kmax;
                 fo = fmax;
                 budget_met = Some(false);
@@ -426,12 +549,11 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
                 fo = fbest;
                 budget_met = Some(true);
             }
-            // keep the text areas found at the chosen smoothness
             if params.detect_text {
                 fo.text_regions = trace_fields(&b, params, Knobs { t: knobs.t, extra: 1.0 }, true).text_regions;
             }
-            lines = if (knobs.t - kmax.t).abs() < 1e-12 && (knobs.extra - kmax.extra).abs() < 1e-12 { lines_max } else { trace_lines(&b, knobs, &fo) };
-            let final_nodes = count_nodes(&make_doc(&b, fo.fields.clone(), &lines));
+            lines = if (knobs.t - kmax.t).abs() < 1e-12 && (knobs.extra - kmax.extra).abs() < 1e-12 { lines_max } else { trace_lines(&b, params, knobs, &fo) };
+            let final_nodes = count_nodes(&make_doc(&b, fo.fields.clone(), &lines), &exp_opts);
             if final_nodes > limit {
                 budget_met = Some(false);
             }
@@ -442,10 +564,40 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
     }
 
     progress("Writing SVG", 0.95);
-    let FieldsOut { fields, symmetry_applied, text_regions, primitives_count, .. } = fo;
-    let doc = make_doc(&b, fields, &lines);
-    let svg = to_svg(&doc, &ExportOptions::default());
-    let stats = stats_for(&svg, params.measure.then_some(&prep.src));
+    let FieldsOut { fields, symmetry_applied, text_regions, primitives_count, micro_removed, .. } = fo;
+    let mut doc = make_doc(&b, fields, &lines);
+
+    // Enforce minimum stroke width in production profiles (Standard = 0.0 -> no-op).
+    let min_stroke_pt = params.production.effective_min_stroke_pt();
+    let thickened = enforce_min_stroke(&mut doc, min_stroke_pt);
+    let total_thickened = if params.production.mode == ProductionMode::CutEmbroidery {
+        lines.cut_thickened.max(thickened)
+    } else {
+        thickened
+    };
+    if total_thickened > 0 {
+        notes.push(format!("{total_thickened} garis ditebalkan ke {:.1} pt.", min_stroke_pt));
+    }
+    if micro_removed > 0 {
+        notes.push(format!("{micro_removed} bintik mikro dibuang."));
+    }
+
+    let svg = to_svg(&doc, &exp_opts);
+    // Measure MAE without registration margins so the comparison aligns pixel-for-pixel with the source.
+    let (paths, nodes) = count_svg(&svg);
+    let mae = if params.measure {
+        let mae_svg = if exp_opts.registration_marks {
+            to_svg(&doc, &ExportOptions { registration_marks: false, ..exp_opts.clone() })
+        } else {
+            svg.clone()
+        };
+        render_svg(&mae_svg, prep.src.width(), prep.src.height())
+            .ok()
+            .map(|r| compare(&prep.src, &r).0)
+    } else {
+        None
+    };
+    let stats = Stats { paths, nodes, bytes: svg.len(), mae, primitives: count_primitives(&svg) };
     let heatmap = node_heatmap(&doc);
     let thin_pixels = b.thin.map_or(0, |t| t.count());
     progress("Done", 1.0);

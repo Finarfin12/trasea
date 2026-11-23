@@ -181,7 +181,7 @@ fn main() {
                         let tag = if ai { "ai" } else { "noai" };
                         let _ = std::fs::write(work.join(format!("{}.{tag}.svg", it.file)), &o.svg);
                         if !ai {
-                            let shape = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Shape, trap_pt: 0.0 });
+                            let shape = to_svg(&o.doc, &ExportOptions { lines_as: LinesAs::Shape, trap_pt: 0.0, ..Default::default() });
                             let (_, ns) = count_svg(&shape);
                             let (_, nk) = count_svg(&o.svg);
                             let gn = |svg: &str| svg.find("id=\"Garis\"").map_or(0, |i| count_svg(&svg[i..]).1);

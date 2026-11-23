@@ -163,6 +163,48 @@ pub fn trace_layers_ex(labels: &[u8], w: usize, h: usize, palette: &[Rgb], p: &T
     layers
 }
 
+/// Non-overlapping (knockout) colour layers for cutting plotters and embroidery machines:
+/// each colour is traced exclusively from `labels[i] == ci` without extending underneath colours above it.
+/// When `strip_background` is true, the largest-area background layer (rank 0) is omitted completely.
+pub fn trace_layers_knockout(
+    labels: &[u8],
+    w: usize,
+    h: usize,
+    palette: &[Rgb],
+    p: &TraceParams,
+    ctx: &TraceCtx,
+    strip_background: bool,
+) -> Vec<Layer> {
+    let mut area = vec![0usize; palette.len()];
+    for &l in labels {
+        area[l as usize] += 1;
+    }
+    let mut order: Vec<usize> = (0..palette.len()).filter(|&i| area[i] > 0).collect();
+    order.sort_by(|&a, &b| area[b].cmp(&area[a]).then(a.cmp(&b)));
+    let mut layers = Vec::new();
+    for (r, &ci) in order.iter().enumerate() {
+        if r == 0 && strip_background {
+            continue;
+        }
+        let color = palette[ci];
+        let id = crate::hex(color);
+        let mut mask = BinaryImage::new_w_h(w, h);
+        for (i, &l) in labels.iter().enumerate() {
+            if l as usize == ci {
+                mask.set_pixel(i % w, i / w, true);
+            }
+        }
+        let accent = ctx.protect.map_or(false, |pr| pr.get(ci).copied().unwrap_or(false));
+        let pp = if accent { TraceParams { min_area: p.min_area.min(8), ..p.clone() } } else { p.clone() };
+        // Disable primitive approximation in knockout mode so adjacent boundaries stay exact and non-overlapping.
+        let kctx = TraceCtx { prim_scale: None, ..*ctx };
+        let contours = trace_mask_ex(&mask, &pp, &kctx);
+        if !contours.is_empty() {
+            layers.push(Layer { id, color, canvas: r == 0, prims: vec![], contours });
+        }
+    }
+    layers
+}
 #[cfg(test)]
 mod tests {
     use super::*;
