@@ -3,24 +3,36 @@ import BatchView from "./BatchView";
 import Licenses from "./Licenses";
 import {
 	collectDroppedImages,
+	deletePreset,
+	getLicenseStatus,
+	getSampleImagePath,
 	licenses,
+	listPresets,
+	loadProjectFile,
 	onDrop,
 	onProgress,
 	pickColor,
 	pickFolder,
 	pickImage,
+	pickImageOrProject,
+	pickProjectSavePath,
 	pickSavePath,
 	processImage,
 	saveFile,
+	savePreset,
+	saveProjectFile,
 	saveSeparations,
 	sidecarAvailable,
 	type BrushStroke,
 	type ExportKind,
 	type ExportOptions,
+	type LicenseStatus,
 	type Options,
 	type Processed,
 	type ProductionMode,
+	type UserPreset,
 } from "./api";
+import { emptyHistory, pushSnapshot, stepRedo, stepUndo, type EditorSnapshot, type HistoryState, type TargetChoice } from "./history";
 
 const DEFAULTS: Options = {
 	colors: 10,
@@ -40,9 +52,10 @@ const DEFAULTS: Options = {
 	registrationMarks: false,
 };
 
+const DEFAULT_EXP: ExportOptions = { linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false };
+
 type View = "editor" | "batch";
 type Tool = "pan" | "detail" | "smooth" | "pipet";
-type TargetChoice = "auto" | "500" | "1000" | "2000" | "custom";
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -54,6 +67,8 @@ export default function App() {
 	const [view, setView] = useState<View>("editor");
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
+	const [projectPath, setProjectPath] = useState<string | null>(null);
+	const [missingSourceProject, setMissingSourceProject] = useState<string | null>(null);
 	const [opts, setOpts] = useState<Options>(DEFAULTS);
 	const [result, setResult] = useState<Processed | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -63,29 +78,31 @@ export default function App() {
 	const [info, setInfo] = useState("");
 	const [over, setOver] = useState(false);
 	const [split, setSplit] = useState(50);
-	const [exp, setExp] = useState<ExportOptions>({ linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false });
+	const [exp, setExp] = useState<ExportOptions>(DEFAULT_EXP);
 	const [withAse, setWithAse] = useState(true);
 	const [sepPdf, setSepPdf] = useState(false);
 	const [checker, setChecker] = useState(false);
-	/** Show boxes around suspected text areas in the preview (off by default; never exported). */
 	const [showText, setShowText] = useState(false);
-	/** Node heatmap over the preview (off by default; never exported). */
 	const [showHeat, setShowHeat] = useState(false);
 	const [tool, setTool] = useState<Tool>("pan");
 	const [brushSize, setBrushSize] = useState(40);
 	const [strokes, setStrokes] = useState<BrushStroke[]>([]);
 	const [live, setLive] = useState<BrushStroke | null>(null);
-	/** The designer's palette; null = automatic. Changes wait for "Terapkan ulang". */
 	const [palette, setPalette] = useState<string[] | null>(null);
 	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
-	/** Swatch currently showing the target-colour merge picker. */
 	const [mergeSource, setMergeSource] = useState<string | null>(null);
 	const [targetChoice, setTargetChoice] = useState<TargetChoice>("auto");
 	const [customTarget, setCustomTarget] = useState("800");
 	const [hasSidecar, setHasSidecar] = useState(true);
-	const [showLicenses, setShowLicenses] = useState<string | null>(null);
-	/** What the last conversion was made with, to show that there are changes that are not applied yet. */
+	const [license, setLicense] = useState<LicenseStatus>({ active: false, info: null });
+	const [modalOpen, setModalOpen] = useState<{ markdown: string; tab: "license" | "privacy" | "thirdParty"; hint: string } | null>(null);
+	const [presets, setPresets] = useState<UserPreset[]>([]);
+	const [selectedPresetId, setSelectedPresetId] = useState("");
+	const [presetNameInput, setPresetNameInput] = useState("");
+	const [addingPreset, setAddingPreset] = useState(false);
+	const [history, setHistory] = useState<HistoryState>(emptyHistory);
 	const [appliedSig, setAppliedSig] = useState("");
+
 	const busyRef = useRef(false);
 	const optsRef = useRef(opts);
 	optsRef.current = opts;
@@ -98,11 +115,64 @@ export default function App() {
 		return Number.isFinite(n) && n > 0 ? n : null;
 	}, [targetChoice, customTarget]);
 
-	/** All the settings that change the result, as one string. */
+	const makeSnapshot = useCallback(
+		(label: string): EditorSnapshot => ({
+			opts: { ...opts },
+			palette: palette ? [...palette] : null,
+			paletteMerges: paletteMerges.map(m => [m[0], m[1]]),
+			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
+			targetChoice,
+			customTarget,
+			exp: { ...exp },
+			label,
+		}),
+		[opts, palette, paletteMerges, strokes, targetChoice, customTarget, exp],
+	);
+
+	const recordHistory = useCallback(
+		(label: string) => {
+			setHistory(h => pushSnapshot(h, makeSnapshot(label)));
+		},
+		[makeSnapshot],
+	);
+
+	const restoreSnapshot = useCallback((snap: EditorSnapshot) => {
+		setOpts(snap.opts);
+		setPalette(snap.palette);
+		setPaletteMerges(snap.paletteMerges);
+		setStrokes(snap.strokes);
+		setTargetChoice(snap.targetChoice);
+		setCustomTarget(snap.customTarget);
+		setExp(snap.exp);
+		setChecker(snap.opts.productionMode === "cutEmbroidery" && snap.opts.stripBackground);
+		setMergeSource(null);
+	}, []);
+
+	const doUndo = useCallback(() => {
+		const res = stepUndo(history, makeSnapshot("Keadaan sebelumnya"));
+		if (!res) return;
+		setHistory(res.history);
+		restoreSnapshot(res.target);
+		setInfo(`Undo: ${res.target.label}`);
+	}, [history, makeSnapshot, restoreSnapshot]);
+
+	const doRedo = useCallback(() => {
+		const res = stepRedo(history, makeSnapshot("Ulangi"));
+		if (!res) return;
+		setHistory(res.history);
+		restoreSnapshot(res.target);
+		setInfo(`Redo: ${res.target.label}`);
+	}, [history, makeSnapshot, restoreSnapshot]);
+
 	const signature = useMemo(
 		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes }),
 		[opts, palette, paletteMerges, targetNodes, strokes],
 	);
+
+	const openPrivacyModal = useCallback(async (tab: "license" | "privacy" | "thirdParty" = "license", hint = "") => {
+		const md = await licenses();
+		setModalOpen({ markdown: md, tab, hint });
+	}, []);
 
 	const run = useCallback(async (p: string, o: Options) => {
 		if (busyRef.current) return;
@@ -125,33 +195,133 @@ export default function App() {
 		}
 	}, []);
 
-	/** A new picture: brush strokes and palette belong to the old one. */
 	const openPicture = useCallback(
 		(p: string) => {
 			setView("editor");
+			setProjectPath(null);
+			setMissingSourceProject(null);
 			setStrokes([]);
 			setLive(null);
 			setPalette(null);
 			setPaletteMerges([]);
 			setMergeSource(null);
+			setHistory(emptyHistory());
 			setTool("pan");
 			void run(p, { ...optsRef.current, customPalette: null, paletteMerges: [], brushStrokes: [] });
 		},
 		[run],
 	);
 
+	const openProject = useCallback(
+		async (projFile: string) => {
+			setError("");
+			setInfo("");
+			try {
+				const loaded = await loadProjectFile(projFile);
+				const po = loaded.project.options;
+				const pe = loaded.project.exportOptions;
+				setView("editor");
+				setProjectPath(projFile);
+				setOpts(po);
+				setExp(pe);
+				setPalette(po.customPalette);
+				setPaletteMerges(po.paletteMerges ?? []);
+				setStrokes(po.brushStrokes ?? []);
+				setChecker(po.productionMode === "cutEmbroidery" && po.stripBackground);
+				setHistory(emptyHistory());
+				if (po.targetNodes === null) setTargetChoice("auto");
+				else if (["500", "1000", "2000"].includes(String(po.targetNodes))) setTargetChoice(String(po.targetNodes) as TargetChoice);
+				else {
+					setTargetChoice("custom");
+					setCustomTarget(String(po.targetNodes));
+				}
+
+				if (loaded.sourceExists) {
+					setMissingSourceProject(null);
+					await run(loaded.project.sourcePath, po);
+					if (!loaded.hashMatches) {
+						setInfo("Proyek dibuka. Catatan: gambar sumber berubah sejak proyek disimpan; pengaturan & sapuan kuas tetap dimuat.");
+					} else {
+						setInfo(`Proyek dibuka: ${projFile}`);
+					}
+				} else {
+					setPath(null);
+					setResult(null);
+					setMissingSourceProject(loaded.project.sourcePath);
+					setInfo("Pengaturan dan sapuan kuas dari proyek sudah dimuat. Pilih lokasi baru gambar sumber untuk melanjutkan.");
+				}
+			} catch (e) {
+				setError(errText(e));
+			}
+		},
+		[run],
+	);
+
+	const relinkMissingSource = async () => {
+		const newImg = await pickImage();
+		if (!newImg) return;
+		setMissingSourceProject(null);
+		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
+		await run(newImg, mergedOpts);
+		setInfo(`Gambar sumber ditautkan ulang ke ${newImg}`);
+	};
+
+	const saveProject = useCallback(
+		async (saveAs: boolean) => {
+			if (!path) return;
+			setError("");
+			setInfo("");
+			try {
+				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
+				if (!dest) return;
+				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
+				await saveProjectFile(dest, path, fullOpts, exp);
+				setProjectPath(dest);
+				setInfo(`Proyek tersimpan: ${dest}`);
+			} catch (e) {
+				setError(errText(e));
+			}
+		},
+		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, exp],
+	);
+
+	const openSample = async () => {
+		setError("");
+		try {
+			const sp = await getSampleImagePath();
+			openPicture(sp);
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const choose = useCallback(async () => {
+		const p = await pickImageOrProject();
+		if (!p) return;
+		if (p.toLowerCase().endsWith(".trasea")) void openProject(p);
+		else openPicture(p);
+	}, [openPicture, openProject]);
+
 	useEffect(() => {
 		void sidecarAvailable().then(setHasSidecar);
+		void getLicenseStatus().then(setLicense);
+		void listPresets().then(setPresets).catch(() => {});
 		const subs: Array<Promise<() => void>> = [
 			onProgress((s, f) => {
 				setStage(s);
 				setFraction(f);
 			}),
 			onDrop(paths => {
+				const proj = paths.find(x => x.toLowerCase().endsWith(".trasea"));
+				if (proj && paths.length === 1) {
+					void openProject(proj);
+					return;
+				}
 				void collectDroppedImages(paths, false).then(imgs => {
 					if (imgs.length === 0) {
-						setError("File atau folder itu tidak berisi gambar yang didukung (PNG, JPG, WEBP, BMP).");
-					} else if (imgs.length === 1 && paths.length === 1 && imgs[0] && imgs[0] === paths[0]) { openPicture(imgs[0]);
+						setError("File atau folder itu tidak berisi gambar (.png/.jpg/.webp/.bmp) atau proyek .trasea.");
+					} else if (imgs.length === 1 && paths.length === 1 && imgs[0] && imgs[0] === paths[0]) {
+						openPicture(imgs[0]);
 					} else {
 						setBatchInitialFiles(imgs);
 						setView("batch");
@@ -162,9 +332,36 @@ export default function App() {
 		return () => {
 			subs.forEach(s => void s.then(u => u()));
 		};
-	}, [openPicture]);
+	}, [openPicture, openProject]);
+
+	// Global keyboard shortcuts: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S, Ctrl+O
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const tag = (e.target as HTMLElement | null)?.tagName ?? "";
+			const editingText = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+			if (!e.ctrlKey && !e.metaKey) return;
+			const k = e.key.toLowerCase();
+			if (k === "z" && !editingText && view === "editor") {
+				e.preventDefault();
+				if (e.shiftKey) doRedo();
+				else doUndo();
+			} else if (k === "y" && !editingText && view === "editor") {
+				e.preventDefault();
+				doRedo();
+			} else if (k === "s" && view === "editor" && path) {
+				e.preventDefault();
+				void saveProject(e.shiftKey);
+			} else if (k === "o" && !busyRef.current) {
+				e.preventDefault();
+				void choose();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [view, path, doUndo, doRedo, saveProject, choose]);
 
 	const switchProductionMode = (mode: ProductionMode) => {
+		recordHistory(`Ubah Mode ${mode === "screenPrint" ? "Sablon" : mode === "cutEmbroidery" ? "Cutting" : "Standar"}`);
 		setOpts(o => {
 			if (mode === "standard") {
 				return { ...o, productionMode: "standard", minStrokePt: 0, stripBackground: false, registrationMarks: false };
@@ -200,8 +397,57 @@ export default function App() {
 		}
 	};
 
-	/** Back to the automatic palette: recompute at once. */
+	const applyPreset = (preset: UserPreset) => {
+		recordHistory(`Terapkan preset "${preset.name}"`);
+		setSelectedPresetId(preset.id);
+		setOpts({ ...preset.options, customPalette: palette, paletteMerges, brushStrokes: strokes });
+		setExp(preset.exportOptions);
+		setChecker(preset.options.productionMode === "cutEmbroidery" && preset.options.stripBackground);
+		if (preset.options.targetNodes === null) setTargetChoice("auto");
+		else if (["500", "1000", "2000"].includes(String(preset.options.targetNodes))) setTargetChoice(String(preset.options.targetNodes) as TargetChoice);
+		else {
+			setTargetChoice("custom");
+			setCustomTarget(String(preset.options.targetNodes));
+		}
+		setInfo(`Preset "${preset.name}" diterapkan. Klik Terapkan ulang bila gambar sudah terbuka.`);
+	};
+
+	const createPreset = async () => {
+		const name = presetNameInput.trim();
+		if (!name) return;
+		setError("");
+		try {
+			const id = `preset-${Date.now()}`;
+			const next = await savePreset({
+				id,
+				name,
+				options: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], targetNodes },
+				exportOptions: exp,
+			});
+			setPresets(next);
+			setSelectedPresetId(id);
+			setPresetNameInput("");
+			setAddingPreset(false);
+			setInfo(`Preset "${name}" tersimpan.`);
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const removeSelectedPreset = async () => {
+		if (!selectedPresetId) return;
+		try {
+			const next = await deletePreset(selectedPresetId);
+			setPresets(next);
+			setSelectedPresetId("");
+			setInfo("Preset dihapus.");
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
 	const resetPalette = () => {
+		recordHistory("Reset palet");
 		setPalette(null);
 		setPaletteMerges([]);
 		setMergeSource(null);
@@ -213,13 +459,12 @@ export default function App() {
 		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes });
 	};
 
-	const choose = async () => {
-		const p = await pickImage();
-		if (p) openPicture(p);
-	};
-
 	const exportAs = async (kind: ExportKind) => {
 		if (!path) return;
+		if (kind === "eps" && !license.active) {
+			void openPrivacyModal("license", "Ekspor EPS adalah fitur Trasea Pro (bayar sekali, 100% offline). Masukkan kunci lisensi untuk membukanya.");
+			return;
+		}
 		setError("");
 		setInfo("");
 		const effExp: ExportOptions =
@@ -246,6 +491,10 @@ export default function App() {
 
 	const exportSeparationFilms = async () => {
 		if (!path) return;
+		if (!license.active) {
+			void openPrivacyModal("license", "Ekspor Film Separasi Sablon adalah fitur Trasea Pro (bayar sekali, 100% offline).");
+			return;
+		}
 		setError("");
 		setInfo("");
 		try {
@@ -259,19 +508,21 @@ export default function App() {
 		}
 	};
 
-	const set = (patch: Partial<Options>) => setOpts(o => ({ ...o, ...patch }));
+	const set = (patch: Partial<Options>, label = "Ubah pengaturan") => {
+		recordHistory(label);
+		setOpts(o => ({ ...o, ...patch }));
+	};
 	const svgUrl = useMemo(() => (result ? URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })) : ""), [result]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);
 
-	// ---- palette editing (the change waits for "Terapkan ulang")
 	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
 	const removeColor = (hex: string) => {
 		const base = currentPalette();
 		if (base.length <= 2) return;
+		recordHistory(`Hapus warna ${hex}`);
 		setPalette(base.filter(c => c !== hex));
 		setMergeSource(null);
 	};
-	/** Other palette colours sorted by RGB distance from `hex` (nearest first). */
 	const othersByDistance = (hex: string): string[] => {
 		const a = rgb(hex);
 		return currentPalette()
@@ -287,6 +538,7 @@ export default function App() {
 	const mergeColorInto = (fromHex: string, targetHex: string) => {
 		const base = currentPalette();
 		if (base.length <= 2 || fromHex === targetHex) return;
+		recordHistory(`Gabung ${fromHex} ke ${targetHex}`);
 		setPalette(base.filter(c => c !== fromHex));
 		setPaletteMerges(prev => [...prev.map(([a, b]): [string, string] => [a, b === fromHex ? targetHex : b]), [fromHex, targetHex]]);
 		setMergeSource(null);
@@ -298,11 +550,11 @@ export default function App() {
 			setInfo(`Warna ${hex} sudah ada di palet.`);
 			return;
 		}
+		recordHistory(`Pipet warna ${hex}`);
 		setPalette([...base, hex]);
 		setInfo(`Warna ${hex} ditambahkan. Klik Terapkan ulang untuk memakainya.`);
 	};
 
-	// ---- painting on the preview
 	const toImage = (e: ReactPointerEvent<SVGSVGElement>): [number, number] => {
 		const r = (overlayRef.current as SVGSVGElement).getBoundingClientRect();
 		return [((e.clientX - r.left) / r.width) * (result?.width ?? 1), ((e.clientY - r.top) / r.height) * (result?.height ?? 1)];
@@ -336,7 +588,10 @@ export default function App() {
 		const s = liveRef.current;
 		liveRef.current = null;
 		setLive(null);
-		if (s) setStrokes(list => [...list, s]);
+		if (s) {
+			recordHistory(s.kind === "detail" ? "Goresan Kuas Detail" : "Goresan Kuas Halus");
+			setStrokes(list => [...list, s]);
+		}
 	};
 
 	const dirty = result !== null && appliedSig !== "" && signature !== appliedSig;
@@ -344,15 +599,31 @@ export default function App() {
 	const painting = tool === "detail" || tool === "smooth";
 	const shown = live ? [...strokes, live] : strokes;
 	const maxColors = opts.productionMode === "screenPrint" ? 8 : 16;
+	const undoTip = history.past.length > 0 ? `Undo (Ctrl+Z): ${history.past[history.past.length - 1]?.label ?? ""}` : "Undo (Ctrl+Z)";
+	const redoTip = history.future.length > 0 ? `Redo (Ctrl+Y): ${history.future[0]?.label ?? ""}` : "Redo (Ctrl+Y)";
 
 	return (
 		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.5.0 · offline</small></div>
+				<div className="brand">
+					<span className="logo" aria-hidden="true">T</span> Trasea <small>1.0.0 · offline</small>
+					<button
+						className={`small lic-pill ${license.active ? "lic-pro" : "lic-trial"}`}
+						onClick={() => void openPrivacyModal("license")}
+						title="Lihat status lisensi offline dan janji privasi"
+					>
+						{license.active ? "Pro Aktif" : "Trial · Aktivasi"}
+					</button>
+				</div>
 				<div className="row">
-					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>Batch folder</button>
-					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
-					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>
+					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>
+						Batch folder{!license.active ? " (Pro)" : ""}
+					</button>
+					{view === "editor" && path && (
+						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title="Simpan proyek .trasea (Ctrl+S)">Simpan proyek</button>
+					)}
+					<button className="ghost" onClick={() => void openPrivacyModal("license")}>Privasi & Lisensi</button>
+					<button onClick={() => void choose()} disabled={busy} title="Buka gambar atau proyek .trasea (Ctrl+O)">Buka gambar / proyek…</button>
 				</div>
 			</header>
 
@@ -361,6 +632,10 @@ export default function App() {
 					opts={opts}
 					exp={exp}
 					initialFiles={batchInitialFiles}
+					license={license}
+					presets={presets}
+					onApplyPreset={applyPreset}
+					onOpenLicenseModal={hint => void openPrivacyModal("license", hint ?? "")}
 					onChangeMode={switchProductionMode}
 					onOpenInEditor={p => openPicture(p)}
 					onBack={() => setView("editor")}
@@ -370,12 +645,21 @@ export default function App() {
 					<section className="stage" aria-label="Pratinjau">
 						{!result && !busy && (
 							<div className="drop-wrap">
+								{missingSourceProject && (
+									<div className="warn" style={{ marginBottom: 12 }}>
+										Gambar sumber proyek tidak ditemukan di <code>{missingSourceProject}</code>. Pengaturan dan sapuan kuas tetap tersimpan.
+										<div className="row" style={{ marginTop: 8 }}>
+											<button onClick={() => void relinkMissingSource()}>Pilih lokasi gambar baru…</button>
+										</div>
+									</div>
+								)}
 								<div className="drop" role="button" tabIndex={0} onClick={() => void choose()} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") void choose(); }}>
-									<div className="drop-title">Seret gambar atau folder ke sini</div>
-									<div className="drop-sub">atau klik untuk memilih · PNG, JPG, WEBP, BMP</div>
-									<div className="drop-sub">Ilustrasi flat dan logo hasilnya paling bagus. Semua diproses di komputer ini.</div>
+									<div className="drop-title">Seret gambar, proyek .trasea, atau folder ke sini</div>
+									<div className="drop-sub">atau klik untuk memilih · PNG, JPG, WEBP, BMP, .trasea</div>
+									<div className="drop-sub">Ilustrasi flat dan logo hasilnya paling bagus. Semua diproses 100% offline di komputer ini.</div>
 								</div>
 								<div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
+									<button onClick={() => void openSample()}>Coba contoh gambar</button>
 									<button onClick={() => setView("batch")}>Proses folder (Batch)…</button>
 								</div>
 							</div>
@@ -396,12 +680,15 @@ export default function App() {
 										<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">Kuas Halus</button>
 										<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>Pipet Warna</button>
 									</div>
+									<div className="group" role="group" aria-label="Riwayat">
+										<button onClick={doUndo} disabled={history.past.length === 0} title={undoTip}>Undo</button>
+										<button onClick={doRedo} disabled={history.future.length === 0} title={redoTip}>Redo</button>
+									</div>
 									{painting && (
 										<div className="group">
 											<label className="brushsize" htmlFor="brush">Ukuran <b>{brushSize}</b> px</label>
 											<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
-											<button onClick={() => setStrokes(s => s.slice(0, -1))} disabled={strokes.length === 0}>Undo</button>
-											<button onClick={() => setStrokes([])} disabled={strokes.length === 0}>Bersihkan sapuan</button>
+											<button onClick={() => { recordHistory("Bersihkan sapuan"); setStrokes([]); }} disabled={strokes.length === 0}>Bersihkan sapuan</button>
 										</div>
 									)}
 									<div className="group" role="group" aria-label="Overlay">
@@ -444,6 +731,41 @@ export default function App() {
 					</section>
 
 					<aside className="panel" aria-label="Pengaturan">
+						<div className="palette-head" style={{ marginTop: 0 }}>
+							<h2>Preset Kustom</h2>
+							<button className="small" onClick={() => setAddingPreset(v => !v)}>{addingPreset ? "Tutup" : "+ Simpan preset"}</button>
+						</div>
+						{addingPreset && (
+							<div className="preset-add">
+								<input
+									className="num"
+									type="text"
+									placeholder="Nama preset (mis. Stiker Vinyl 1.5pt)"
+									aria-label="Nama preset kustom"
+									value={presetNameInput}
+									onChange={e => setPresetNameInput(e.target.value)}
+									onKeyDown={e => { if (e.key === "Enter") void createPreset(); }}
+								/>
+								<button className="small" onClick={() => void createPreset()} disabled={!presetNameInput.trim()}>Simpan</button>
+							</div>
+						)}
+						{presets.length > 0 && (
+							<div className="preset-row">
+								<select
+									aria-label="Pilih preset kustom"
+									value={selectedPresetId}
+									onChange={e => {
+										const p = presets.find(x => x.id === e.target.value);
+										if (p) applyPreset(p);
+									}}
+								>
+									<option value="">Pilih preset tersimpan…</option>
+									{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+								</select>
+								<button className="small" onClick={() => void removeSelectedPreset()} disabled={!selectedPresetId} aria-label="Hapus preset terpilih">Hapus</button>
+							</div>
+						)}
+
 						<h2>Mode Produksi</h2>
 						<div className="seg" role="group" aria-label="Mode produksi">
 							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>Standar</button>
@@ -454,8 +776,8 @@ export default function App() {
 						{opts.productionMode === "screenPrint" && (
 							<div className="mode-box">
 								<label htmlFor="minStroke">Garis minimum (pt)</label>
-								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) })} />
-								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> Tanda registrasi (4 sudut)</label>
+								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, "Ubah garis minimum")} />
+								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }, "Ubah tanda registrasi"); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> Tanda registrasi (4 sudut)</label>
 								{opts.colors > 6 && <div className="warn">Lebih dari 6 warna spot dapat menaikkan biaya film sablon.</div>}
 								<div className="hint">Warna dibatasi 2–8 spot, bintik mikro diserap, garis tipis ditebalkan ke batas aman afdruk.</div>
 							</div>
@@ -463,21 +785,21 @@ export default function App() {
 
 						{opts.productionMode === "cutEmbroidery" && (
 							<div className="mode-box">
-								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> Hapus latar belakang</label>
+								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }, "Ubah hapus latar"); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> Hapus latar belakang</label>
 								<label htmlFor="minStrokeCut">Garis minimum (pt)</label>
-								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) })} />
+								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, "Ubah garis minimum")} />
 								<div className="hint">Bebas tumpang tindih (knockout), semua garis jadi bentuk isi tertutup, trap dikunci 0 pt.</div>
 							</div>
 						)}
 
 						<h2>Pengaturan</h2>
 						<label htmlFor="colors">Jumlah warna <b>{Math.min(opts.colors, maxColors)}</b></label>
-						<input id="colors" type="range" min={2} max={maxColors} value={Math.min(opts.colors, maxColors)} onChange={e => set({ colors: Number(e.target.value) })} />
+						<input id="colors" type="range" min={2} max={maxColors} value={Math.min(opts.colors, maxColors)} onChange={e => set({ colors: Number(e.target.value) }, "Ubah jumlah warna")} />
 						<label htmlFor="smooth">Kehalusan <b>{opts.smooth < 34 ? "detail" : opts.smooth > 66 ? "halus" : "sedang"}</b></label>
-						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) })} />
+						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, "Ubah kehalusan")} />
 						<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
 						<label htmlFor="target">Target node (maks)</label>
-						<select id="target" value={targetChoice} onChange={e => setTargetChoice(e.target.value as TargetChoice)}>
+						<select id="target" value={targetChoice} onChange={e => { recordHistory("Ubah target node"); setTargetChoice(e.target.value as TargetChoice); }}>
 							<option value="auto">Otomatis</option>
 							<option value="500">500</option>
 							<option value="1000">1000</option>
@@ -486,18 +808,18 @@ export default function App() {
 						</select>
 						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label="Target node" />}
 						<div className="hint">Trasea menghaluskan hasil sampai jumlah node masuk anggaran, tanpa membersihkan gambar ulang.</div>
-						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
-						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked })} /> Kenali bentuk dasar</label>
+						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, "Ubah jaga garis tipis")} /> Jaga garis tipis</label>
+						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, "Ubah bentuk dasar")} /> Kenali bentuk dasar</label>
 						<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
 						<label htmlFor="symmetry">Tegas simetri</label>
-						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] })}>
+						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, "Ubah simetri")}>
 							<option value="off">Mati</option>
 							<option value="auto">Otomatis</option>
 							<option value="vertical">Vertikal (kiri = kanan)</option>
 							<option value="horizontal">Horizontal (atas = bawah)</option>
 						</select>
 						<div className="hint">Untuk logo yang seharusnya simetris. Satu sisi disalin ke sisi lain.</div>
-						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
+						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked }, "Ubah pembersih AI")} /> Bersihkan dengan AI</label>
 						<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
 						{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
 						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? "Terapkan ulang" : "Vektorisasi"}</button>
@@ -569,12 +891,13 @@ export default function App() {
 								<div className="row" style={{ marginTop: 8 }}>
 									<button onClick={() => void exportAs("svg")}>Ekspor SVG</button>
 									<button onClick={() => void exportAs("pdf")}>Ekspor PDF</button>
+									<button onClick={() => void exportAs("eps")}>Ekspor EPS{!license.active ? " (Pro)" : ""}</button>
 									<button onClick={() => void exportAs("ase")}>Palet .ase</button>
 								</div>
 								{opts.productionMode === "screenPrint" && (
 									<div className="sep-box">
 										<label className="check"><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> Sertakan PDF per film</label>
-										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>Ekspor film separasi…</button>
+										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>Ekspor film separasi…{!license.active ? " (Pro)" : ""}</button>
 									</div>
 								)}
 							</>
@@ -594,11 +917,20 @@ export default function App() {
 				</main>
 			)}
 
-			{showLicenses !== null && (
-				<div className="modal" role="dialog" aria-modal="true" aria-label="Lisensi pihak ketiga" onClick={() => setShowLicenses(null)}>
+			{modalOpen !== null && (
+				<div className="modal" role="dialog" aria-modal="true" aria-label="Privasi dan Lisensi" onClick={() => setModalOpen(null)}>
 					<div className="modal-box" onClick={e => e.stopPropagation()}>
-						<div className="row between"><h2>Lisensi pihak ketiga</h2><button className="ghost" onClick={() => setShowLicenses(null)}>Tutup</button></div>
-						<Licenses markdown={showLicenses} />
+						<div className="row between">
+							<h2>Privasi & Lisensi</h2>
+							<button className="ghost" onClick={() => setModalOpen(null)}>Tutup</button>
+						</div>
+						<Licenses
+							markdown={modalOpen.markdown}
+							license={license}
+							initialTab={modalOpen.tab}
+							promptHint={modalOpen.hint}
+							onLicenseChanged={setLicense}
+						/>
 					</div>
 				</div>
 			)}

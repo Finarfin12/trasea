@@ -107,9 +107,10 @@ fn local_mean(lum: &[f32], w: usize, h: usize, r: i32) -> Vec<f32> {
     out
 }
 
-/// Row spans (dy, dx_max) of a disk of radius r.
+/// Row spans (dy, dx_max) of an isotropic disk of radius r (half-pixel outer margin so 45-deg diagonals match 0/90-deg width).
 fn disk(r: i32) -> Vec<(i32, i32)> {
-    (-r..=r).map(|dy| (dy, (((r * r - dy * dy) as f32).sqrt()).floor() as i32)).collect()
+    let rf = r as f32 + 0.5;
+    (-r..=r).map(|dy| (dy, ((rf * rf - (dy * dy) as f32).max(0.0).sqrt()).floor() as i32)).collect()
 }
 
 fn erode(src: &[bool], w: usize, h: usize, r: i32) -> Vec<bool> {

@@ -533,26 +533,38 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
                 budget_met = Some(false);
             } else {
                 let (mut lo, mut hi) = (0.0f64, 1.0f64);
-                let (mut kbest, mut fbest) = (kmax, fmax);
+                let mut kbest = kmax;
+                let mut fbest: Option<FieldsOut> = None;
                 for _ in 0..BUDGET_STEPS {
                     let mid = (lo + hi) / 2.0;
                     let (k, f, n) = nodes_at(mid);
-                    if n.saturating_sub(bias) <= limit {
+                    let est_bias = (bias as f64 * mid).round() as usize;
+                    if n.saturating_sub(est_bias) <= limit {
                         hi = mid;
                         kbest = k;
-                        fbest = f;
+                        fbest = Some(f);
                     } else {
                         lo = mid;
                     }
                 }
                 knobs = kbest;
-                fo = fbest;
+                fo = fbest.unwrap_or(fmax);
                 budget_met = Some(true);
             }
             if params.detect_text {
                 fo.text_regions = trace_fields(&b, params, Knobs { t: knobs.t, extra: 1.0 }, true).text_regions;
             }
-            lines = if (knobs.t - kmax.t).abs() < 1e-12 && (knobs.extra - kmax.extra).abs() < 1e-12 { lines_max } else { trace_lines(&b, params, knobs, &fo) };
+            let at_max = (knobs.t - kmax.t).abs() < 1e-12 && (knobs.extra - kmax.extra).abs() < 1e-12;
+            lines = if at_max { lines_max } else {
+                let l = trace_lines(&b, params, knobs, &fo);
+                if count_nodes(&make_doc(&b, fo.fields.clone(), &l), &exp_opts) > limit && real_max <= limit {
+                    knobs = kmax;
+                    fo = trace_fields(&b, params, kmax, params.detect_text);
+                    lines_max
+                } else {
+                    l
+                }
+            };
             let final_nodes = count_nodes(&make_doc(&b, fo.fields.clone(), &lines), &exp_opts);
             if final_nodes > limit {
                 budget_met = Some(false);

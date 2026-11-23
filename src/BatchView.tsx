@@ -10,14 +10,20 @@ import {
 	type BatchItemReport,
 	type BatchSummary,
 	type ExportOptions,
+	type LicenseStatus,
 	type Options,
 	type ProductionMode,
+	type UserPreset,
 } from "./api";
 
 interface Props {
 	opts: Options;
 	exp: ExportOptions;
 	initialFiles: string[];
+	license: LicenseStatus;
+	presets: UserPreset[];
+	onApplyPreset: (preset: UserPreset) => void;
+	onOpenLicenseModal: (hint?: string) => void;
 	onChangeMode: (mode: ProductionMode) => void;
 	onOpenInEditor: (filePath: string) => void;
 	onBack: () => void;
@@ -30,12 +36,13 @@ const modeLabel = (m: ProductionMode): string => (m === "screenPrint" ? "Sablon"
 const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 const joinPath = (a: string, b: string): string => `${a.replace(/[\\/]+$/, "")}\\${b}`;
 
-export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpenInEditor, onBack }: Props) {
+export default function BatchView({ opts, exp, initialFiles, license, presets, onApplyPreset, onOpenLicenseModal, onChangeMode, onOpenInEditor, onBack }: Props) {
 	const [inputDir, setInputDir] = useState<string>("");
 	const [includeSubfolders, setIncludeSubfolders] = useState(false);
 	const [files, setFiles] = useState<string[]>(initialFiles);
 	const [outputDir, setOutputDir] = useState<string>(() => (initialFiles[0] ? joinPath(parentDir(initialFiles[0]), "trasea-output") : ""));
 	const [writePdf, setWritePdf] = useState(false);
+	const [writeEps, setWriteEps] = useState(false);
 	const [writeAse, setWriteAse] = useState(true);
 	const [writeSeparations, setWriteSeparations] = useState(opts.productionMode === "screenPrint");
 
@@ -54,7 +61,8 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 		if (initialFiles.length > 0) {
 			setFiles(initialFiles);
 			setInputDir("");
-			const f0 = initialFiles[0]; if (!outputDir && f0) setOutputDir(joinPath(parentDir(f0), "trasea-output"));
+			const f0 = initialFiles[0];
+			if (!outputDir && f0) setOutputDir(joinPath(parentDir(f0), "trasea-output"));
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [initialFiles]);
@@ -113,7 +121,8 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 		setError("");
 		setInputDir("");
 		setFiles(picked);
-		const p0 = picked[0]; if (!outputDir && p0) setOutputDir(joinPath(parentDir(p0), "trasea-output"));
+		const p0 = picked[0];
+		if (!outputDir && p0) setOutputDir(joinPath(parentDir(p0), "trasea-output"));
 		setSummary(null);
 		setLiveItems([]);
 	};
@@ -124,6 +133,10 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 	};
 
 	const startBatch = async () => {
+		if (!license.active) {
+			onOpenLicenseModal("Batch Folder adalah fitur Trasea Pro (bayar sekali, 100% offline). Masukkan kunci lisensi untuk menjalankannya.");
+			return;
+		}
 		if (files.length === 0 || !outputDir || running) return;
 		setRunning(true);
 		setCancelling(false);
@@ -141,6 +154,7 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [] },
 				export: exp,
 				writePdf,
+				writeEps,
 				writeAse,
 				writeSeparations: opts.productionMode === "screenPrint" && writeSeparations,
 			});
@@ -180,13 +194,38 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 				<div className="row">
 					<button className="ghost" onClick={onBack} disabled={running}>← Kembali ke Editor</button>
 					<h2>Batch Folder</h2>
+					{!license.active && <span className="pro-tag">Pro</span>}
 				</div>
-				<div className="seg" role="group" aria-label="Mode produksi batch">
-					<button aria-pressed={opts.productionMode === "standard"} disabled={running} onClick={() => onChangeMode("standard")}>Standar</button>
-					<button aria-pressed={opts.productionMode === "screenPrint"} disabled={running} onClick={() => onChangeMode("screenPrint")}>Sablon</button>
-					<button aria-pressed={opts.productionMode === "cutEmbroidery"} disabled={running} onClick={() => onChangeMode("cutEmbroidery")}>Cutting / Bordir</button>
+				<div className="row">
+					{presets.length > 0 && (
+						<select
+							className="batch-preset"
+							aria-label="Terapkan preset kustom ke batch"
+							defaultValue=""
+							disabled={running}
+							onChange={e => {
+								const p = presets.find(x => x.id === e.target.value);
+								if (p) onApplyPreset(p);
+							}}
+						>
+							<option value="" disabled>Terapkan preset kustom…</option>
+							{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+						</select>
+					)}
+					<div className="seg" role="group" aria-label="Mode produksi batch">
+						<button aria-pressed={opts.productionMode === "standard"} disabled={running} onClick={() => onChangeMode("standard")}>Standar</button>
+						<button aria-pressed={opts.productionMode === "screenPrint"} disabled={running} onClick={() => onChangeMode("screenPrint")}>Sablon</button>
+						<button aria-pressed={opts.productionMode === "cutEmbroidery"} disabled={running} onClick={() => onChangeMode("cutEmbroidery")}>Cutting / Bordir</button>
+					</div>
 				</div>
 			</div>
+
+			{!license.active && (
+				<div className="warn row between">
+					<span><b>Mode Trial:</b> Batch Folder, Ekspor EPS, dan Film Separasi terbuka setelah memasukkan kunci lisensi offline Trasea Pro.</span>
+					<button className="small" onClick={() => onOpenLicenseModal("Aktifkan kunci lisensi offline untuk membuka Batch Folder.")}>Aktifkan lisensi…</button>
+				</div>
+			)}
 
 			<div className="batch-setup">
 				<div className="batch-card">
@@ -210,6 +249,7 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 					<div className="row" style={{ marginTop: 8 }}>
 						<label className="check inline"><input type="checkbox" checked disabled /> SVG</label>
 						<label className="check inline"><input type="checkbox" checked={writePdf} disabled={running} onChange={e => setWritePdf(e.target.checked)} /> PDF</label>
+						<label className="check inline"><input type="checkbox" checked={writeEps} disabled={running} onChange={e => setWriteEps(e.target.checked)} /> EPS</label>
 						<label className="check inline"><input type="checkbox" checked={writeAse} disabled={running} onChange={e => setWriteAse(e.target.checked)} /> ASE</label>
 						{opts.productionMode === "screenPrint" && (
 							<label className="check inline"><input type="checkbox" checked={writeSeparations} disabled={running} onChange={e => setWriteSeparations(e.target.checked)} /> Film separasi (#000000)</label>
@@ -230,7 +270,7 @@ export default function BatchView({ opts, exp, initialFiles, onChangeMode, onOpe
 			<div className="batch-actions">
 				<div className="row">
 					<button className="primary batch-run" onClick={() => void startBatch()} disabled={running || files.length === 0 || !outputDir}>
-						{running ? `Memproses (${done}/${total})…` : `Mulai batch (${files.length} file)`}
+						{running ? `Memproses (${done}/${total})…` : !license.active ? `Mulai batch (Pro)` : `Mulai batch (${files.length} file)`}
 					</button>
 					{running && (
 						<button className="danger" onClick={() => void stopBatch()} disabled={cancelling}>

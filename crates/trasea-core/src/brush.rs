@@ -13,7 +13,7 @@ pub enum BrushKind {
     Smooth,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrushStroke {
     pub kind: BrushKind,
     /// Radius in source image pixels.

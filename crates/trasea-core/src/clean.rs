@@ -150,14 +150,22 @@ pub fn clean(img: &RgbImage, want_ai: bool, sidecar_dir: Option<&Path>, up: u32)
     if !want_ai {
         return Cleaned { image: fallback(img, up), used_ai: false, note: None };
     }
-    let why = match sidecar_dir {
+    let (why, runtime_gpu_fail) = match sidecar_dir {
         Some(dir) => match run_sidecar(img, dir, up) {
             Ok(image) => return Cleaned { image, used_ai: true, note: None },
-            Err(why) => why,
+            Err(why) => {
+                let missing = why.contains("not found");
+                (why, !missing)
+            }
         },
-        None => "the Real-ESRGAN sidecar is not available".to_string(),
+        None => ("the Real-ESRGAN sidecar is not available".to_string(), false),
     };
-    Cleaned { image: fallback(img, up), used_ai: false, note: Some(format!("AI cleaning was skipped ({why}). A median filter was used instead.")) }
+    let note = if runtime_gpu_fail {
+        format!("Pembersih AI (Vulkan) tidak tersedia di kartu grafis ini — Trasea otomatis memakai pembersih cepat lokal (Median). ({why})")
+    } else {
+        format!("AI cleaning was skipped ({why}). A median filter was used instead.")
+    };
+    Cleaned { image: fallback(img, up), used_ai: false, note: Some(note) }
 }
 
 #[cfg(test)]

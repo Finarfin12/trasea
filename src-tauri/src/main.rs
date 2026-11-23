@@ -9,11 +9,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use trasea_core::batch::{is_supported_image, run_batch as core_run_batch, scan_image_files, BatchConfig, BatchSummary};
-use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs};
+use trasea_core::clean::plain_path;
+use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_eps, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs};
+use trasea_core::license::{verify_embedded, LicenseInfo};
+use trasea_core::project::{
+    load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject, ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION,
+};
 use trasea_core::{export, hex, load, prepare, vectorize_prepared, BrushStroke, NodeHeatmap, Params, PreparedImage, ProductionMode, ProductionOptions, SymmetryMode, TextRegion};
 
 /// The expensive first half of the conversion (loading, thin lines, clean / Real-ESRGAN) for the picture that is open.
-/// Changing the palette, the brush strokes, production profile or the node target runs only the second half again.
 struct CachedPrep {
     path: String,
     ai_clean: bool,
@@ -51,34 +55,23 @@ struct UiParams {
     smooth: f32,
     keep_lines: bool,
     ai_clean: bool,
-    /// Write circles, ellipses and rectangles as pure shapes.
     detect_primitives: bool,
-    /// "off", "auto", "vertical" or "horizontal"
     symmetry: String,
-    /// Warn when the picture seems to hold text.
     detect_text: bool,
-    /// The designer's own palette as `#RRGGBB` strings (empty / absent = automatic).
     #[serde(default)]
     custom_palette: Option<Vec<String>>,
-    /// Explicit colour merges `[[fromHex, toHex], ...]`.
     #[serde(default)]
     palette_merges: Vec<(String, String)>,
-    /// Node budget (absent = automatic).
     #[serde(default)]
     target_nodes: Option<usize>,
-    /// Correction brush strokes in source pixels.
     #[serde(default)]
     brush_strokes: Vec<BrushStroke>,
-    /// "standard", "screenPrint", or "cutEmbroidery"
     #[serde(default)]
     production_mode: String,
-    /// Minimum stroke width in points (pt).
     #[serde(default)]
     min_stroke_pt: Option<f64>,
-    /// Omit background layer (CutEmbroidery).
     #[serde(default)]
     strip_background: Option<bool>,
-    /// Add 4 registration marks in outer margin (ScreenPrint).
     #[serde(default)]
     registration_marks: Option<bool>,
 }
@@ -87,7 +80,6 @@ struct UiParams {
 #[serde(rename_all = "camelCase")]
 struct Processed {
     svg: String,
-    /// The loaded image (what the vector is compared with) as a PNG data URL.
     original: String,
     width: u32,
     height: u32,
@@ -100,19 +92,12 @@ struct Processed {
     used_ai: bool,
     secs: f64,
     thin_pixels: usize,
-    /// Circles, ellipses and rectangles written as pure shapes.
     primitives: usize,
-    /// "vertical" / "horizontal" when the symmetry enforcer changed the picture.
     symmetry_applied: Option<String>,
-    /// Suspected text areas in source pixels. Only for the preview; never exported.
     text_regions: Vec<TextRegion>,
-    /// Node density for the preview overlay. Never exported.
     heatmap: NodeHeatmap,
-    /// Smoothness (0..100) that was really used (differs from the slider when a node target was applied).
     effective_smooth: f32,
-    /// `true` / `false` when a node target was given and met / not met.
     budget_met: Option<bool>,
-    /// The picture was already prepared: loading and cleaning were not run again.
     reused: bool,
 }
 
@@ -122,13 +107,10 @@ struct ProgressEvent {
     fraction: f32,
 }
 
-/// Export options chosen in the UI.
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct UiExport {
-    /// "stroke" or "shape"
     lines_as: String,
-    /// 0, 0.25, 0.5 or 1 (points)
     trap_pt: f64,
     #[serde(default)]
     registration_marks: bool,
@@ -144,11 +126,54 @@ struct UiBatchConfig {
     params: UiParams,
     export: UiExport,
     write_pdf: bool,
+    #[serde(default)]
+    write_eps: bool,
     write_ase: bool,
     write_separations: bool,
 }
 
-/// Folder with the Real-ESRGAN sidecar: bundled next to the app, or TRASEA_SIDECAR for development.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LicenseStatusDto {
+    active: bool,
+    info: Option<LicenseInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserPreset {
+    id: String,
+    name: String,
+    options: ProjectOptions,
+    export_options: ProjectExportOptions,
+}
+
+fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|e| format!("Gagal menemukan folder konfigurasi: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Gagal membuat folder konfigurasi: {e}"))?;
+    Ok(dir)
+}
+
+fn license_file(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(config_dir(app)?.join("license.key"))
+}
+
+fn presets_file(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(config_dir(app)?.join("presets.json"))
+}
+
+fn read_active_license(app: &AppHandle) -> Option<LicenseInfo> {
+    let p = license_file(app).ok()?;
+    let raw = std::fs::read_to_string(p).ok()?;
+    verify_embedded(&raw).ok()
+}
+
+fn require_pro_license(app: &AppHandle, feature: &str) -> Result<LicenseInfo, String> {
+    read_active_license(app).ok_or_else(|| {
+        format!("{feature} adalah fitur Trasea Pro (bayar sekali, 100% offline). Buka Privasi & Lisensi untuk memasukkan kunci aktivasi.")
+    })
+}
+
 fn sidecar_dir(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(res) = app.path().resource_dir() {
@@ -166,7 +191,6 @@ fn png_data_url(img: &image::RgbImage) -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf)))
 }
 
-/// `#RRGGBB` to a colour.
 fn parse_hex(s: &str) -> Option<[u8; 3]> {
     let h = s.trim().trim_start_matches('#');
     if h.len() != 6 {
@@ -233,7 +257,6 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
 async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
     let sidecar = sidecar_dir(&app);
     let handle = app.clone();
-    // take what is cached for this picture (if anything) out of the lock before the long work starts
     let cached: Option<(Arc<PreparedImage>, String)> = {
         let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
         guard
@@ -299,7 +322,6 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
     Ok(result.0)
 }
 
-/// Colour under the eyedropper: the median of the 5x5 pixels around the click, from the loaded image in memory.
 #[tauri::command]
 fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     let guard = last.prepared.lock().map_err(|_| "internal error".to_string())?;
@@ -324,23 +346,28 @@ fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     Ok(hex([med(&mut r), med(&mut g), med(&mut b)]))
 }
 
-/// Write the last result. `kind` is "svg", "pdf" or "ase".
+/// Write the last result. `kind` is "svg", "pdf", "eps" or "ase".
 #[tauri::command]
-fn save_file(last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
-    let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("There is nothing to export yet. Convert an image first.")?;
+fn save_file(app: AppHandle, last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
+    if kind == "eps" {
+        require_pro_license(&app, "Ekspor EPS")?;
+    }
+    let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("Belum ada hasil untuk diekspor. Konversi gambar dulu.")?;
     let opts = to_core_export(&options);
-    let write = |bytes: Vec<u8>| std::fs::write(&path, bytes).map_err(|e| format!("Cannot write {path}: {e}"));
+    let write = |bytes: Vec<u8>| std::fs::write(&path, bytes).map_err(|e| format!("Gagal menulis {path}: {e}"));
     match kind.as_str() {
         "svg" => write(to_svg(&doc, &opts).into_bytes()),
         "pdf" => write(export::svg_to_pdf(&to_svg(&doc, &opts)).map_err(|e| e.to_string())?),
+        "eps" => write(to_eps(&doc, &opts).into_bytes()),
         "ase" => write(to_ase(&palette_of(&doc))),
         _ => Err("unknown export format".into()),
     }
 }
 
-/// Export 100%-black per-colour separation films for the currently open drawing (`kind`: "svg", "pdf", or "both").
+/// Export 100%-black per-colour separation films (Pro feature).
 #[tauri::command]
-fn save_separations(last: State<'_, Last>, dir: String, base_name: String, kind: String, options: UiExport) -> Result<Vec<String>, String> {
+fn save_separations(app: AppHandle, last: State<'_, Last>, dir: String, base_name: String, kind: String, options: UiExport) -> Result<Vec<String>, String> {
+    require_pro_license(&app, "Ekspor Film Separasi")?;
     let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("Belum ada hasil untuk diekspor.")?;
     let out_dir = PathBuf::from(&dir);
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("Gagal membuat folder {dir}: {e}"))?;
@@ -367,6 +394,109 @@ fn save_separations(last: State<'_, Last>, dir: String, base_name: String, kind:
         }
     }
     Ok(written)
+}
+
+#[tauri::command]
+fn license_status(app: AppHandle) -> LicenseStatusDto {
+    match read_active_license(&app) {
+        Some(info) => LicenseStatusDto { active: true, info: Some(info) },
+        None => LicenseStatusDto { active: false, info: None },
+    }
+}
+
+#[tauri::command]
+fn activate_license(app: AppHandle, key: String) -> Result<LicenseStatusDto, String> {
+    let trimmed = key.trim();
+    let info = verify_embedded(trimmed).map_err(|e| e.to_string())?;
+    let p = license_file(&app)?;
+    std::fs::write(&p, trimmed).map_err(|e| format!("Gagal menyimpan kunci lisensi: {e}"))?;
+    Ok(LicenseStatusDto { active: true, info: Some(info) })
+}
+
+#[tauri::command]
+fn deactivate_license(app: AppHandle) -> Result<LicenseStatusDto, String> {
+    let p = license_file(&app)?;
+    if p.exists() {
+        std::fs::remove_file(&p).map_err(|e| format!("Gagal menghapus kunci lisensi: {e}"))?;
+    }
+    Ok(LicenseStatusDto { active: false, info: None })
+}
+
+#[tauri::command]
+fn save_project(path: String, source_path: String, options: ProjectOptions, export_options: ProjectExportOptions) -> Result<(), String> {
+    let sha = if !source_path.is_empty() && Path::new(&source_path).is_file() {
+        sha256_file(Path::new(&source_path)).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let proj = ProjectFile {
+        schema_version: PROJECT_SCHEMA_VERSION,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        source_path,
+        source_sha256: sha,
+        options,
+        export_options,
+    };
+    core_save_project(Path::new(&path), &proj).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_project(path: String) -> Result<LoadedProject, String> {
+    core_load_project(Path::new(&path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_presets(app: AppHandle) -> Result<Vec<UserPreset>, String> {
+    let p = presets_file(&app)?;
+    if !p.is_file() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(&p).map_err(|e| format!("Gagal membaca presets.json: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Format presets.json rusak: {e}"))
+}
+
+#[tauri::command]
+fn save_preset(app: AppHandle, preset: UserPreset) -> Result<Vec<UserPreset>, String> {
+    let name = preset.name.trim();
+    if name.is_empty() {
+        return Err("Nama preset tidak boleh kosong.".into());
+    }
+    let mut list = list_presets(app.clone()).unwrap_or_default();
+    if let Some(pos) = list.iter().position(|x| x.id == preset.id || x.name.eq_ignore_ascii_case(name)) {
+        list[pos] = UserPreset { name: name.to_string(), ..preset };
+    } else {
+        list.push(UserPreset { name: name.to_string(), ..preset });
+    }
+    let p = presets_file(&app)?;
+    let json = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    std::fs::write(&p, json).map_err(|e| format!("Gagal menyimpan preset: {e}"))?;
+    Ok(list)
+}
+
+#[tauri::command]
+fn delete_preset(app: AppHandle, id: String) -> Result<Vec<UserPreset>, String> {
+    let mut list = list_presets(app.clone()).unwrap_or_default();
+    list.retain(|x| x.id != id);
+    let p = presets_file(&app)?;
+    let json = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    std::fs::write(&p, json).map_err(|e| format!("Gagal memperbarui preset: {e}"))?;
+    Ok(list)
+}
+
+#[tauri::command]
+fn sample_image_path(app: AppHandle) -> Result<String, String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join("sample").join("sample-illustration.png"));
+    }
+    candidates.push(PathBuf::from("src-tauri/resources/sample/sample-illustration.png"));
+    candidates.push(PathBuf::from("resources/sample/sample-illustration.png"));
+    let found = candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| "Gambar contoh bawaan tidak ditemukan.".to_string())?;
+    let abs = std::fs::canonicalize(&found).unwrap_or(found);
+    Ok(plain_path(&abs).to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -397,6 +527,7 @@ fn collect_dropped_images(paths: Vec<String>, include_subfolders: bool) -> Resul
 
 #[tauri::command]
 async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: UiBatchConfig) -> Result<BatchSummary, String> {
+    require_pro_license(&app, "Batch Folder")?;
     if batch_ctrl.running.swap(true, Ordering::SeqCst) {
         return Err("Proses batch lain sedang berjalan.".into());
     }
@@ -418,6 +549,7 @@ async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: 
             params: p,
             export: eo,
             write_pdf: config.write_pdf,
+            write_eps: config.write_eps,
             write_ase: config.write_ase,
             write_separations: config.write_separations,
             write_report_csv: true,
@@ -498,6 +630,15 @@ fn main() {
             pick_color,
             save_file,
             save_separations,
+            license_status,
+            activate_license,
+            deactivate_license,
+            save_project,
+            load_project,
+            list_presets,
+            save_preset,
+            delete_preset,
+            sample_image_path,
             scan_folder,
             collect_dropped_images,
             run_batch,
