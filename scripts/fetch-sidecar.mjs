@@ -1,4 +1,4 @@
-// Downloads the Real-ESRGAN ncnn Vulkan release (v0.2.5.0, Windows) and copies the files Vektora needs into
+// Downloads the Real-ESRGAN ncnn Vulkan release (v0.2.5.0, Windows) and copies the files Trasea needs into
 // src-tauri/resources/realesrgan/ (executable, OpenMP runtime, and the anime x4 model only).
 // Needs Node 22+ and `tar` (bundled with Windows 10+). Run once before `tauri build`: node scripts/fetch-sidecar.mjs
 import { execFileSync } from "node:child_process";
@@ -12,7 +12,7 @@ if (existsSync(join(dest, "realesrgan-ncnn-vulkan.exe"))) {
 	console.log("sidecar already present:", dest);
 	process.exit(0);
 }
-const tmp = mkdtempSync(join(tmpdir(), "vektora-esrgan-"));
+const tmp = mkdtempSync(join(tmpdir(), "trasea-esrgan-"));
 try {
 	const res = await fetch(URL);
 	if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);

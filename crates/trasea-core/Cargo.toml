@@ -1,9 +1,9 @@
 [package]
-name = "vektora-core"
+name = "trasea-core"
 version = "0.3.0"
 edition = "2021"
 license = "MIT"
-description = "Vektora core: raster illustration/logo to clean SVG/PDF (no UI)."
+description = "Trasea core: raster illustration/logo to clean SVG/PDF (no UI)."
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
@@ -17,8 +17,8 @@ serde_json = "1"
 thiserror = "2"
 
 [[bin]]
-name = "vektora-cli"
-path = "src/bin/vektora-cli.rs"
+name = "trasea-cli"
+path = "src/bin/trasea-cli.rs"
 
 [[bin]]
 name = "bench"

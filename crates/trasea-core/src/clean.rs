@@ -80,7 +80,7 @@ fn locate(dir: &Path) -> Option<(PathBuf, PathBuf)> {
 fn run_sidecar(img: &RgbImage, dir: &Path, up: u32) -> Result<RgbImage, String> {
     let (exe, models) = locate(dir).ok_or_else(|| format!("{SIDECAR_EXE} or its models folder not found in {}", dir.display()))?;
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let tmp = plain_path(&std::env::temp_dir()).join(format!("vektora-{}-{}", std::process::id(), nanos));
+    let tmp = plain_path(&std::env::temp_dir()).join(format!("trasea-{}-{}", std::process::id(), nanos));
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let result = (|| {
         let (w, h) = img.dimensions();
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn locate_accepts_a_folder_with_the_verbatim_prefix() {
-        let dir = std::env::temp_dir().join("vektora-locate-test");
+        let dir = std::env::temp_dir().join("trasea-locate-test");
         std::fs::create_dir_all(dir.join("models")).unwrap();
         std::fs::write(dir.join(SIDECAR_EXE), b"x").unwrap();
         let verbatim = PathBuf::from(format!("{}{}", r"\\?\", dir.display()));

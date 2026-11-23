@@ -1,16 +1,16 @@
 {
-  "name": "vektora",
+  "name": "trasea",
   "private": true,
   "version": "0.3.0",
   "type": "module",
-  "description": "Vektora: offline raster to clean vector (SVG/PDF) converter",
+  "description": "Trasea: offline raster to clean vector (SVG/PDF) converter",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
     "bench": "cargo run --release --bin bench",
-    "test": "cargo test --release -p vektora-core"
+    "test": "cargo test --release -p trasea-core"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.5",

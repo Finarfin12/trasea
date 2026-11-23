@@ -1,4 +1,4 @@
-// Vektora desktop app: a thin Tauri shell around `vektora-core`. Everything runs on this computer; the app makes no network request.
+// Trasea desktop app: a thin Tauri shell around `trasea-core`. Everything runs on this computer; the app makes no network request.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use base64::Engine;
@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
-use vektora_core::export::{palette_of, to_ase, to_svg, Doc, ExportOptions, LinesAs};
-use vektora_core::{export, hex, load, vectorize, Params, SymmetryMode, TextRegion};
+use trasea_core::export::{palette_of, to_ase, to_svg, Doc, ExportOptions, LinesAs};
+use trasea_core::{export, hex, load, vectorize, Params, SymmetryMode, TextRegion};
 
 #[derive(Default)]
 struct Last {
@@ -62,16 +62,16 @@ struct ProgressEvent {
     fraction: f32,
 }
 
-/// Folder with the Real-ESRGAN sidecar: bundled next to the app, or VEKTORA_SIDECAR for development.
+/// Folder with the Real-ESRGAN sidecar: bundled next to the app, or TRASEA_SIDECAR for development.
 fn sidecar_dir(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(res) = app.path().resource_dir() {
         candidates.push(res.join("realesrgan"));
     }
-    if let Ok(dev) = std::env::var("VEKTORA_SIDECAR") {
+    if let Ok(dev) = std::env::var("TRASEA_SIDECAR") {
         candidates.push(PathBuf::from(dev));
     }
-    candidates.into_iter().find(|d| d.join(vektora_core::clean::SIDECAR_EXE).is_file())
+    candidates.into_iter().find(|d| d.join(trasea_core::clean::SIDECAR_EXE).is_file())
 }
 
 fn png_data_url(img: &image::RgbImage) -> Result<String, String> {
@@ -175,5 +175,5 @@ fn main() {
         .manage(Last::default())
         .invoke_handler(tauri::generate_handler![process, save_file, sidecar_available, third_party_licenses])
         .run(tauri::generate_context!())
-        .expect("error while running Vektora");
+        .expect("error while running Trasea");
 }

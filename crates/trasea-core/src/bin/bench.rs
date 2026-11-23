@@ -5,10 +5,10 @@
 use image::RgbImage;
 use std::path::PathBuf;
 use std::time::Instant;
-use vektora_core::lines::{dilate_mask, thin_mask, ThinParams};
-use vektora_core::export::{to_svg, ExportOptions, LinesAs};
-use vektora_core::stats::{compare, count_svg, render_svg};
-use vektora_core::{load, vectorize, Params};
+use trasea_core::lines::{dilate_mask, thin_mask, ThinParams};
+use trasea_core::export::{to_svg, ExportOptions, LinesAs};
+use trasea_core::stats::{compare, count_svg, render_svg};
+use trasea_core::{load, vectorize, Params};
 
 const DEFAULT_DIR: &str = "C:/Users/atrione/OpenBot/Agents/agent-770c1b2c-74f1-4ef1-99c2-3f9a8f833d93/vectorize-bench";
 const DEFAULT_SIDECAR: &str = "C:/Users/atrione/OpenBot/Agents/agent-770c1b2c-74f1-4ef1-99c2-3f9a8f833d93/tools/realesrgan";
@@ -131,11 +131,11 @@ fn main() {
     }
     let work = out.join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let have_ai = sidecar.join(vektora_core::clean::SIDECAR_EXE).is_file();
+    let have_ai = sidecar.join(trasea_core::clean::SIDECAR_EXE).is_file();
     println!("sidecar: {} ({})", sidecar.display(), if have_ai { "found" } else { "MISSING: only the median variant is run" });
 
     let mut md = String::new();
-    md.push_str("# Vektora 0.1.0 benchmark\n\n");
+    md.push_str("# Trasea 0.1.0 benchmark\n\n");
     md.push_str("Counting: nodes = every M, L and C segment (the same counter as the baseline benchmark). MAE = mean absolute RGB error of the render against the 1200 px source (0..255, white background). Thin-line recall = share of the original's thin-line pixels (dark strokes thinner than about 2r+1 px, found by the same detector the guard uses) that the render still shows within 1 px. Time = whole pipeline on this PC (integrated AMD GPU for Real-ESRGAN).\n\n");
     let mut json = Vec::new();
     let mut modes: Vec<String> = Vec::new();
@@ -163,9 +163,9 @@ fn main() {
                     md.push_str(&format!("| {} | hand-made vector (owner) | {} | {} | {} | {:.2} | {:.0}% | - |\n", it.label, r.paths, nodes, r.kb, r.mae, r.recall * 100.0));
                 }
             }
-            let mut variants: Vec<(&str, bool)> = vec![("Vektora (median, no AI)", false)];
+            let mut variants: Vec<(&str, bool)> = vec![("Trasea (median, no AI)", false)];
             if have_ai && ai_mode != "off" {
-                variants.insert(0, ("Vektora (AI clean)", true));
+                variants.insert(0, ("Trasea (AI clean)", true));
             }
             if ai_mode == "on" {
                 variants.retain(|v| v.1);

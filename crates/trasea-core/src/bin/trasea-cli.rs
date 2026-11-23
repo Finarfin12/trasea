@@ -1,21 +1,21 @@
-//! Developer CLI: `vektora-cli in.jpg out.svg [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--ai] [--lines stroke|shape] [--trap PT] [--ase out.ase] [--sidecar DIR]`
+//! Developer CLI: `trasea-cli in.jpg out.svg [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--ai] [--lines stroke|shape] [--trap PT] [--ase out.ase] [--sidecar DIR]`
 
 use std::path::PathBuf;
 use std::time::Instant;
-use vektora_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
-use vektora_core::{export, load, vectorize, Params, SymmetryMode};
+use trasea_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
+use trasea_core::{export, load, vectorize, Params, SymmetryMode};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // dev helper: `vektora-cli --render in.svg out.png WIDTH HEIGHT` draws an SVG to a PNG (for before/after pictures)
+    // dev helper: `trasea-cli --render in.svg out.png WIDTH HEIGHT` draws an SVG to a PNG (for before/after pictures)
     if args.first().map(String::as_str) == Some("--render") && args.len() >= 5 {
         let svg = std::fs::read_to_string(&args[1]).expect("cannot read the SVG");
         let (w, h): (u32, u32) = (args[3].parse().expect("width"), args[4].parse().expect("height"));
-        vektora_core::stats::render_svg(&svg, w, h).expect("cannot render the SVG").save(&args[2]).expect("cannot write the PNG");
+        trasea_core::stats::render_svg(&svg, w, h).expect("cannot render the SVG").save(&args[2]).expect("cannot write the PNG");
         return;
     }
     if args.len() < 2 {
-        eprintln!("usage: vektora-cli <input> <output.svg> [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]");
+        eprintln!("usage: trasea-cli <input> <output.svg> [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]");
         std::process::exit(2);
     }
     let (input, output) = (PathBuf::from(&args[0]), PathBuf::from(&args[1]));
@@ -109,7 +109,7 @@ fn main() {
         }
     }
     if let Some(png) = png {
-        match vektora_core::stats::render_svg(&svg, img.width(), img.height()) {
+        match trasea_core::stats::render_svg(&svg, img.width(), img.height()) {
             Ok(r) => r.save(&png).expect("cannot write the PNG"),
             Err(e) => eprintln!("PNG: {e}"),
         }
@@ -120,7 +120,7 @@ fn main() {
     if std::env::var("VK_DEBUG_PRIMS").is_ok() {
         for l in &out.doc.fields {
             for pr in &l.prims {
-                eprintln!("prim in {}: {pr:?}", vektora_core::hex(l.color));
+                eprintln!("prim in {}: {pr:?}", trasea_core::hex(l.color));
             }
         }
     }

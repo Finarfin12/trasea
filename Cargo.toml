@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/vektora-core", "src-tauri"]
+members = ["crates/trasea-core", "src-tauri"]
 
 [profile.release]
 opt-level = 3

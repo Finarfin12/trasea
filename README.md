@@ -1,4 +1,4 @@
-# Vektora (working name)
+# Trasea (working name)
 
 *Bahasa Indonesia: [README.id.md](README.id.md)*
 
@@ -21,7 +21,7 @@ Bidang warna     one sub-group per colour: id="Warna_02_EBD9C1", data-name="Warn
 Garis            thin lines: <path fill="none" stroke="#223F64" stroke-width="4.12" stroke-linecap="round" ...>
 ```
 
-No CSS, `<style>`, filter or transform. Also **PDF** (page size = image size) and the palette as **.ase** (Adobe Swatch Exchange, colours named `Vektora 01 #RRGGBB`; import in Illustrator via Swatches and in Affinity via Swatches > Import Palette; not tested by the author, see Limits). Options: thin lines as stroke or as filled shapes; trap 0 / 0.25 / 0.5 / 1 pt for print.
+No CSS, `<style>`, filter or transform. Also **PDF** (page size = image size) and the palette as **.ase** (Adobe Swatch Exchange, colours named `Trasea 01 #RRGGBB`; import in Illustrator via Swatches and in Affinity via Swatches > Import Palette; not tested by the author, see Limits). Options: thin lines as stroke or as filled shapes; trap 0 / 0.25 / 0.5 / 1 pt for print.
 
 Controls: number of colours (2-16), smoothness (few nodes <-> detail), "keep thin lines", "recognise basic shapes" (on), "enforce symmetry" (off / automatic / vertical / horizontal), "clean with AI". Statistics on screen: paths, nodes, basic shapes, SVG size, colour error, time.
 
@@ -35,7 +35,7 @@ New in 0.3.0:
 
 ## Use
 
-1. Run the installer (`Vektora_0.3.0_x64-setup.exe`, per-user, no admin needed) and start Vektora.
+1. Run the installer (`Trasea_0.3.0_x64-setup.exe`, per-user, no admin needed) and start Trasea.
 2. Drag an image onto the window (or **Buka gambar**), wait for the conversion (about 1-3 s with the default settings, 10-40 s with AI on, on the integrated GPU of the test PC).
 3. Drag the slider to compare the original and the vector, adjust the controls and press **Terapkan ulang** if you want.
 4. Choose how thin lines and trap are exported, then **Ekspor SVG**, **Ekspor PDF** or **Palet .ase** (the .ase is saved next to the SVG/PDF when "Sertakan palet .ase" is ticked).
@@ -56,15 +56,15 @@ Developer tools:
 
 ```
 npm test                                   # cargo tests V1-V7, W1-W6 and G1-G8 (synthetic images, no test data needed)
-cargo run --release --bin vektora-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
+cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
 cargo run --release --bin bench -- --dir <vectorize-bench folder> --sidecar <realesrgan folder>   # writes bench/RESULTS.md
 ```
 
-The core is the crate `crates/vektora-core` (no UI, no network). The app in `src-tauri` is a thin shell; the UI is React + TypeScript in `src`.
+The core is the crate `crates/trasea-core` (no UI, no network). The app in `src-tauri` is a thin shell; the UI is React + TypeScript in `src`.
 
 ## Offline
 
-The core and the app contain no network code (checked with `cargo tree` in a test), the page can only talk to the local IPC (CSP), and WebView2 is started with background networking, updates, sync and SmartScreen off, all non-local traffic sent to a dead local proxy (`127.0.0.1:9`) and DNS for non-local names blocked. **What could not be removed:** see the report; the Edge WebView2 runtime that Windows provides may still open a connection of its own right after start-up. Vektora never sends image data anywhere.
+The core and the app contain no network code (checked with `cargo tree` in a test), the page can only talk to the local IPC (CSP), and WebView2 is started with background networking, updates, sync and SmartScreen off, all non-local traffic sent to a dead local proxy (`127.0.0.1:9`) and DNS for non-local names blocked. **What could not be removed:** see the report; the Edge WebView2 runtime that Windows provides may still open a connection of its own right after start-up. Trasea never sends image data anywhere.
 
 ## Limits of 0.3.0
 

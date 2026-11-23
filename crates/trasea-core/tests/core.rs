@@ -2,8 +2,8 @@
 
 use image::{Rgb, RgbImage};
 use std::collections::BTreeSet;
-use vektora_core::stats::{count_svg, render_svg};
-use vektora_core::{export, hex, vectorize, Params};
+use trasea_core::stats::{count_svg, render_svg};
+use trasea_core::{export, hex, vectorize, Params};
 
 fn lerp3(a: [u8; 3], b: [u8; 3], t: f32) -> Rgb<u8> {
     Rgb([0, 1, 2].map(|i| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t).round() as u8))
@@ -196,7 +196,7 @@ fn v6_missing_sidecar_falls_back_with_a_clear_message() {
     assert!(o.notes.iter().any(|n| n.contains("AI cleaning was skipped") && n.contains("median")), "notes: {:?}", o.notes);
     assert!(!o.svg.is_empty());
     // a folder that exists but has no sidecar in it
-    let empty = std::env::temp_dir().join("vektora-empty-sidecar");
+    let empty = std::env::temp_dir().join("trasea-empty-sidecar");
     std::fs::create_dir_all(&empty).unwrap();
     let o = vectorize(&img, &Params { ai_clean: true, sidecar_dir: Some(empty), measure: false, ..Params::default() }, &|_, _| {}).unwrap();
     assert!(!o.used_ai && o.notes.iter().any(|n| n.contains("not found")), "notes: {:?}", o.notes);
@@ -207,7 +207,7 @@ fn v7_no_network_code_is_linked() {
     // The lock file may list crates that only other platforms or dev tooling need, so ask cargo for what is really
     // compiled into the Windows build of the core and of the app.
     let network = ["reqwest", "hyper", "ureq", "curl", "isahc", "surf", "attohttpc", "tungstenite", "tokio-tungstenite", "native-tls", "openssl", "rustls", "h2"];
-    for pkg in ["vektora-core", "vektora"] {
+    for pkg in ["trasea-core", "trasea"] {
         let out = std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
             .args(["tree", "-p", pkg, "--target", "x86_64-pc-windows-gnu", "-e", "normal,build", "--prefix", "none", "--workspace"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))

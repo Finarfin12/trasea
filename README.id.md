@@ -1,4 +1,4 @@
-# Vektora (nama sementara)
+# Trasea (nama sementara)
 
 *English: [README.md](README.md)*
 
@@ -21,7 +21,7 @@ Bidang warna     satu sub-grup per warna: id="Warna_02_EBD9C1", data-name="Warna
 Garis            garis tipis: <path fill="none" stroke="#223F64" stroke-width="4.12" stroke-linecap="round" ...>
 ```
 
-Tanpa CSS, `<style>`, filter, atau transform. Juga **PDF** (ukuran halaman = ukuran gambar) dan palet sebagai **.ase** (Adobe Swatch Exchange, warna bernama `Vektora 01 #RRGGBB`; impor di Illustrator lewat Swatches dan di Affinity lewat Swatches > Import Palette; tidak diuji oleh pembuat, lihat Batas). Opsi: garis tipis sebagai stroke atau bentuk isi; trap 0 / 0,25 / 0,5 / 1 pt untuk cetak.
+Tanpa CSS, `<style>`, filter, atau transform. Juga **PDF** (ukuran halaman = ukuran gambar) dan palet sebagai **.ase** (Adobe Swatch Exchange, warna bernama `Trasea 01 #RRGGBB`; impor di Illustrator lewat Swatches dan di Affinity lewat Swatches > Import Palette; tidak diuji oleh pembuat, lihat Batas). Opsi: garis tipis sebagai stroke atau bentuk isi; trap 0 / 0,25 / 0,5 / 1 pt untuk cetak.
 
 Kontrol: jumlah warna (2-16), kehalusan (sedikit node <-> detail), "jaga garis tipis", "kenali bentuk dasar" (nyala), "tegas simetri" (mati / otomatis / vertikal / horizontal), "bersihkan dengan AI". Statistik di layar: path, node, bentuk dasar, ukuran SVG, selisih warna, waktu.
 
@@ -35,7 +35,7 @@ Baru di 0.3.0:
 
 ## Pakai
 
-1. Jalankan installer (`Vektora_0.3.0_x64-setup.exe`, per pengguna, tanpa admin) lalu buka Vektora.
+1. Jalankan installer (`Trasea_0.3.0_x64-setup.exe`, per pengguna, tanpa admin) lalu buka Trasea.
 2. Seret gambar ke jendela (atau **Buka gambar**), tunggu konversi (sekitar 1-3 dtk dengan pengaturan bawaan, 10-40 dtk dengan AI menyala, di GPU terintegrasi PC uji).
 3. Geser slider untuk membandingkan asli dan vektor, ubah kontrol, tekan **Terapkan ulang** bila perlu.
 4. Pilih cara ekspor garis tipis dan trap, lalu **Ekspor SVG**, **Ekspor PDF** atau **Palet .ase** (berkas .ase disimpan di samping SVG/PDF bila "Sertakan palet .ase" dicentang).
@@ -56,15 +56,15 @@ Alat pengembang:
 
 ```
 npm test                                   # tes cargo V1-V7, W1-W6 dan G1-G8 (gambar sintetis, tanpa data uji)
-cargo run --release --bin vektora-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
+cargo run --release --bin trasea-cli -- in.jpg out.svg --pdf out.pdf --ase out.ase [--colors 8] [--smooth 0.5] [--ai] [--no-lines] [--lines stroke|shape] [--trap 0.5] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]
 cargo run --release --bin bench -- --dir <folder vectorize-bench> --sidecar <folder realesrgan>   # menulis bench/RESULTS.md
 ```
 
-Intinya ada di crate `crates/vektora-core` (tanpa UI, tanpa jaringan). Aplikasi di `src-tauri` hanya lapisan tipis; UI-nya React + TypeScript di `src`.
+Intinya ada di crate `crates/trasea-core` (tanpa UI, tanpa jaringan). Aplikasi di `src-tauri` hanya lapisan tipis; UI-nya React + TypeScript di `src`.
 
 ## Offline
 
-Inti dan aplikasi tidak berisi kode jaringan (diperiksa dengan `cargo tree` di sebuah tes), halaman hanya bisa bicara ke IPC lokal (CSP), dan WebView2 dijalankan dengan jaringan latar, pembaruan, sinkronisasi, dan SmartScreen mati, semua lalu lintas non-lokal diarahkan ke proxy lokal yang mati (`127.0.0.1:9`), dan DNS nama non-lokal diblokir. **Yang tidak bisa dihilangkan:** lihat laporan; runtime Edge WebView2 bawaan Windows mungkin masih membuka satu koneksi sendiri sesaat setelah mulai. Vektora tidak pernah mengirim data gambar ke mana pun.
+Inti dan aplikasi tidak berisi kode jaringan (diperiksa dengan `cargo tree` di sebuah tes), halaman hanya bisa bicara ke IPC lokal (CSP), dan WebView2 dijalankan dengan jaringan latar, pembaruan, sinkronisasi, dan SmartScreen mati, semua lalu lintas non-lokal diarahkan ke proxy lokal yang mati (`127.0.0.1:9`), dan DNS nama non-lokal diblokir. **Yang tidak bisa dihilangkan:** lihat laporan; runtime Edge WebView2 bawaan Windows mungkin masih membuka satu koneksi sendiri sesaat setelah mulai. Trasea tidak pernah mengirim data gambar ke mana pun.
 
 ## Batas versi 0.3.0
 

@@ -1,4 +1,4 @@
-//! Vektora core: raster illustration / logo -> clean SVG / PDF. No UI, no network.
+//! Trasea core: raster illustration / logo -> clean SVG / PDF. No UI, no network.
 //!
 //! Pipeline (see `pipeline::vectorize`): load -> thin-line guard (from the ORIGINAL image) -> AI clean
 //! (Real-ESRGAN sidecar, median fallback) -> palette lock -> layer tracing (visioncortex, the VTracer engine)

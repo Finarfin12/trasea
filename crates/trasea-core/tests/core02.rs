@@ -1,14 +1,14 @@
 //! Automatic tests W1-W6 for 0.2.0 (W7 = the 0.1.0 tests in core.rs). Synthetic images only.
 
 use image::{Rgb, RgbImage};
-use vektora_core::centerline::centerline;
-use vektora_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
-use vektora_core::stats::{count_svg, render_svg};
-use vektora_core::trace::{trace_mask, TraceParams};
-use vektora_core::{hex, vectorize, Params};
+use trasea_core::centerline::centerline;
+use trasea_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
+use trasea_core::stats::{count_svg, render_svg};
+use trasea_core::trace::{trace_mask, TraceParams};
+use trasea_core::{hex, vectorize, Params};
 use visioncortex::BinaryImage;
 
-fn nodes_of_contours(c: &[vektora_core::trace::Contour]) -> usize {
+fn nodes_of_contours(c: &[trasea_core::trace::Contour]) -> usize {
     c.iter().map(|k| 1 + k.curves.len()).sum()
 }
 
@@ -189,10 +189,10 @@ fn w3_ase_has_the_palette_with_the_right_names() {
     let o = vectorize(&scene_with_lines(), &params(), &|_, _| {}).unwrap();
     let pal = palette_of(&o.doc);
     let (group, colours) = read_ase(&to_ase(&pal));
-    assert_eq!(group, "Vektora");
+    assert_eq!(group, "Trasea");
     assert_eq!(colours.len(), pal.len());
     for (i, ((name, rgb, ctype), c)) in colours.iter().zip(&pal).enumerate() {
-        assert_eq!(name, &format!("Vektora {:02} {}", i + 1, hex(*c)));
+        assert_eq!(name, &format!("Trasea {:02} {}", i + 1, hex(*c)));
         for k in 0..3 {
             assert!((rgb[k] - c[k] as f32 / 255.0).abs() < 1e-6);
         }

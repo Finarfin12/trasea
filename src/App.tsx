@@ -89,7 +89,7 @@ export default function App() {
 	return (
 		<div className={`app ${over ? "dragging" : ""}`}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">V</span> Vektora <small>0.3.0 · offline</small></div>
+				<div className="brand"><span className="logo" aria-hidden="true">T</span> Trasea <small>0.3.0 · offline</small></div>
 				<div className="row">
 					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
 					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>

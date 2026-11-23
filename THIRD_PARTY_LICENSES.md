@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Vektora is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT used.
+Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT used.
 
 ## Bundled programs and models
 

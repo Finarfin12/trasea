@@ -4449,6 +4449,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "trasea"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "image",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "trasea-core",
+]
+
+[[package]]
+name = "trasea-core"
+version = "0.3.0"
+dependencies = [
+ "image",
+ "lopdf",
+ "resvg",
+ "serde",
+ "serde_json",
+ "svg2pdf",
+ "thiserror 2.0.21",
+ "tiny-skia",
+ "usvg",
+ "visioncortex",
+]
+
+[[package]]
 name = "tray-icon"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4622,36 +4652,6 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "vektora"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "image",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "vektora-core",
-]
-
-[[package]]
-name = "vektora-core"
-version = "0.3.0"
-dependencies = [
- "image",
- "lopdf",
- "resvg",
- "serde",
- "serde_json",
- "svg2pdf",
- "thiserror 2.0.21",
- "tiny-skia",
- "usvg",
- "visioncortex",
 ]
 
 [[package]]

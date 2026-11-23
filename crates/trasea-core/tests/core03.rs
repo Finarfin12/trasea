@@ -3,12 +3,12 @@
 
 use image::{Rgb, RgbImage};
 use std::time::Instant;
-use vektora_core::centerline::{centerline_opts, CenterOpts};
-use vektora_core::export::{svg_to_pdf, to_svg, ExportOptions};
-use vektora_core::primitives::Primitive;
-use vektora_core::stats::render_svg;
-use vektora_core::text_detect;
-use vektora_core::{vectorize, Params, SymmetryMode};
+use trasea_core::centerline::{centerline_opts, CenterOpts};
+use trasea_core::export::{svg_to_pdf, to_svg, ExportOptions};
+use trasea_core::primitives::Primitive;
+use trasea_core::stats::render_svg;
+use trasea_core::text_detect;
+use trasea_core::{vectorize, Params, SymmetryMode};
 
 const WHITE: [u8; 3] = [255, 255, 255];
 
@@ -490,11 +490,11 @@ fn g6_the_defaults_of_0_3_0() {
 
 #[test]
 fn g8_the_cli_accepts_the_new_flags_and_writes_valid_files() {
-    let dir = std::env::temp_dir().join(format!("vektora-g8-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("trasea-g8-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let input = dir.join("in.png");
     logo(1.0).save(&input).unwrap();
-    let exe = env!("CARGO_BIN_EXE_vektora-cli");
+    let exe = env!("CARGO_BIN_EXE_trasea-cli");
     let run = |args: &[&str]| std::process::Command::new(exe).arg(&input).args(args).output().unwrap();
     let svg = dir.join("out.svg");
     let pdf = dir.join("out.pdf");

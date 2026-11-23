@@ -247,7 +247,7 @@ fn ase_name(out: &mut Vec<u8>, name: &str) {
     }
 }
 
-/// `.ase` file: one group "Vektora" with the palette as global RGB colours named `Vektora NN #RRGGBB`.
+/// `.ase` file: one group "Trasea" with the palette as global RGB colours named `Trasea NN #RRGGBB`.
 pub fn to_ase(palette: &[Rgb]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(b"ASEF");
@@ -256,13 +256,13 @@ pub fn to_ase(palette: &[Rgb]) -> Vec<u8> {
     out.extend_from_slice(&((palette.len() + 2) as u32).to_be_bytes()); // blocks: group start, colours, group end
     // group start
     let mut gs = Vec::new();
-    ase_name(&mut gs, "Vektora");
+    ase_name(&mut gs, "Trasea");
     out.extend_from_slice(&0xC001u16.to_be_bytes());
     out.extend_from_slice(&(gs.len() as u32).to_be_bytes());
     out.extend_from_slice(&gs);
     for (i, c) in palette.iter().enumerate() {
         let mut body = Vec::new();
-        ase_name(&mut body, &format!("Vektora {:02} {}", i + 1, hex(*c)));
+        ase_name(&mut body, &format!("Trasea {:02} {}", i + 1, hex(*c)));
         body.extend_from_slice(b"RGB ");
         for ch in c {
             body.extend_from_slice(&(*ch as f32 / 255.0).to_be_bytes());
