@@ -5,23 +5,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use trasea_core::batch::{run_batch, scan_image_files, BatchConfig, BatchStatus};
-use trasea_core::color::ColorSpace;
+use trasea_core::color::{parse_hex_rgb, sanitize_spot_name, ColorSpace, SpotColorMapping};
 use trasea_core::dxf::DxfUnit;
 use trasea_core::export::{
-    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    export_options_for_production, palette_of, to_ase_with_spots, to_dxf, to_eps, to_pdf,
     to_separation_eps, to_separation_pdfs, to_separation_svgs, to_svg, LinesAs,
 };
+use trasea_core::path_edit::PathEdit;
 use trasea_core::watch::{watch_folder, WatchConfig};
 use trasea_core::{load, vectorize, Params, ProductionMode, ProductionOptions, SymmetryMode};
 
 /// `#RRGGBB` (or `RRGGBB`) to a colour.
 fn parse_hex(s: &str) -> Option<[u8; 3]> {
-    let h = s.trim_start_matches('#');
-    if h.len() != 6 {
-        return None;
-    }
-    let v = u32::from_str_radix(h, 16).ok()?;
-    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+    parse_hex_rgb(s)
 }
 
 /// `x,y,w,h` to `[u32; 4]`.
@@ -34,9 +30,23 @@ fn parse_crop(s: &str) -> Option<[u32; 4]> {
     }
 }
 
+/// `#RRGGBB=SpotName` to `SpotColorMapping`.
+fn parse_spot_arg(s: &str) -> Option<SpotColorMapping> {
+    let (raw_hex, raw_name) = s.split_once('=')?;
+    let rgb = parse_hex_rgb(raw_hex)?;
+    let name = sanitize_spot_name(raw_name);
+    if name.is_empty() {
+        return None;
+    }
+    Some(SpotColorMapping {
+        hex: trasea_core::hex(rgb),
+        spot_name: name,
+    })
+}
+
 fn usage() {
     eprintln!(
-        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading] [--sablon-knockout] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading] [--sablon-knockout] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
+        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt PT] [--sablon-knockout] [--remove-bg] [--bg-tolerance 0..100] [--defringe 0..3] [--die-cut-mm MM] [--die-cut-spot NAME] [--no-die-cut-bridge] [--spot \"#HEX=Name\"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut-mm MM] [--spot \"#HEX=Name\"] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
     );
 }
 
@@ -99,6 +109,8 @@ fn main() {
 
     let mut mode: Option<ProductionMode> = None;
     let mut sablon_knockout = false;
+    let mut centerline_invert = false;
+    let mut centerline_stroke_pt: Option<f64> = None;
     let mut colors_set = false;
     let mut smooth_set = false;
     let mut lines_override: Option<LinesAs> = None;
@@ -109,6 +121,10 @@ fn main() {
     let mut color_space = ColorSpace::Rgb;
     let mut dxf_unit = DxfUnit::Mm;
     let mut dxf_width_mm: Option<f32> = None;
+    let mut die_cut_mm: Option<f64> = None;
+    let mut die_cut_spot: Option<String> = None;
+    let mut die_cut_bridge = true;
+    let mut spot_colors: Vec<SpotColorMapping> = Vec::new();
 
     let mut i = start_i;
     while i < args.len() {
@@ -124,12 +140,93 @@ fn main() {
                 match args.get(i).and_then(|v| ProductionMode::parse(v)) {
                     Some(m) => mode = Some(m),
                     None => {
-                        eprintln!("--mode needs one of: standard, sablon, cutting, shading");
+                        eprintln!("--mode needs one of: standard, sablon, cutting, shading, centerline");
                         std::process::exit(2);
                     }
                 }
             }
             "--sablon-knockout" => sablon_knockout = true,
+            "--centerline-invert" => centerline_invert = true,
+            "--centerline-stroke-pt" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<f64>().ok()).filter(|&v| v.is_finite() && v > 0.0) {
+                    Some(pt) => centerline_stroke_pt = Some(pt),
+                    None => {
+                        eprintln!("--centerline-stroke-pt needs a positive number (e.g. 1.0)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--remove-bg" => p.preprocess.remove_background = true,
+            "--bg-tolerance" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<u8>().ok()) {
+                    Some(tol) => p.preprocess.bg_tolerance = tol.min(100),
+                    None => {
+                        eprintln!("--bg-tolerance needs an integer 0..=100");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--defringe" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<u8>().ok()) {
+                    Some(px) => p.preprocess.defringe_px = px.min(3),
+                    None => {
+                        eprintln!("--defringe needs an integer 0..=3");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--die-cut-mm" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<f64>().ok()).filter(|&v| v.is_finite() && v > 0.0) {
+                    Some(mm) => die_cut_mm = Some(mm.clamp(0.5, 10.0)),
+                    None => {
+                        eprintln!("--die-cut-mm needs a positive number 0.5..=10.0 (e.g. 2.0)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--die-cut-spot" => {
+                i += 1;
+                match args.get(i) {
+                    Some(name) if !name.trim().is_empty() => die_cut_spot = Some(sanitize_spot_name(name)),
+                    _ => {
+                        eprintln!("--die-cut-spot needs a spot ink name (e.g. CutContour)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--no-die-cut-bridge" => die_cut_bridge = false,
+            "--spot" => {
+                i += 1;
+                match args.get(i).and_then(|v| parse_spot_arg(v)) {
+                    Some(m) => spot_colors.push(m),
+                    None => {
+                        eprintln!("--spot needs \"#RRGGBB=SpotName\", e.g. \"#FF0000=Spot_Red\"");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--delete-path" => {
+                i += 1;
+                if let Some(id) = args.get(i) {
+                    p.path_edits.push(PathEdit::Delete { target_id: id.clone() });
+                }
+            }
+            "--recolor-path" => {
+                i += 1;
+                if let Some((id, hex_s)) = args.get(i).and_then(|v| v.split_once('=')) {
+                    p.path_edits.push(PathEdit::ReassignColor {
+                        target_id: id.trim().to_string(),
+                        to_hex: hex_s.trim().to_string(),
+                    });
+                } else {
+                    eprintln!("--recolor-path needs \"ID=#RRGGBB\", e.g. \"f:1:0=#00AA55\"");
+                    std::process::exit(2);
+                }
+            }
             "--colors" => {
                 i += 1;
                 p.colors = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(10);
@@ -336,8 +433,13 @@ fn main() {
             }
             ProductionOptions::shading()
         }
+        ProductionMode::Centerline => ProductionOptions::centerline(),
     };
     prod.sablon_knockout = sablon_knockout;
+    prod.centerline_invert = centerline_invert;
+    if let Some(pt) = centerline_stroke_pt {
+        prod.centerline_stroke_pt = pt;
+    }
     if let Some(ms) = min_stroke_override {
         prod.min_stroke_pt = ms.max(0.0);
     }
@@ -353,6 +455,16 @@ fn main() {
     eo.color_space = color_space;
     eo.dxf_unit = dxf_unit;
     eo.dxf_target_width_mm = dxf_width_mm;
+    if let Some(mm) = die_cut_mm {
+        eo.die_cut_contour = true;
+        eo.die_cut_offset_mm = mm;
+    }
+    if let Some(spot_name) = die_cut_spot {
+        eo.die_cut_spot_name = spot_name;
+    }
+    eo.die_cut_bridge_islands = die_cut_bridge;
+    eo.spot_colors = spot_colors;
+
     if let Some(la) = lines_override {
         if p.production.mode != ProductionMode::CutEmbroidery {
             eo.lines_as = la;
@@ -517,7 +629,12 @@ fn main() {
         std::fs::write(dxf, to_dxf(&out.doc, &eo)).expect("cannot write the DXF");
     }
     if let Some(ase) = &ase_path {
-        std::fs::write(ase, to_ase_with_color_space(&palette_of(&out.doc), eo.color_space)).expect("cannot write the ASE");
+        let cut_spot = eo.die_cut_contour.then_some(eo.die_cut_spot_name.as_str());
+        std::fs::write(
+            ase,
+            to_ase_with_spots(&palette_of(&out.doc), eo.color_space, &eo.spot_colors, cut_spot),
+        )
+        .expect("cannot write the ASE");
     }
     if let Some(pdf) = &pdf_path {
         match to_pdf(&out.doc, &eo) {

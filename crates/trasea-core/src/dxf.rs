@@ -1,12 +1,13 @@
-//! Pure AutoCAD R12 ASCII DXF (`AC1009`) exporter for laser cutting, CNC, and vinyl plotters.
+//! Pure AutoCAD R12/R2000 ASCII DXF exporter for laser cutting, CNC, and vinyl plotters.
 //!
-//! - Separate layers per colour (`COLOR_01_RRGGBB`, `THIN_LINES`, `REGISTRATION`).
+//! - Separate layers per colour (`COLOR_01_RRGGBB`, `THIN_LINES`, `CENTERLINE`, `CUTCONTOUR`, `REGISTRATION`).
 //! - `Primitive::Circle` emitted as native `CIRCLE` entities; Bézier contours adaptively flattened
-//!   to `POLYLINE` + `VERTEX` + `SEQEND`.
+//!   to `POLYLINE` + `VERTEX` + `SEQEND` (and pure open `LWPOLYLINE` on `CENTERLINE` in Centerline mode).
 //! - CAD bottom-left Y axis (`y_dxf = (total_h - y_svg) * scale`).
 //! - Physical unit `mm` (96 DPI default: `1 px = 0.2645833 mm`, or overridden by `dxf_target_width_mm`)
 //!   or `px` (`scale = 1.0`).
 
+use crate::contour::{build_die_cut_contours, die_cut_bounds_svg};
 use crate::export::{primitive_to_contour, Doc, ExportOptions, LinesAs, REG_MARGIN};
 use crate::primitives::Primitive;
 use crate::trace::{Contour, Layer};
@@ -125,6 +126,20 @@ fn push_polyline(out: &mut String, layer: &str, pts: &[(f64, f64)], closed: bool
     out.push_str(&format!("0\nSEQEND\n8\n{layer}\n"));
 }
 
+fn push_lwpolyline(out: &mut String, layer: &str, pts: &[(f64, f64)], closed: bool) {
+    if pts.len() < 2 {
+        return;
+    }
+    out.push_str(&format!(
+        "0\nLWPOLYLINE\n8\n{layer}\n90\n{}\n70\n{}\n",
+        pts.len(),
+        if closed { 1 } else { 0 }
+    ));
+    for &(x, y) in pts {
+        out.push_str(&format!("10\n{}\n20\n{}\n", dxf_num(x), dxf_num(y)));
+    }
+}
+
 fn push_circle(out: &mut String, layer: &str, cx: f64, cy: f64, r: f64) {
     if !r.is_finite() || r <= 1e-6 {
         return;
@@ -169,12 +184,28 @@ where
     work_pts.into_iter().map(map_work).collect()
 }
 
-/// Export `Doc` to AutoCAD R12 ASCII DXF (`AC1009`).
+/// Export `Doc` to ASCII DXF (`AC1009`).
 pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
     let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
     let m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
-    let total_w = doc.width as f64 + 2.0 * m;
-    let total_h = doc.height as f64 + 2.0 * m;
+
+    let die_cut_contours = if opts.die_cut_contour {
+        build_die_cut_contours(doc, opts)
+    } else {
+        Vec::new()
+    };
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+        (0.0, 0.0, doc.width as f64, doc.height as f64)
+    } else {
+        die_cut_bounds_svg(doc, &die_cut_contours)
+    };
+    let shift_x = (-dc_min_x).max(0.0);
+    let shift_y = (-dc_min_y).max(0.0);
+    let content_w = dc_max_x - dc_min_x;
+    let content_h = dc_max_y - dc_min_y;
+    let total_w = content_w + 2.0 * m;
+    let total_h = content_h + 2.0 * m;
+
     let unit_scale = match opts.dxf_unit {
         DxfUnit::Px => 1.0,
         DxfUnit::Mm => match opts.dxf_target_width_mm {
@@ -191,7 +222,7 @@ pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
     let ext_h = total_h * unit_scale;
 
     let map_svg = |sx: f64, sy: f64| -> (f64, f64) {
-        (sx * unit_scale, (total_h - sy) * unit_scale)
+        ((sx + shift_x) * unit_scale, (total_h - (sy + shift_y)) * unit_scale)
     };
     let map_work = |p: (f64, f64)| -> (f64, f64) {
         map_svg(p.0 / k + m, p.1 / k + m)
@@ -210,6 +241,11 @@ pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
         .map(|(_, l)| l)
         .collect();
 
+    let is_pure_centerline = doc.fields.is_empty()
+        && doc.line_shapes.is_empty()
+        && doc.line_fallback.is_empty()
+        && doc.strokes.iter().any(|sl| !sl.strokes.is_empty());
+
     let mut layer_defs: Vec<(String, u8)> = Vec::new();
     layer_defs.push(("0".to_string(), 7));
     let mut field_layer_names: Vec<String> = Vec::with_capacity(active_fields.len());
@@ -224,8 +260,13 @@ pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
         LinesAs::Shape => !doc.line_shapes.is_empty(),
         LinesAs::Stroke => !doc.line_fallback.is_empty() || doc.strokes.iter().any(|sl| !sl.strokes.is_empty()),
     };
-    if has_lines {
+    if is_pure_centerline {
+        layer_defs.push(("CENTERLINE".to_string(), 7));
+    } else if has_lines {
         layer_defs.push(("THIN_LINES".to_string(), 7));
+    }
+    if !die_cut_contours.is_empty() {
+        layer_defs.push(("CUTCONTOUR".to_string(), 6)); // Magenta
     }
     if opts.registration_marks {
         layer_defs.push(("REGISTRATION".to_string(), 7));
@@ -284,7 +325,22 @@ pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
         }
     }
 
-    if has_lines {
+    if is_pure_centerline {
+        for sl in &doc.strokes {
+            for st in &sl.strokes {
+                if st.curves.is_empty() {
+                    continue;
+                }
+                let mut work_pts = Vec::with_capacity(st.curves.len() * 4 + 1);
+                work_pts.push(st.curves[0][0]);
+                for cv in &st.curves {
+                    flatten_cubic(cv[0], cv[1], cv[2], cv[3], tol_sq, 0, &mut work_pts);
+                }
+                let cad_pts: Vec<(f64, f64)> = work_pts.into_iter().map(&map_work).collect();
+                push_lwpolyline(&mut out, "CENTERLINE", &cad_pts, false);
+            }
+        }
+    } else if has_lines {
         match opts.lines_as {
             LinesAs::Shape => {
                 for l in &doc.line_shapes {
@@ -319,13 +375,19 @@ pub fn to_dxf(doc: &Doc, opts: &ExportOptions) -> String {
         }
     }
 
+    // Die-cut outer contour on dedicated CUTCONTOUR layer (closed POLYLINE)
+    for c in &die_cut_contours {
+        let pts = contour_to_cad_pts(c, tol_sq, &map_work);
+        push_polyline(&mut out, "CUTCONTOUR", &pts, true);
+    }
+
     if opts.registration_marks {
-        let (w, h) = (doc.width as f64, doc.height as f64);
+        let (w, h) = (content_w, content_h);
         let pts = [
-            (m / 2.0, m / 2.0),
-            (w + 1.5 * m, m / 2.0),
-            (m / 2.0, h + 1.5 * m),
-            (w + 1.5 * m, h + 1.5 * m),
+            (m / 2.0 - shift_x, m / 2.0 - shift_y),
+            (w + 1.5 * m - shift_x, m / 2.0 - shift_y),
+            (m / 2.0 - shift_x, h + 1.5 * m - shift_y),
+            (w + 1.5 * m - shift_x, h + 1.5 * m - shift_y),
         ];
         let r_cad = 6.0 * unit_scale;
         let arm = 9.0 * unit_scale;

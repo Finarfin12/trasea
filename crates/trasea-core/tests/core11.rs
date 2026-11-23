@@ -361,16 +361,16 @@ fn f05_preprocess_crop_and_rotate_non_destructive_and_accurate() {
     let hash_before = sha256_file(&src_path).unwrap();
 
     // Exact crop
-    let cropped = apply_preprocess(&rgba, &PreprocessOptions { crop: Some([10, 20, 50, 40]), rotate_deg: 0.0 });
+    let cropped = apply_preprocess(&rgba, &PreprocessOptions { crop: Some([10, 20, 50, 40]), rotate_deg: 0.0, ..Default::default() });
     assert_eq!(cropped.dimensions(), (50, 40));
     assert_eq!(cropped.get_pixel(25, 20).0, [220, 40, 40, 255]);
 
     // Exact 90 deg rotation swaps dimensions
-    let rot90 = apply_preprocess(&rgba, &PreprocessOptions { crop: None, rotate_deg: 90.0 });
+    let rot90 = apply_preprocess(&rgba, &PreprocessOptions { crop: None, rotate_deg: 90.0, ..Default::default() });
     assert_eq!(rot90.dimensions(), (80, 120));
 
     // Free angle 15 deg expands canvas cleanly without panicking
-    let rot15 = apply_preprocess(&rgba, &PreprocessOptions { crop: None, rotate_deg: 15.0 });
+    let rot15 = apply_preprocess(&rgba, &PreprocessOptions { crop: None, rotate_deg: 15.0, ..Default::default() });
     assert!(rot15.width() > 120 && rot15.height() > 80);
 
     // End-to-end vectorize with preprocess (rotate 90 + crop 60x70)
@@ -378,7 +378,7 @@ fn f05_preprocess_crop_and_rotate_non_destructive_and_accurate() {
     let out = vectorize(
         &rgb,
         &Params {
-            preprocess: PreprocessOptions { crop: Some([5, 10, 60, 70]), rotate_deg: 90.0 },
+            preprocess: PreprocessOptions { crop: Some([5, 10, 60, 70]), rotate_deg: 90.0, ..Default::default() },
             ai_clean: false,
             measure: false,
             detect_text: false,
@@ -466,7 +466,10 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
             strip_background: false,
             registration_marks: true,
             sablon_knockout: true,
-            preprocess: PreprocessOptions { crop: Some([4, 6, 70, 68]), rotate_deg: -12.5 },
+            preprocess: PreprocessOptions { crop: Some([4, 6, 70, 68]), rotate_deg: -12.5, ..Default::default() },
+            centerline_invert: false,
+            centerline_stroke_pt: 1.0,
+            path_edits: vec![],
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),
@@ -476,6 +479,11 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
             color_space: ColorSpace::Cmyk,
             dxf_unit: DxfUnit::Mm,
             dxf_target_width_mm: Some(120.0),
+            die_cut_contour: false,
+            die_cut_offset_mm: 2.0,
+            die_cut_spot_name: "CutContour".into(),
+            die_cut_bridge_islands: true,
+            spot_colors: vec![],
         },
     };
     save_project(&v11_path, &proj11).unwrap();

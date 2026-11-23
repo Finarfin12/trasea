@@ -3,16 +3,42 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
-export type ProductionMode = "standard" | "screenPrint" | "cutEmbroidery" | "shading";
+export type ProductionMode = "standard" | "screenPrint" | "cutEmbroidery" | "shading" | "centerline";
 export type ColorSpace = "rgb" | "cmyk";
 export type DxfUnit = "mm" | "px";
+export type ThemeChoice = "dark" | "light" | "system";
+export type CanvasBgChoice = "checkerLight" | "checkerDark" | "solid";
 
 export interface PreprocessOptions {
 	crop: [number, number, number, number] | null;
 	rotateDeg: number;
+	removeBackground: boolean;
+	bgTolerance: number;
+	defringePx: number;
 }
 
-export const DEFAULT_PREPROCESS: PreprocessOptions = { crop: null, rotateDeg: 0 };
+export const DEFAULT_PREPROCESS: PreprocessOptions = {
+	crop: null,
+	rotateDeg: 0,
+	removeBackground: false,
+	bgTolerance: 24,
+	defringePx: 1,
+};
+
+export type PathEdit =
+	| { kind: "delete"; targetId: string }
+	| { kind: "reassignColor"; targetId: string; toHex: string };
+
+export interface SpotColorMapping {
+	hex: string;
+	spotName: string;
+}
+
+export interface PaletteProofItem {
+	hex: string;
+	proofHex: string;
+	outOfGamut: boolean;
+}
 
 export interface Options {
 	colors: number;
@@ -33,6 +59,9 @@ export interface Options {
 	registrationMarks: boolean;
 	sablonKnockout: boolean;
 	preprocess: PreprocessOptions;
+	centerlineInvert: boolean;
+	centerlineStrokePt: number;
+	pathEdits: PathEdit[];
 }
 
 export interface BrushStroke {
@@ -70,6 +99,7 @@ export interface Processed {
 	mae: number | null;
 	notes: string[];
 	palette: string[];
+	paletteProof: PaletteProofItem[];
 	usedAi: boolean;
 	secs: number;
 	thinPixels: number;
@@ -96,6 +126,11 @@ export interface ExportOptions {
 	colorSpace: ColorSpace;
 	dxfUnit: DxfUnit;
 	dxfTargetWidthMm: number | null;
+	dieCutContour: boolean;
+	dieCutOffsetMm: number;
+	dieCutSpotName: string;
+	dieCutBridgeIslands: boolean;
+	spotColors: SpotColorMapping[];
 }
 
 export type BatchStatus = "ok" | "failed" | "cancelled";
@@ -176,8 +211,72 @@ export interface WatchStoppedEvent {
 	error: string | null;
 }
 
+export type ShortcutAction =
+	| "openFile"
+	| "paste"
+	| "copySvg"
+	| "saveProject"
+	| "undo"
+	| "redo"
+	| "toggleOutline"
+	| "togglePathSelect"
+	| "toggleSoftProof"
+	| "openSettings";
+
+export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
+	openFile: "Ctrl+O",
+	paste: "Ctrl+V",
+	copySvg: "Ctrl+Shift+C",
+	saveProject: "Ctrl+S",
+	undo: "Ctrl+Z",
+	redo: "Ctrl+Shift+Z",
+	toggleOutline: "Ctrl+Y",
+	togglePathSelect: "Ctrl+E",
+	toggleSoftProof: "Ctrl+P",
+	openSettings: "Ctrl+,",
+};
+
 export interface AppSettings {
 	language: "id" | "en";
+	theme: ThemeChoice;
+	canvasBg: CanvasBgChoice;
+	openFolderAfterExport: boolean;
+	defaultColorSpace: ColorSpace;
+	defaultDxfUnit: DxfUnit;
+	defaultDpi: 72 | 96 | 300;
+	defaultDieCutOffsetMm: number;
+	defaultDieCutSpotName: string;
+	defaultDieCutBridge: boolean;
+	preferMedianOnly: boolean;
+	undoLimit: 20 | 50 | 100;
+	shortcuts: Record<string, string>;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+	language: "id",
+	theme: "dark",
+	canvasBg: "checkerDark",
+	openFolderAfterExport: false,
+	defaultColorSpace: "rgb",
+	defaultDxfUnit: "mm",
+	defaultDpi: 96,
+	defaultDieCutOffsetMm: 2.0,
+	defaultDieCutSpotName: "CutContour",
+	defaultDieCutBridge: true,
+	preferMedianOnly: false,
+	undoLimit: 50,
+	shortcuts: {},
+};
+
+export interface SavedPaletteColor {
+	hex: string;
+	spotName?: string | null;
+}
+
+export interface SavedPalette {
+	id: string;
+	name: string;
+	colors: SavedPaletteColor[];
 }
 
 export interface LicenseInfo {
@@ -218,11 +317,14 @@ export interface UserPreset {
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
+export const renderPreviewSvg = (options: ExportOptions): Promise<string> => invoke<string>("render_preview_svg", { options });
 export const loadRawImagePreview = (path: string): Promise<RawImagePreview> => invoke<RawImagePreview>("load_raw_image_preview", { path });
 export const pickColor = (x: number, y: number): Promise<string> => invoke<string>("pick_color", { x, y });
 
 export type ExportKind = "svg" | "pdf" | "eps" | "dxf" | "ase";
+export type PaletteTextExportKind = "gpl" | "json" | "css";
 export const saveFile = (kind: ExportKind, path: string, options: ExportOptions): Promise<void> => invoke<void>("save_file", { kind, path, options });
+export const saveTextFile = (path: string, content: string): Promise<void> => invoke<void>("save_text_file", { path, content });
 export const exportDxf = (path: string, options: ExportOptions): Promise<void> => invoke<void>("export_dxf", { path, options });
 export const pasteClipboardImage = (): Promise<string> => invoke<string>("paste_clipboard_image");
 export const copySvgToClipboard = (options: ExportOptions): Promise<number> => invoke<number>("copy_svg_to_clipboard", { options });
@@ -231,6 +333,11 @@ export const saveSeparations = (dir: string, baseName: string, kind: "svg" | "pd
 
 export const getAppSettings = (): Promise<AppSettings> => invoke<AppSettings>("get_app_settings");
 export const saveAppSettings = (settings: AppSettings): Promise<AppSettings> => invoke<AppSettings>("save_app_settings", { settings });
+export const getSettingsPath = (): Promise<string> => invoke<string>("get_settings_path");
+
+export const listSavedPalettes = (): Promise<SavedPalette[]> => invoke<SavedPalette[]>("list_saved_palettes");
+export const savePaletteLibraryItem = (palette: SavedPalette): Promise<SavedPalette[]> => invoke<SavedPalette[]>("save_palette_library_item", { palette });
+export const deleteSavedPalette = (id: string): Promise<SavedPalette[]> => invoke<SavedPalette[]>("delete_saved_palette", { id });
 
 export const getLicenseStatus = (): Promise<LicenseStatus> => invoke<LicenseStatus>("license_status");
 export const activateLicense = (key: string): Promise<LicenseStatus> => invoke<LicenseStatus>("activate_license", { key });
@@ -294,6 +401,11 @@ export async function pickSavePath(kind: ExportKind, suggested: string): Promise
 				: kind === "dxf"
 					? "AutoCAD DXF R12"
 					: kind.toUpperCase();
+	return save({ defaultPath: suggested, filters: [{ name: label, extensions: [kind] }] });
+}
+
+export async function pickPaletteTextSavePath(kind: PaletteTextExportKind, suggested: string): Promise<string | null> {
+	const label = kind === "gpl" ? "GIMP / Inkscape Palette (.gpl)" : kind === "css" ? "CSS Variables (.css)" : "JSON Palette (.json)";
 	return save({ defaultPath: suggested, filters: [{ name: label, extensions: [kind] }] });
 }
 

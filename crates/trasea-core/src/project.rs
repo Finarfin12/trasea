@@ -1,10 +1,12 @@
 //! Versioned `.trasea` project file (JSON, schemaVersion = 1): saves and restores
 //! source image link (+ SHA-256), production mode, palette, merges, brush strokes,
-//! non-destructive preprocess options, and export options.
+//! non-destructive preprocess options, path edits, die-cut contour, named spot colours,
+//! and export options. Backward-compatible with 1.0.0 and 1.1.0 project files via `#[serde(default)]`.
 
 use crate::brush::BrushStroke;
-use crate::color::ColorSpace;
+use crate::color::{ColorSpace, SpotColorMapping};
 use crate::dxf::DxfUnit;
+use crate::path_edit::PathEdit;
 use crate::preprocess::PreprocessOptions;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -12,6 +14,26 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub const PROJECT_SCHEMA_VERSION: u32 = 1;
+
+fn default_mode() -> String {
+    "standard".to_string()
+}
+
+fn default_centerline_stroke_pt() -> f64 {
+    1.0
+}
+
+fn default_die_cut_mm() -> f64 {
+    2.0
+}
+
+fn default_die_cut_spot_name() -> String {
+    "CutContour".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,10 +65,12 @@ pub struct ProjectOptions {
     pub sablon_knockout: bool,
     #[serde(default)]
     pub preprocess: PreprocessOptions,
-}
-
-fn default_mode() -> String {
-    "standard".to_string()
+    #[serde(default)]
+    pub centerline_invert: bool,
+    #[serde(default = "default_centerline_stroke_pt")]
+    pub centerline_stroke_pt: f64,
+    #[serde(default)]
+    pub path_edits: Vec<PathEdit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +88,16 @@ pub struct ProjectExportOptions {
     pub dxf_unit: DxfUnit,
     #[serde(default)]
     pub dxf_target_width_mm: Option<f32>,
+    #[serde(default)]
+    pub die_cut_contour: bool,
+    #[serde(default = "default_die_cut_mm")]
+    pub die_cut_offset_mm: f64,
+    #[serde(default = "default_die_cut_spot_name")]
+    pub die_cut_spot_name: String,
+    #[serde(default = "default_true")]
+    pub die_cut_bridge_islands: bool,
+    #[serde(default)]
+    pub spot_colors: Vec<SpotColorMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

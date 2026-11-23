@@ -55,6 +55,9 @@ export default function CropModal({ path, initial, onCancel, onApply }: Props) {
 	const [quarter, setQuarter] = useState<number>(initSplit.quarter);
 	const [fine, setFine] = useState<number>(initSplit.fine);
 	const [crop, setCrop] = useState<[number, number, number, number] | null>(initial.crop);
+	const [removeBackground, setRemoveBackground] = useState<boolean>(initial.removeBackground ?? false);
+	const [bgTolerance, setBgTolerance] = useState<number>(initial.bgTolerance ?? 24);
+	const [defringePx, setDefringePx] = useState<number>(initial.defringePx ?? 1);
 
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const dragRef = useRef<{
@@ -251,6 +254,9 @@ export default function CropModal({ path, initial, onCancel, onApply }: Props) {
 		setQuarter(0);
 		setFine(0);
 		setCrop(null);
+		setRemoveBackground(false);
+		setBgTolerance(24);
+		setDefringePx(1);
 	};
 
 	const isFullCrop = effCrop[0] <= 1 && effCrop[1] <= 1 && effCrop[2] >= rotW - 2 && effCrop[3] >= rotH - 2;
@@ -259,6 +265,9 @@ export default function CropModal({ path, initial, onCancel, onApply }: Props) {
 		onApply({
 			crop: isFullCrop ? null : effCrop,
 			rotateDeg: Math.abs(totalDeg) < 0.05 ? 0 : totalDeg,
+			removeBackground,
+			bgTolerance,
+			defringePx,
 		});
 	};
 
@@ -309,6 +318,40 @@ export default function CropModal({ path, initial, onCancel, onApply }: Props) {
 							}}
 							style={{ width: 160, accentColor: "var(--accent)" }}
 						/>
+					</div>
+					<div className="row" style={{ marginTop: 4 }}>
+						<label className="check inline">
+							<input type="checkbox" checked={removeBackground} onChange={e => setRemoveBackground(e.target.checked)} />
+							<span>{t.removeBgToggle}</span>
+						</label>
+						{removeBackground && (
+							<>
+								<label className="crop-angle-label" htmlFor="cropBgTol">
+									{t.bgToleranceLabel}: <b>{bgTolerance}</b>
+								</label>
+								<input
+									id="cropBgTol"
+									type="range"
+									min={0}
+									max={100}
+									value={bgTolerance}
+									onChange={e => setBgTolerance(Number(e.target.value))}
+									style={{ width: 110, accentColor: "var(--accent)" }}
+								/>
+								<label className="crop-angle-label" htmlFor="cropDefringe">
+									{t.defringeLabel}: <b>{defringePx} px</b>
+								</label>
+								<input
+									id="cropDefringe"
+									type="range"
+									min={0}
+									max={3}
+									value={defringePx}
+									onChange={e => setDefringePx(Number(e.target.value))}
+									style={{ width: 70, accentColor: "var(--accent)" }}
+								/>
+							</>
+						)}
 					</div>
 					<div className="row between muted" style={{ marginTop: 6 }}>
 						<span>

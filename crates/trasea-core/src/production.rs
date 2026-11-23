@@ -1,9 +1,13 @@
-//! Production profiles for Trasea 0.5.0: Screen Print (`#14`) and Cutting Sticker / Embroidery (`#15`).
+//! Production profiles for Trasea: Standard, Screen Print, Cutting / Embroidery, Shading, and Centerline.
 //! Keeps deterministic post-processing rules out of `pipeline.rs`.
 
 use crate::export::Doc;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+
+fn default_centerline_stroke_pt() -> f64 {
+    1.0
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,6 +17,7 @@ pub enum ProductionMode {
     ScreenPrint,
     CutEmbroidery,
     Shading,
+    Centerline,
 }
 
 impl ProductionMode {
@@ -22,6 +27,7 @@ impl ProductionMode {
             "screenprint" | "screen-print" | "screen_print" | "sablon" => Some(Self::ScreenPrint),
             "cutembroidery" | "cut-embroidery" | "cut_embroidery" | "cutting" | "cut" | "bordir" => Some(Self::CutEmbroidery),
             "shading" | "gradasi" | "gradient" => Some(Self::Shading),
+            "centerline" | "garis-tengah" | "garis_tengah" | "single-line" | "single_line" | "sketch" => Some(Self::Centerline),
             _ => None,
         }
     }
@@ -32,6 +38,7 @@ impl ProductionMode {
             Self::ScreenPrint => "Sablon",
             Self::CutEmbroidery => "Cutting / Bordir",
             Self::Shading => "Gradasi",
+            Self::Centerline => "Garis Tengah",
         }
     }
 }
@@ -41,7 +48,7 @@ impl ProductionMode {
 pub struct ProductionOptions {
     #[serde(default)]
     pub mode: ProductionMode,
-    /// Minimum stroke width in points (pt). 0.0 = disabled (Standard/Shading), 1.0 (ScreenPrint), 1.5 (CutEmbroidery).
+    /// Minimum stroke width in points (pt). 0.0 = disabled (Standard/Shading/Centerline), 1.0 (ScreenPrint), 1.5 (CutEmbroidery).
     #[serde(default)]
     pub min_stroke_pt: f64,
     /// Omit the background layer (index 0) on CutEmbroidery. Default true in CutEmbroidery, false otherwise.
@@ -53,6 +60,12 @@ pub struct ProductionOptions {
     /// Use pure knockout (non-overlapping) tracing for ScreenPrint spot colours while preserving trap & registration marks.
     #[serde(default)]
     pub sablon_knockout: bool,
+    /// Invert luminance when extracting Centerline strokes (for light lines on a dark background).
+    #[serde(default)]
+    pub centerline_invert: bool,
+    /// Default stroke width (pt) emitted in Centerline mode (`0.25..=12.0`, default `1.0`).
+    #[serde(default = "default_centerline_stroke_pt")]
+    pub centerline_stroke_pt: f64,
 }
 
 impl Default for ProductionOptions {
@@ -69,6 +82,8 @@ impl ProductionOptions {
             strip_background: false,
             registration_marks: false,
             sablon_knockout: false,
+            centerline_invert: false,
+            centerline_stroke_pt: default_centerline_stroke_pt(),
         }
     }
 
@@ -79,6 +94,8 @@ impl ProductionOptions {
             strip_background: false,
             registration_marks: true,
             sablon_knockout: false,
+            centerline_invert: false,
+            centerline_stroke_pt: default_centerline_stroke_pt(),
         }
     }
 
@@ -89,6 +106,8 @@ impl ProductionOptions {
             strip_background: true,
             registration_marks: false,
             sablon_knockout: false,
+            centerline_invert: false,
+            centerline_stroke_pt: default_centerline_stroke_pt(),
         }
     }
 
@@ -99,6 +118,20 @@ impl ProductionOptions {
             strip_background: false,
             registration_marks: false,
             sablon_knockout: false,
+            centerline_invert: false,
+            centerline_stroke_pt: default_centerline_stroke_pt(),
+        }
+    }
+
+    pub fn centerline() -> Self {
+        Self {
+            mode: ProductionMode::Centerline,
+            min_stroke_pt: 0.0,
+            strip_background: true,
+            registration_marks: false,
+            sablon_knockout: false,
+            centerline_invert: false,
+            centerline_stroke_pt: default_centerline_stroke_pt(),
         }
     }
 
@@ -108,7 +141,7 @@ impl ProductionOptions {
             self.min_stroke_pt
         } else {
             match self.mode {
-                ProductionMode::Standard | ProductionMode::Shading => 0.0,
+                ProductionMode::Standard | ProductionMode::Shading | ProductionMode::Centerline => 0.0,
                 ProductionMode::ScreenPrint => 1.0,
                 ProductionMode::CutEmbroidery => 1.5,
             }

@@ -4,13 +4,14 @@
 //! (palette, brush, node budget, smoothness, production profile ...) without cleaning the picture again.
 
 use crate::brush::{BrushMap, BrushStroke};
-use crate::centerline::{centerline_opts, CenterOpts};
+use crate::centerline::{centerline_opts, extract_full_centerline, CenterOpts};
 use crate::clean::clean;
 use crate::export::{export_options_for_production, to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::heatmap::{node_heatmap, NodeHeatmap};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
 use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex, rgb_to_lab};
-use crate::preprocess::{apply_preprocess_rgb, PreprocessOptions};
+use crate::path_edit::{apply_path_edits, PathEdit};
+use crate::preprocess::{apply_preprocess_rgb_with_mask, PreprocessOptions};
 use crate::primitives;
 use crate::production::{cut_min_area_px, enforce_min_stroke, filter_micro_regions, screen_print_min_spot_px, ProductionMode, ProductionOptions};
 use crate::stats::{compare, count_primitives, count_svg, render_svg, Stats};
@@ -53,10 +54,12 @@ pub struct Params {
     pub target_nodes: Option<usize>,
     /// Correction brush strokes, in source pixels (later strokes paint over earlier ones).
     pub brush_strokes: Vec<BrushStroke>,
-    /// Production profile (`Standard`, `ScreenPrint`, `CutEmbroidery`, `Shading`).
+    /// Production profile (`Standard`, `ScreenPrint`, `CutEmbroidery`, `Shading`, `Centerline`).
     pub production: ProductionOptions,
-    /// Optional non-destructive pre-processing (rotation & crop) applied before tracing.
+    /// Optional non-destructive pre-processing (rotation, crop, remove background) applied before tracing.
     pub preprocess: PreprocessOptions,
+    /// Non-destructive per-path edits (`Delete`, `ReassignColor`) applied deterministically after tracing.
+    pub path_edits: Vec<PathEdit>,
 }
 
 impl Default for Params {
@@ -78,6 +81,7 @@ impl Default for Params {
             brush_strokes: Vec::new(),
             production: ProductionOptions::default(),
             preprocess: PreprocessOptions::default(),
+            path_edits: Vec::new(),
         }
     }
 }
@@ -120,6 +124,8 @@ pub struct PreparedImage {
     pub up: u32,
     /// Fingerprint of pre-processing applied when building this cache entry.
     pub preprocess: PreprocessOptions,
+    /// Optional foreground opacity mask (`true` = opaque foreground, `false` = background stripped via `remove_background`).
+    pub fg_mask: Option<Vec<bool>>,
 }
 
 pub type Progress<'a> = &'a dyn Fn(&str, f32);
@@ -246,16 +252,30 @@ fn edge_preserving_smooth(img: &RgbImage, radius: i32, delta_e: f32) -> RgbImage
 /// Run the first half once: optional non-destructive preprocess, thin-line guard (from the ORIGINAL), and clean.
 pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<PreparedImage> {
     let up = params.up.max(1);
-    let src = if params.preprocess.is_identity() {
-        src
+    let mut notes = Vec::new();
+    let (src, fg_mask) = if params.preprocess.is_identity() {
+        (src, None)
     } else {
-        apply_preprocess_rgb(&src, &params.preprocess)
+        let (img_pp, mask, rep) = apply_preprocess_rgb_with_mask(&src, &params.preprocess);
+        if let Some(r) = rep {
+            if let Some(w) = r.warning {
+                notes.push(w);
+            }
+        }
+        (img_pp, mask)
     };
     progress("Looking for thin lines", 0.05);
-    let thin = thin_mask(&src, &ThinParams::for_size(src.width(), src.height()));
+    let mut thin = thin_mask(&src, &ThinParams::for_size(src.width(), src.height()));
+    if let Some(ref fg) = fg_mask {
+        for (i, &keep) in fg.iter().enumerate() {
+            if !keep && i < thin.mask.len() {
+                thin.mask[i] = false;
+                thin.labels[i] = 0;
+            }
+        }
+    }
     progress(if params.ai_clean { "Cleaning with Real-ESRGAN" } else { "Cleaning" }, 0.15);
     let cleaned = clean(&src, params.ai_clean, params.sidecar_dir.as_deref(), up);
-    let mut notes = Vec::new();
     if let Some(n) = cleaned.note {
         notes.push(n);
     }
@@ -267,6 +287,7 @@ pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<Pre
         notes,
         up,
         preprocess: params.preprocess.clone(),
+        fg_mask,
     })
 }
 
@@ -316,11 +337,19 @@ fn base<'a>(prep: &'a PreparedImage, params: &Params, notes: &mut Vec<String>) -
     let scale = ww as f64 / w as f64;
     let thin = params.keep_lines.then_some(&prep.thin);
 
-    // palette lock. Pixels under the thin lines are kept out of the colour estimate and filled from their neighbours.
-    let excl: Vec<bool> = match thin {
+    // palette lock. Pixels under the thin lines (and any removed background) are kept out of the colour estimate.
+    let mut excl: Vec<bool> = match thin {
         Some(tm) => dilate_mask(&upscale_bool(&tm.mask, w, h, ww, wh), ww, wh, (1.5 * up as f64).round() as i32),
         None => vec![false; ww * wh],
     };
+    if let Some(ref fg) = prep.fg_mask {
+        let fg_work = upscale_bool(fg, w, h, ww, wh);
+        for (i, &keep) in fg_work.iter().enumerate() {
+            if !keep {
+                excl[i] = true;
+            }
+        }
+    }
 
     let is_screen_print = params.production.mode == ProductionMode::ScreenPrint;
     let mut custom = params.custom_palette.as_ref().map(|p| dedupe(p)).filter(|p| p.len() >= 2);
@@ -446,7 +475,7 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
 
     // Production micro-region cleanup (Standard keeps 0.4.0 behaviour unchanged).
     let micro_removed = match params.production.mode {
-        ProductionMode::Standard | ProductionMode::Shading => 0,
+        ProductionMode::Standard | ProductionMode::Shading | ProductionMode::Centerline => 0,
         ProductionMode::ScreenPrint => filter_micro_regions(&mut labels, ww as u32, wh as u32, screen_print_min_spot_px(ww as u32, wh as u32)),
         ProductionMode::CutEmbroidery => filter_micro_regions(&mut labels, ww as u32, wh as u32, cut_min_area_px(ww as u32, wh as u32)),
     };
@@ -466,7 +495,38 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
 
     let use_knockout = params.production.mode == ProductionMode::CutEmbroidery
         || (params.production.mode == ProductionMode::ScreenPrint && params.production.sablon_knockout);
-    let (mut fields, primitives_count) = if use_knockout {
+    let (mut fields, primitives_count) = if let Some(ref fg) = b.prep.fg_mask {
+        // When exterior background was removed via `remove_background`, trace only opaque foreground
+        // regions so no background canvas rectangle is emitted while interior holes stay intact.
+        let fg_work = upscale_bool(fg, b.prep.src.width() as usize, b.prep.src.height() as usize, ww, wh);
+        let mut f = Vec::new();
+        for (ci, &color) in b.palette.iter().enumerate() {
+            let mut bin = BinaryImage::new_w_h(ww, wh);
+            let mut any = false;
+            for idx in 0..(ww * wh) {
+                if fg_work[idx] && labels[idx] == ci as u8 {
+                    bin.set_pixel(idx % ww, idx / ww, true);
+                    any = true;
+                }
+            }
+            if !any {
+                continue;
+            }
+            let contours = crate::trace::trace_mask_ex(&bin, &tp, &ctx);
+            if !contours.is_empty() {
+                f.push(Layer { id: crate::hex(color), color, contours, canvas: false, prims: vec![] });
+            }
+        }
+        if let Some(pl) = &sym_plan {
+            symmetry::mirror_layers(&mut f, pl, (ww as f64, wh as f64));
+        }
+        let pc = if params.detect_primitives && !use_knockout {
+            primitives::extract(&mut f, scale, (ww as f64, wh as f64))
+        } else {
+            0
+        };
+        (f, pc)
+    } else if use_knockout {
         let mut f = trace_layers_knockout(&labels, ww, wh, &b.palette, &tp, &ctx, params.production.strip_background);
         if let Some(pl) = &sym_plan {
             symmetry::mirror_layers(&mut f, pl, (ww as f64, wh as f64));
@@ -579,13 +639,78 @@ fn knobs_at(t0: f64, p: f64) -> Knobs {
     }
 }
 
-/// The second half: palette, brush zones, tracing, lines, production profile rules, and (with `target_nodes`) the node budget.
+/// The second half: palette, brush zones, tracing, lines, production profile rules, path edits, and (with `target_nodes`) the node budget.
 pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progress) -> Result<Output> {
     let mut notes = prep.notes.clone();
+    let exp_opts = export_options_for_production(&params.production);
+
+    // Dedicated Centerline Mode (pure single-line open Bézier strokes, 0 filled regions).
+    if params.production.mode == ProductionMode::Centerline {
+        progress("Extracting centerline strokes", 0.6);
+        let (w, h) = (prep.src.width() as usize, prep.src.height() as usize);
+        let (ww, wh) = (prep.cleaned.width() as usize, prep.cleaned.height() as usize);
+        let scale = ww as f64 / w.max(1) as f64;
+        let fg_work = prep.fg_mask.as_ref().map(|fg| upscale_bool(fg, w, h, ww, wh));
+        let stroke_layer = extract_full_centerline(
+            &prep.cleaned,
+            fg_work.as_deref(),
+            params.production.centerline_invert,
+            params.production.centerline_stroke_pt,
+            scale,
+            params.smooth,
+        );
+        let ink_color = stroke_layer.color;
+        let strokes = if stroke_layer.strokes.is_empty() {
+            Vec::new()
+        } else {
+            vec![stroke_layer]
+        };
+        let mut doc = Doc {
+            width: prep.src.width(),
+            height: prep.src.height(),
+            scale,
+            fields: Vec::new(),
+            line_shapes: Vec::new(),
+            line_fallback: Vec::new(),
+            strokes,
+        };
+        if !params.path_edits.is_empty() {
+            doc = apply_path_edits(&doc, &params.path_edits);
+        }
+        progress("Writing SVG", 0.95);
+        let svg = to_svg(&doc, &exp_opts);
+        let (paths, nodes) = count_svg(&svg);
+        let mae = if params.measure {
+            render_svg(&svg, prep.src.width(), prep.src.height())
+                .ok()
+                .map(|r| compare(&prep.src, &r).0)
+        } else {
+            None
+        };
+        let stats = Stats { paths, nodes, bytes: svg.len(), mae, primitives: count_primitives(&svg) };
+        let heatmap = node_heatmap(&doc);
+        let palette = if doc.strokes.is_empty() { Vec::new() } else { vec![ink_color] };
+        progress("Done", 1.0);
+        return Ok(Output {
+            svg,
+            doc,
+            stats,
+            palette,
+            notes,
+            used_ai: prep.used_ai,
+            thin_pixels: 0,
+            primitives_count: 0,
+            symmetry_applied: None,
+            text_regions: Vec::new(),
+            heatmap,
+            effective_smooth: params.smooth.clamp(0.0, 1.0),
+            budget_met: None,
+        });
+    }
+
     progress("Locking the palette", 0.55);
     let b = base(prep, params, &mut notes);
     let t0 = params.smooth.clamp(0.0, 1.0) as f64;
-    let exp_opts = export_options_for_production(&params.production);
 
     progress("Tracing", 0.7);
     let mut knobs = Knobs { t: t0, extra: 1.0 };
@@ -673,6 +798,11 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
     }
     if micro_removed > 0 {
         notes.push(format!("{micro_removed} bintik mikro dibuang."));
+    }
+
+    // Apply non-destructive per-path edits (`Delete` / `ReassignColor`) before stats, SVG, and export.
+    if !params.path_edits.is_empty() {
+        doc = apply_path_edits(&doc, &params.path_edits);
     }
 
     let svg = to_svg(&doc, &exp_opts);

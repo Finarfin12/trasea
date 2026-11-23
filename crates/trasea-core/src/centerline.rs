@@ -625,3 +625,344 @@ fn merge_through_junctions(segs: &mut Vec<Seg>, width_tol: f64) {
         segs.push(merged);
     }
 }
+
+// ---------- Full-image Centerline Mode (Trasea 1.2.0) ----------
+
+/// Bounded Zhang-Suen thinning with L-corner cleanup (caps iterations so solid blocks never hang).
+fn thin_bounded(mask: &[bool], w: usize, h: usize, max_iters: usize) -> Vec<bool> {
+    if w < 3 || h < 3 {
+        return vec![false; w * h];
+    }
+    let mut img: Vec<u8> = mask.iter().map(|&b| b as u8).collect();
+    for x in 0..w {
+        img[x] = 0;
+        img[(h - 1) * w + x] = 0;
+    }
+    for y in 0..h {
+        img[y * w] = 0;
+        img[y * w + w - 1] = 0;
+    }
+    let mut to_clear: Vec<usize> = Vec::new();
+    for _ in 0..max_iters {
+        let mut changed = false;
+        for step in 0..2 {
+            to_clear.clear();
+            for y in 1..h - 1 {
+                for x in 1..w - 1 {
+                    let i = y * w + x;
+                    if img[i] == 0 {
+                        continue;
+                    }
+                    let p = [
+                        img[i - w],
+                        img[i - w + 1],
+                        img[i + 1],
+                        img[i + w + 1],
+                        img[i + w],
+                        img[i + w - 1],
+                        img[i - 1],
+                        img[i - w - 1],
+                    ];
+                    let b: u8 = p.iter().sum();
+                    if !(2..=6).contains(&b) {
+                        continue;
+                    }
+                    let a = (0..8).filter(|&k| p[k] == 0 && p[(k + 1) % 8] == 1).count();
+                    if a != 1 {
+                        continue;
+                    }
+                    let ok = if step == 0 {
+                        p[0] * p[2] * p[4] == 0 && p[2] * p[4] * p[6] == 0
+                    } else {
+                        p[0] * p[2] * p[6] == 0 && p[0] * p[4] * p[6] == 0
+                    };
+                    if ok {
+                        to_clear.push(i);
+                    }
+                }
+            }
+            if !to_clear.is_empty() {
+                changed = true;
+                for &i in &to_clear {
+                    img[i] = 0;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let i = y * w + x;
+            if img[i] == 0 {
+                continue;
+            }
+            let (n, ne, e, se, s, sw, ww, nw) = (
+                img[i - w],
+                img[i - w + 1],
+                img[i + 1],
+                img[i + w + 1],
+                img[i + w],
+                img[i + w - 1],
+                img[i - 1],
+                img[i - w - 1],
+            );
+            let redundant = (n == 1 && e == 1 && s == 0 && ww == 0 && sw == 0)
+                || (e == 1 && s == 1 && ww == 0 && n == 0 && nw == 0)
+                || (s == 1 && ww == 1 && n == 0 && e == 0 && ne == 0)
+                || (ww == 1 && n == 1 && e == 0 && s == 0 && se == 0);
+            if redundant {
+                img[i] = 0;
+            }
+        }
+    }
+    img.iter().map(|&v| v == 1).collect()
+}
+
+/// Global Otsu threshold over luminance histogram (returns `(threshold, separation_contrast)`).
+fn otsu_threshold(hist: &[u64; 256], total: u64) -> (u8, f64) {
+    if total == 0 {
+        return (128, 0.0);
+    }
+    let mut sum_all = 0.0f64;
+    for (i, &c) in hist.iter().enumerate() {
+        sum_all += i as f64 * c as f64;
+    }
+    let mut sum_bg = 0.0f64;
+    let mut w_bg = 0u64;
+    let mut best_var = -1.0f64;
+    let mut best_t = 128u8;
+    let mut best_diff = 0.0f64;
+    for (t, &c) in hist.iter().enumerate() {
+        w_bg += c;
+        if w_bg == 0 {
+            continue;
+        }
+        let w_fg = total - w_bg;
+        if w_fg == 0 {
+            break;
+        }
+        sum_bg += t as f64 * c as f64;
+        let m_bg = sum_bg / w_bg as f64;
+        let m_fg = (sum_all - sum_bg) / w_fg as f64;
+        let diff = (m_fg - m_bg).abs();
+        let var = (w_bg as f64) * (w_fg as f64) * diff * diff;
+        if var > best_var {
+            best_var = var;
+            best_t = t as u8;
+            best_diff = diff;
+        }
+    }
+    (best_t, best_diff)
+}
+
+/// Trace pure closed degree-2 cycles in `skel` that `build_graph` skips (e.g. circles or O-rings).
+fn extract_pure_cycles(skel: &[bool], w: usize, h: usize, used_in_edges: &[bool]) -> Vec<Vec<usize>> {
+    let n = w * h;
+    let mut visited = used_in_edges.to_vec();
+    let mut cycles = Vec::new();
+    for start in 0..n {
+        if !skel[start] || visited[start] {
+            continue;
+        }
+        let nbs = neighbours(start, w, skel);
+        if nbs.len() != 2 {
+            continue;
+        }
+        let mut pix = vec![start];
+        visited[start] = true;
+        let mut prev = start;
+        let mut cur = nbs[0];
+        while cur != start && !visited[cur] && pix.len() < n {
+            visited[cur] = true;
+            pix.push(cur);
+            let next = neighbours(cur, w, skel).into_iter().find(|&q| q != prev && (!visited[q] || q == start));
+            match next {
+                Some(q) => {
+                    prev = cur;
+                    cur = q;
+                }
+                None => break,
+            }
+        }
+        if pix.len() >= 4 {
+            if cur == start {
+                pix.push(start);
+            }
+            cycles.push(pix);
+        }
+    }
+    cycles
+}
+
+/// Extract pure open centerline Bézier strokes across an entire image (laser engraving, pen plotter,
+/// ink/pencil sketches). Produces 0 filled regions and never hangs on solid blocks.
+pub fn extract_full_centerline(
+    img: &image::RgbImage,
+    fg_mask: Option<&[bool]>,
+    invert: bool,
+    stroke_pt: f64,
+    scale: f64,
+    smooth: f32,
+) -> crate::export::StrokeLayer {
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let n = w.saturating_mul(h);
+    if n == 0 {
+        return crate::export::StrokeLayer {
+            color: [0, 0, 0],
+            strokes: Vec::new(),
+        };
+    }
+
+    // 1. Luminance + Otsu histogram + 2D integral image for 15x15 local mean
+    let mut lum = vec![255u8; n];
+    let mut hist = [0u64; 256];
+    let mut valid_count = 0u64;
+    for (idx, p) in img.pixels().enumerate() {
+        let valid = fg_mask.map_or(true, |m| m.get(idx).copied().unwrap_or(true));
+        if !valid {
+            lum[idx] = 255;
+            continue;
+        }
+        let y = (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        let v = if invert { 255 - y } else { y };
+        lum[idx] = v;
+        hist[v as usize] += 1;
+        valid_count += 1;
+    }
+
+    let (t_otsu, contrast) = otsu_threshold(&hist, valid_count);
+    let iw = w + 1;
+    let mut integ = vec![0u64; (w + 1) * (h + 1)];
+    for y in 0..h {
+        let mut row_sum = 0u64;
+        for x in 0..w {
+            row_sum += lum[y * w + x] as u64;
+            integ[(y + 1) * iw + (x + 1)] = integ[y * iw + (x + 1)] + row_sum;
+        }
+    }
+
+    // 2. Conservative adaptive threshold (combines Otsu + 15x15 local mean)
+    let half = 7isize;
+    let mut ink_mask = vec![false; n];
+    let mut sum_r = 0u64;
+    let mut sum_g = 0u64;
+    let mut sum_b = 0u64;
+    let mut ink_cnt = 0u64;
+
+    if contrast >= 12.0 {
+        let global_cut = (t_otsu as f32).min(215.0);
+        for y in 0..h {
+            let y0 = (y as isize - half).max(0) as usize;
+            let y1 = (y as isize + half).min(h as isize - 1) as usize;
+            for x in 0..w {
+                let idx = y * w + x;
+                if fg_mask.map_or(false, |m| !m.get(idx).copied().unwrap_or(true)) {
+                    continue;
+                }
+                let x0 = (x as isize - half).max(0) as usize;
+                let x1 = (x as isize + half).min(w as isize - 1) as usize;
+                let area = ((x1 - x0 + 1) * (y1 - y0 + 1)) as f32;
+                let sum = integ[(y1 + 1) * iw + (x1 + 1)]
+                    + integ[y0 * iw + x0]
+                    - integ[(y1 + 1) * iw + x0]
+                    - integ[y0 * iw + (x1 + 1)];
+                let local_mean = sum as f32 / area;
+                let v = lum[idx] as f32;
+                let is_ink = v < 230.0
+                    && (v < (local_mean - 12.0).min(global_cut + 14.0) || v <= global_cut - 6.0);
+                if is_ink {
+                    ink_mask[idx] = true;
+                    let p = img.get_pixel(x as u32, y as u32).0;
+                    sum_r += p[0] as u64;
+                    sum_g += p[1] as u64;
+                    sum_b += p[2] as u64;
+                    ink_cnt += 1;
+                }
+            }
+        }
+    }
+
+    let ink_color = if ink_cnt > 0 {
+        [
+            (sum_r / ink_cnt).min(255) as u8,
+            (sum_g / ink_cnt).min(255) as u8,
+            (sum_b / ink_cnt).min(255) as u8,
+        ]
+    } else {
+        [0, 0, 0]
+    };
+
+    if ink_cnt < 2 {
+        return crate::export::StrokeLayer {
+            color: ink_color,
+            strokes: Vec::new(),
+        };
+    }
+
+    // 3. Thinning + skeleton graph + pruning + Bézier fitting
+    let skel = thin_bounded(&ink_mask, w, h, 128);
+    let (edges, nn) = build_graph(&skel, w, h);
+    let spur = (4.0 * scale.max(1.0)).round().max(4.0) as usize;
+    let edges = prune_and_merge(edges, nn, spur);
+
+    let mut used = vec![false; n];
+    for e in &edges {
+        for &p in &e.pix {
+            used[p] = true;
+        }
+    }
+    let cycles = extract_pure_cycles(&skel, w, h, &used);
+
+    let stroke_w_px = (stroke_pt.clamp(0.25, 12.0) * 96.0 / 72.0 * scale.max(0.5)).max(0.5);
+    let t = smooth.clamp(0.0, 1.0) as f64;
+    let tol = (0.7 + 1.8 * t) * scale.max(1.0);
+    let sigma = 1.6 + 1.2 * t;
+
+    let mut segs: Vec<Seg> = Vec::with_capacity(edges.len());
+    for e in edges {
+        let poly: Vec<P> = e.pix.iter().map(|&i| pt(i, w)).collect();
+        if poly.len() >= 2 && poly_len(&poly) >= MICRO_FRAGMENT * scale.max(1.0) {
+            segs.push(Seg {
+                a: e.a,
+                b: e.b,
+                poly,
+                wraw: stroke_w_px,
+            });
+        }
+    }
+    merge_through_junctions(&mut segs, stroke_w_px + 1.0);
+
+    let mut strokes: Vec<crate::export::StrokeData> = Vec::new();
+    for s in segs {
+        let sm = smooth_open(&s.poly, sigma);
+        let curves = fit_polyline(&sm, tol);
+        if !curves.is_empty() {
+            strokes.push(crate::export::StrokeData {
+                curves,
+                width: stroke_w_px,
+            });
+        }
+    }
+    for cyc in cycles {
+        let poly: Vec<P> = cyc.iter().map(|&i| pt(i, w)).collect();
+        if poly.len() >= 4 {
+            let sm = smooth_open(&poly, sigma);
+            let curves = fit_polyline(&sm, tol);
+            if !curves.is_empty() {
+                strokes.push(crate::export::StrokeData {
+                    curves,
+                    width: stroke_w_px,
+                });
+            }
+        }
+    }
+
+    crate::export::StrokeLayer {
+        color: ink_color,
+        strokes,
+    }
+}

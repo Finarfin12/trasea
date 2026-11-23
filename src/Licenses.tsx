@@ -97,7 +97,7 @@ export default function Licenses({ markdown, license, initialTab = "license", pr
 			const next = await activateLicense(keyInput.trim());
 			onLicenseChanged(next);
 			setKeyInput("");
-			setOkMsg(`${t.licActivatedPrefix} ${next.info?.name ?? "User"} (100% offline).`);
+			setOkMsg(`${t.licActivatedPrefix} ${next.info?.name ?? "User"} ${t.licLocalParen}.`);
 		} catch (e) {
 			setErr(typeof e === "string" ? e : e instanceof Error ? e.message : t.licInvalidErr);
 		} finally {

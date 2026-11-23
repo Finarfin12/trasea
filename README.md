@@ -2,66 +2,70 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-An **offline desktop vectorization app** that turns flat illustrations, logos, and cel-shaded artwork (PNG/JPG/WEBP/BMP) into clean **SVG, PDF (RGB/CMYK), EPS (RGB/CMYK), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.1.0 ("Fast Workflow & Full Production")**. Local-first, bilingual (English & Indonesian), no account, no cloud, **no network request**.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.2.0 ("Stickers, Laser, & RIP Precision")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required.
 
 ## Screenshots
 
-![Trasea desktop workspace — English UI, Split View, and Crop & Rotate](docs/screenshots/app_bilingual_crop.png)
+![Trasea 1.2.0 — 1-Click Remove Background, Die-Cut CutContour & Single-Row Icon Toolbar](docs/screenshots/app_remove_bg_diecut.png)
 
-| Outline / Wireframe (Ctrl+Y) & Layer Toggles | RGB/CMYK Print, AutoCAD DXF (mm) & Copy SVG |
+| Centerline (Single-Line Laser / CNC) | Interactive Select & Edit Path on Canvas |
 | :---: | :---: |
-| ![Outline mode and layer eye toggles](docs/screenshots/app_outline_layers.png) | ![CMYK, DXF mm export, and clipboard copy](docs/screenshots/app_clipboard_dxf_cmyk.png) |
+| ![Centerline single-line vector mode](docs/screenshots/app_centerline.png) | ![Interactive Select Path bar and non-destructive editing](docs/screenshots/app_path_edit.png) |
 
-| Automatic Watch Folder & Live Processing Log |
-| :---: |
-| ![Watch Folder live log](docs/screenshots/app_watch_folder.png) |
+| CMYK Soft-Proof, Colour Code Inspector & Named Spot Ink | Unified 5-Tab App Settings & Privacy/License |
+| :---: | :---: |
+| ![CMYK Soft-Proof and Colour Inspector popover](docs/screenshots/app_softproof_spot.png) | ![App Settings modal with 5 tabs](docs/screenshots/app_settings.png) |
+
+| Outline / Wireframe (Ctrl+Y) & Layer Toggles | Automatic Watch Folder & Live Processing Log |
+| :---: | :---: |
+| ![Outline mode and layer eye toggles](docs/screenshots/app_outline_layers.png) | ![Watch Folder live log](docs/screenshots/app_watch_folder.png) |
 
 ## What it does
 
-Four local stages plus non-destructive pre-processing, production profiles, designer controls, project workflow, batch folder processing, and automatic watch folders:
+Four local stages plus non-destructive pre-processing, five production profiles, interactive canvas path editing, CMYK soft-proofing, named spot inks, reusable palettes, project workflow, batch folder processing, and automatic watch folders:
 
-1. **Non-destructive pre-processing.** Optional crop and rotation (`-90°`, `+90°`, `180°`, or free angle `-45°..+45°`) before tracing, without modifying the source image.
-2. **Thin-line guard.** Dark strokes thinner than a few pixels (eyes, smiles, outlines) are extracted from the image first so cleaning never erases them.
+1. **Non-destructive pre-processing.** Optional crop, rotation (`-90°`, `+90°`, `180°`, or free angle `-45°..+45°`), and **1-click Auto Remove Background** (4-connected CIE Lab ΔE border flood-fill + edge halo defringe `0..3 px`) without modifying the source image.
+2. **Thin-line guard & Centerline tracing.** Dark strokes thinner than a few pixels are extracted first so cleaning never erases them — or switch to **Centerline** mode for pure single-line open Bézier strokes (zero filled shapes).
 3. **Clean (optional, off by default).** Real-ESRGAN (anime x4, bundled sidecar) removes JPEG noise and scales to 2x. Off: a 3 px median filter runs 20–40x faster. If a GPU lacks Vulkan support, Trasea automatically falls back to Median with a clear notice.
-4. **Palette lock / Shading + tracing + lines on top.** Flat colours (k-means in Lab) or Shading/Cel-Shading bands (12–32 Lab colours with bilateral smoothing) are traced with visioncortex (VTracer engine) into compact cubic Béziers, pure `<circle>`/`<ellipse>`/`<rect>` primitives, and optional symmetry enforcement. Thin lines stack cleanly on top as editable open strokes or closed shapes.
+4. **Palette lock / Shading + tracing + path edits + lines & contours.** Flat colours (k-means in Lab) or Shading/Cel-Shading bands (12–32 Lab colours with bilateral smoothing) are traced with visioncortex (VTracer engine) into compact cubic Béziers, pure `<circle>`/`<ellipse>`/`<rect>` primitives, and optional symmetry enforcement. Per-path deletes and recolours apply consistently across preview and every export format.
 
 Supported outputs:
-- **SVG** with named layers (Background, Colour Fields, Thin Lines, and optional Registration) — plus 1-click **Copy SVG** (`Ctrl+Shift+C`) to clipboard
-- **PDF** in **RGB** or pure **DeviceCMYK** (PDF 1.4 `k`/`K` operators, zero RGB operators, pure `0 0 0 1` K=100% black & registration marks)
-- **AutoCAD R12 DXF (`AC1009`)** with per-colour layers (`COLOR_01_RRGGBB`, `THIN_LINES`, `REGISTRATION`), native `CIRCLE` entities, CAD Y-axis, and `mm` (96 DPI or custom target width) / `px` units
-- **EPS** (*Encapsulated PostScript Level 2 / EPSF-3.0*, pure Rust generator in RGB or CMYK without Ghostscript/Inkscape) — Pro
-- **`.ase`** (Adobe Swatch Exchange palette, group `Trasea`, RGB or CMYK)
+- **SVG** with named layers (Background, Colour Fields, Thin Lines, optional `CutContour`, and optional Registration) — plus 1-click **Copy SVG** (`Ctrl+Shift+C`) to clipboard
+- **PDF** in **RGB**, pure **DeviceCMYK** (PDF 1.4 `k`/`K` operators, pure `0 0 0 1` K=100% black & registration marks), and **Named Spot `/Separation`** inks (including `CutContour` at `0.25 pt`)
+- **AutoCAD R12 DXF (`AC1009`)** with per-colour layers (`COLOR_01_RRGGBB`, `THIN_LINES`, `CENTERLINE`, `CUTCONTOUR`, `REGISTRATION`), native `CIRCLE` entities, CAD Y-axis, and `mm` (72/96/300 DPI or custom target width) / `px` units
+- **EPS** (*Encapsulated PostScript Level 2 / EPSF-3.0*, pure Rust generator in RGB, CMYK, or Named Spot `%%CMYKCustomColor` without Ghostscript/Inkscape) — Pro
+- **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`) — Pro
-- **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0) preserving source link + SHA-256, crop/rotate preprocess, brush strokes, manual palette, merges, and settings
+- **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
 
-### New in 1.1.0 ("Fast Workflow & Full Production")
+### New in 1.2.0 ("Stickers, Laser, & RIP Precision")
 
-All 9 new 1.1.0 features are **open without requiring a Pro key**:
+All 8 new 1.2.0 features are **open without requiring a Pro key**:
 
-- **DXF R12 Export (Laser / CNC / Plotter).** Pure ASCII AutoCAD R12 (`AC1009`) writer from Editor, Batch, Watch Folder, or CLI (`--dxf`, `--dxf-unit mm|px`, `--dxf-width-mm`), defaulting to `mm` at 96 DPI with native `CIRCLE` entities and separated colour layers.
-- **CMYK Print Export (PDF, EPS, ASE, Separations).** Switch print colour space between **RGB** and **CMYK** (`--color-space cmyk`). Emits pure DeviceCMYK PDF 1.4 (`k`/`K` only, zero RGB operators), CMYK EPS (`setcmykcolor`), and CMYK `.ase` swatches with a deterministic Pure Black rule (`0 0 0 1` for `#000000` and registration marks).
-- **Screen Print Pure Knockout option.** Choose between gap-free **Stacking** or **Pure Knockout** (`0..2 pt` trap) in Screen Print mode so inks do not overprint thickly.
-- **Watch Folder (Auto-Vectorize).** Local polling watcher (`Batch & Watch` -> **Watch Folder**, or CLI `--watch <in> <out>`) with write-stability debounce, corrupt-file isolation, live event log, and automatic CSV & Markdown summary reports.
-- **Clipboard In & Out.** Paste images/screenshots directly with `Ctrl+V` (or **Paste image**) and copy clean SVG markup with `Ctrl+Shift+C` (or **Copy SVG**) straight into Affinity Designer, Illustrator, Inkscape, or Figma.
-- **Instant Outline / Wireframe (`Ctrl+Y`) & Layer Visibility.** Toggle blueprint wireframe preview (`Ctrl+Y`) and hide/show individual colour layers, Thin Lines, and Registration via eye icons without re-tracing. *(Redo shortcut is `Ctrl+Shift+Z`.)*
-- **Bilingual UI (English & Indonesian).** Instant `ID | EN` header switch persisted locally in `settings.json`.
-- **Non-Destructive Crop & Rotate.** Interactive crop rectangle, quick `-90°` / `+90°` / `180°` buttons, and `-45°..+45°` free-angle straightening saved inside `.trasea` projects without touching the original file.
-- **Shading / Cel-Shading Mode.** Dedicated 4th production mode (`--mode shading`) with Lab bilateral pre-smoothing and 12–32 colour bands for softly shaded anime/cel illustrations.
+- **Die-Cut / Kiss-Cut Sticker Contour (`CutContour`).** Automatic outer cut path using an exact 2D Euclidean Distance Transform + Marching Squares + smooth cubic Bézier fitting (`0.5..10.0 mm`, default `2.0 mm`, optional island bridging). Emits spot colour `CutContour` (`CMYK 0/100/0/0`, `#EC008C`, `0.25 pt`) across SVG, PDF (`/Separation`), EPS (`%%CMYKCustomColor`), DXF (`CUTCONTOUR` closed polyline), and ASE (`0x0001` spot swatch), with instant live preview and a layer eye toggle.
+- **Centerline / Single-Line Mode.** Dedicated 5th production mode (`--mode centerline`) using adaptive luminance thresholding, optional luminance inversion (for light lines on dark backgrounds), Zhang-Suen thinning, spur pruning, and pure open Bézier strokes (zero filled shapes; open `LWPOLYLINE` on DXF `CENTERLINE` layer) for laser engraving, CNC routers, and pen plotters.
+- **1-Click Auto Remove Background & Defringe.** Non-destructive 4-connected border flood-fill in CIE Lab (`ΔE 0..100`, default `24`) + edge defringe (`0..3 px`, default `1`) available in both the editor panel and the Crop & Rotate modal; enclosed interior holes stay untouched.
+- **Interactive Select & Edit Path on Canvas.** Switch to **Select Path** (`Ctrl+E`) to hover and click any traced path directly on canvas, delete it (`Delete`/`Backspace`), reassign it to another palette colour, or reset path edits — non-destructive, integrated with Undo/Redo, and carried to SVG, PDF, EPS, and DXF.
+- **CMYK Soft-Proof Preview & Out-of-Gamut Warnings.** Toggle **CMYK Soft-Proof** (`Ctrl+P`) for an instant 0 ms coated-print gamut simulation on canvas, paired with `⚠` out-of-gamut badges on vibrant screen colours in the palette.
+- **Named Spot Colour Tagging & RIP Export.** Assign custom RIP spot names (such as `White_Underbase` or `PANTONE 185 C`) to any palette colour directly in the Colour Inspector; exported as true PDF `/Separation`, EPS `%%CMYKCustomColor`, and ASE Spot (`0x0001`).
+- **4-Tab App Settings Modal (`⚙` / `Ctrl+,`).** Persisted in `settings.json`: **General** (ID/EN language, Dark / Light / Follow System theme, transparent canvas background style, auto-open folder after export), **Export Defaults** (RGB/CMYK, DXF unit, 72/96/300 DPI, default `CutContour` offset/spot name/bridge), **Performance & GPU** (Auto GPU vs Always Fast Median, 20/50/100 Undo limit), and **Keyboard Shortcuts** (custom keybinding recorder with conflict detection and reset).
+- **Colour Code Inspector & Saved Palette Library.** Click any palette chip to view and 1-click copy **HEX**, **RGB**, **CMYK**, and **HSL** values; save, reapply, and delete reusable palettes in `palettes.json`; export palettes to **`.gpl`**, **`.json`**, and **`.css`** alongside `.ase`.
 
 ### Earlier milestones
 
-- **1.0.0 ("Production Ready"):** Pure EPS export, offline Ed25519 licensing & friendly trial, 100% Offline & Privacy modal, `.trasea` project files, 50-step Undo/Redo, Custom Presets, 1-click sample illustration, continuous thin-line extraction fix.
+- **1.1.0 ("Fast Workflow & Full Production"):** AutoCAD R12 DXF export (`mm`/`px`), pure DeviceCMYK PDF/EPS/ASE export, Screen Print Pure Knockout, Watch Folder, Clipboard In/Out (`Ctrl+V` / `Ctrl+Shift+C`), Outline/Wireframe preview (`Ctrl+Y`) & layer visibility toggles, bilingual UI (EN/ID), non-destructive Crop & Rotate, Shading/Cel-Shading mode.
+- **1.0.0 ("Production Ready"):** Pure EPS export, local Ed25519 licensing & friendly trial, Privacy & License modal, `.trasea` project files, Undo/Redo, Custom Presets, 1-click sample illustration, continuous thin-line extraction fix.
 - **0.5.0 ("Production"):** Batch folder processing + CSV/Markdown reports, Screen Print mode (2–8 spot colours, registration marks, `#000000` separation films), Cutting/Embroidery knockout mode, targeted manual palette merge, macOS `icon.icns`.
 - **0.4.0 ("Designer Control"):** Rebrand Vektora → Trasea, correction brush (Detail / Smooth), interactive palette + 5×5 median eyedropper, node heatmap, node target budget, `PreparedImage` cache.
-- **0.3.0 ("Clean Geometry"):** Pure basic-shape detection, symmetry enforcer, per-point corners vs smooth curves, offline text warning, unbroken thin-line hysteresis.
+- **0.3.0 ("Clean Geometry"):** Pure basic-shape detection, symmetry enforcer, per-point corners vs smooth curves, local text warning, unbroken thin-line hysteresis.
 
 ## Use
 
-1. Download and extract [`releases/Trasea_1.1.0_x64-setup.zip`](releases/Trasea_1.1.0_x64-setup.zip), run `Trasea_1.1.0_x64-setup.exe` (per-user, no admin needed), and launch Trasea.
-2. Switch language (`ID | EN`) anytime in the header.
+1. Download and extract [`releases/Trasea_1.2.0_x64-setup.zip`](releases/Trasea_1.2.0_x64-setup.zip), run `Trasea_1.2.0_x64-setup.exe` (per-user, no admin needed), and launch Trasea.
+2. Switch language (`ID | EN`) or open **App Settings (`⚙` / `Ctrl+,`)** anytime to choose Dark/Light/System theme, export defaults, and custom keyboard shortcuts.
 3. Click **Try sample image**, press `Ctrl+V` to paste from clipboard, drag an image/`.trasea` project/folder onto the window, or click **Open image / project…**.
-4. Use **Crop & Rotate**, **Outline (`Ctrl+Y`)**, layer eye toggles, **Production Mode** (**Standard**, **Screen Print**, **Cut / Embroidery**, **Shading**), Custom Presets, brush strokes, or palette (`Ctrl+Z`/`Ctrl+Shift+Z` to undo/redo, `Ctrl+S` to save `.trasea`).
-5. Copy SVG (`Ctrl+Shift+C`), export **SVG**, **PDF (RGB/CMYK)**, **DXF (mm/px)**, **Palette .ase**, or run **Watch Folder** freely; activate an offline Pro key in **Privacy & License** to also unlock **EPS**, **Separation Films**, and one-shot **Batch Folder**.
+4. Use **Remove background (1-click)**, **Crop & Rotate**, **Production Mode** (**Standard**, **Screen Print**, **Cut / Embroidery**, **Shading**, **Centerline**), **Select Path (`Ctrl+E`)**, **CMYK Soft-Proof (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Colour Inspector (click any palette chip for HEX/RGB/CMYK/HSL & spot ink), and Saved Palette Library.
+5. Enable **Die-Cut Contour (`CutContour`)** if preparing stickers, copy SVG (`Ctrl+Shift+C`), export **SVG**, **PDF (RGB/CMYK/Spot)**, **DXF (mm/px)**, **`.ase`/`.gpl`/`.json`/`.css` palettes**, or run **Watch Folder** freely; activate a local Pro key in **Privacy & License** to also unlock **EPS**, **Separation Films**, and one-shot **Batch Folder**.
 
 ## Build from source
 
@@ -76,16 +80,16 @@ npx tauri build --target x86_64-pc-windows-gnu
 Developer tools:
 
 ```
-npm test                                   # 71 cargo tests: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10
-cargo run --release --bin trasea-cli -- in.jpg out.svg [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm 120] [--mode standard|screen-print|cutting|shading] [--crop X,Y,W,H] [--rotate DEG] [--separations dir]
-cargo run --release --bin trasea-cli -- --batch <input-dir> <output-dir> [--mode standard|screen-print|cutting|shading] [--color-space rgb|cmyk] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--subfolders] [--no-report]
-cargo run --release --bin trasea-cli -- --watch <input-dir> <output-dir> [--poll-ms 1000] [--debounce-ms 500] [--dxf] [--pdf] [--color-space cmyk]
+npm test                                   # 81 cargo tests: V1-V7, W1-W6, G1-G8, D0-D6, T-01..T-09, E-01..E-03, L-01..L-03, P-01..P-02, N-01, F-01..F-10, G12-01..G12-10
+cargo run --release --bin trasea-cli -- in.png out.svg [--remove-bg] [--bg-tolerance 24] [--defringe 1] [--mode standard|screen-print|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt 1.0] [--die-cut] [--die-cut-mm 2.0] [--die-cut-name CutContour] [--spot "#E63946=PANTONE 185 C"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm 120] [--crop X,Y,W,H] [--rotate DEG] [--separations dir]
+cargo run --release --bin trasea-cli -- --batch <input-dir> <output-dir> [--mode standard|screen-print|cutting|shading|centerline] [--remove-bg] [--die-cut] [--color-space rgb|cmyk] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--subfolders] [--no-report]
+cargo run --release --bin trasea-cli -- --watch <input-dir> <output-dir> [--poll-ms 1000] [--debounce-ms 500] [--dxf] [--pdf] [--die-cut] [--color-space cmyk]
 cargo run --release --bin trasea-keygen -- init | issue --secret <HEX> --name "..." --id "TR-2026-0001" | verify <KEY>
 cargo run --release --bin bench -- --dir <vectorize-bench folder> --sidecar <realesrgan folder>
 ```
 
 See [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) before commercial distribution.
 
-## Offline & Licenses
+## Local-First, Privacy, & Licenses
 
-`trasea-core` and `src-tauri` link zero HTTP/network crates (verified by `V7`, `N-01`, and `F-09`), CSP restricts `connect-src` strictly to local IPC, and WebView2 launches with background networking disabled. License audit: zero GPL/AGPL crates — see [docs/LICENSE-AUDIT-1.1.0.md](docs/LICENSE-AUDIT-1.1.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+All image cleaning, vectorization, and exports run locally on your computer without uploading designs to any cloud service, and Trasea continues to work without an internet connection. The core `trasea-core` crate links zero HTTP/network crates and zero GPL/AGPL crates (verified automatically by `V7`, `N-01`, `F-09`, and `G12-10`), and the WebView enforces a strict local-IPC CSP. See [docs/LICENSE-AUDIT-1.2.0.md](docs/LICENSE-AUDIT-1.2.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
