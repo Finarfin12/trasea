@@ -322,6 +322,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         ProductionMode::ScreenPrint => ProductionOptions::screen_print(),
         ProductionMode::CutEmbroidery => ProductionOptions::cut_embroidery(),
         ProductionMode::Shading => ProductionOptions::shading(),
+        ProductionMode::Centerline => ProductionOptions::centerline(),
     };
     if let Some(ms) = params.min_stroke_pt {
         prod.min_stroke_pt = ms.max(0.0);
@@ -337,7 +338,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
     let colors = match mode {
         ProductionMode::Shading => params.colors.clamp(2, 32),
         ProductionMode::ScreenPrint => params.colors.clamp(2, 8),
-        ProductionMode::Standard | ProductionMode::CutEmbroidery => params.colors.clamp(2, 16),
+        ProductionMode::Standard | ProductionMode::CutEmbroidery | ProductionMode::Centerline => params.colors.clamp(2, 16),
     };
 
     Params {
@@ -368,6 +369,7 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         color_space: options.color_space,
         dxf_unit: options.dxf_unit,
         dxf_target_width_mm: options.dxf_target_width_mm.filter(|v| v.is_finite() && *v > 0.0),
+        ..ExportOptions::default()
     }
 }
 

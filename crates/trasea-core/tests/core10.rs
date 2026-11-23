@@ -254,6 +254,9 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             registration_marks: true,
             sablon_knockout: false,
             preprocess: Default::default(),
+            centerline_invert: false,
+            centerline_stroke_pt: 1.0,
+            path_edits: vec![],
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),
@@ -263,6 +266,11 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             color_space: Default::default(),
             dxf_unit: Default::default(),
             dxf_target_width_mm: None,
+            die_cut_contour: false,
+            die_cut_offset_mm: 2.0,
+            die_cut_spot_name: "CutContour".into(),
+            die_cut_bridge_islands: true,
+            spot_colors: vec![],
         },
     };
     let p_path = root.join("demo.trasea");
@@ -306,6 +314,9 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             registration_marks: false,
             sablon_knockout: false,
             preprocess: Default::default(),
+            centerline_invert: false,
+            centerline_stroke_pt: 1.0,
+            path_edits: vec![],
         },
         export_options: ProjectExportOptions {
             lines_as: "shape".into(),
@@ -315,6 +326,11 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             color_space: Default::default(),
             dxf_unit: Default::default(),
             dxf_target_width_mm: None,
+            die_cut_contour: false,
+            die_cut_offset_mm: 2.0,
+            die_cut_spot_name: "CutContour".into(),
+            die_cut_bridge_islands: true,
+            spot_colors: vec![],
         },
     };
     let p_path = root.join("moved.trasea");

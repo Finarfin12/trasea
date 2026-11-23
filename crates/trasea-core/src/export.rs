@@ -1,11 +1,17 @@
-//! Export: SVG with named layers (`Latar` > `Bidang warna` > `Garis` > optional `Registrasi`),
-//! per-colour black separation films (`to_separation_svgs`, `to_separation_pdfs`, `to_separation_eps`),
-//! PDF (RGB via svg2pdf, CMYK via pure PDF 1.4 DeviceCMYK), EPS (RGB & CMYK), DXF (via `dxf.rs`),
-//! and Adobe Swatch Exchange (.ase in RGB or CMYK).
+//! Export: SVG with named layers (`Latar` > `Bidang warna` > `Garis` > optional `CutContour` > optional `Registrasi`)
+//! and deterministic `data-trasea-id` attributes, per-colour black separation films (`to_separation_svgs`,
+//! `to_separation_pdfs`, `to_separation_eps`), PDF 1.4 (RGB via svg2pdf, CMYK & Named Spot `/Separation` via native
+//! PDF 1.4 writer), EPSF-3.0 (RGB, CMYK, & Named Spot `%%CMYKCustomColor`), DXF (via `dxf.rs`),
+//! and Adobe Swatch Exchange (`.ase` in RGB or CMYK, with Global & Spot `0x0001` colour types).
 
 use crate::centerline::Stroke;
-use crate::color::{rgb_arr_to_cmyk, ColorSpace};
+use crate::color::{
+    eps_string_escape, lookup_spot_name, parse_hex_rgb, pdf_name_encode, rgb_arr_to_cmyk,
+    sanitize_spot_name, ColorSpace, SpotColorMapping,
+};
+use crate::contour::{build_die_cut_contours, die_cut_bounds_svg};
 use crate::dxf::DxfUnit;
+use crate::path_edit::group_contours_into_compounds;
 use crate::primitives::Primitive;
 use crate::production::{ProductionMode, ProductionOptions};
 use crate::trace::{Contour, Layer};
@@ -16,6 +22,24 @@ pub use crate::dxf::to_dxf;
 
 /// Outer margin (px) added on every side when registration marks are enabled.
 pub const REG_MARGIN: f64 = 28.0;
+
+/// Default magenta preview colour for `CutContour` (`CMYK 0/100/0/0`).
+pub const DIE_CUT_RGB: Rgb = [236, 0, 140];
+pub const DIE_CUT_CMYK: [f32; 4] = [0.0, 1.0, 0.0, 0.0];
+/// Default die-cut stroke width in points (QT-2: 0.25 pt).
+pub const DIE_CUT_STROKE_PT: f64 = 0.25;
+
+fn default_die_cut_mm() -> f64 {
+    2.0
+}
+
+fn default_die_cut_spot_name() -> String {
+    "CutContour".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
 
 /// Thin lines of one colour, as strokes (centerline + width), in working pixels.
 #[derive(Debug, Clone)]
@@ -84,6 +108,21 @@ pub struct ExportOptions {
     /// Optional target physical width in mm for DXF export (overrides 96 DPI default when `Mm`).
     #[serde(default)]
     pub dxf_target_width_mm: Option<f32>,
+    /// Emit an automatic outer Die-Cut / Kiss-Cut contour (`CutContour`).
+    #[serde(default)]
+    pub die_cut_contour: bool,
+    /// Outer offset distance for the die-cut contour in mm (`0.5..=10.0`, default `2.0`).
+    #[serde(default = "default_die_cut_mm")]
+    pub die_cut_offset_mm: f64,
+    /// Spot ink name for the die-cut contour (default `"CutContour"`).
+    #[serde(default = "default_die_cut_spot_name")]
+    pub die_cut_spot_name: String,
+    /// Bridge nearby islands into a single smooth die-cut contour (default `true`).
+    #[serde(default = "default_true")]
+    pub die_cut_bridge_islands: bool,
+    /// Named RIP spot colour mappings (e.g. `#FF0000 -> "Spot_Red"`).
+    #[serde(default)]
+    pub spot_colors: Vec<SpotColorMapping>,
 }
 
 impl Default for ExportOptions {
@@ -96,6 +135,11 @@ impl Default for ExportOptions {
             color_space: ColorSpace::Rgb,
             dxf_unit: DxfUnit::Mm,
             dxf_target_width_mm: None,
+            die_cut_contour: false,
+            die_cut_offset_mm: default_die_cut_mm(),
+            die_cut_spot_name: default_die_cut_spot_name(),
+            die_cut_bridge_islands: true,
+            spot_colors: Vec::new(),
         }
     }
 }
@@ -116,6 +160,13 @@ pub fn export_options_for_production(prod: &ProductionOptions) -> ExportOptions 
             trap_pt: 0.0,
             registration_marks: false,
             strip_background: prod.strip_background,
+            ..ExportOptions::default()
+        },
+        ProductionMode::Centerline => ExportOptions {
+            lines_as: LinesAs::Stroke,
+            trap_pt: 0.0,
+            registration_marks: false,
+            strip_background: true,
             ..ExportOptions::default()
         },
     }
@@ -185,6 +236,32 @@ fn path_d(contours: &[Contour], k: f64) -> String {
     d
 }
 
+fn path_d_indexed(contours: &[Contour], indices: &[usize], k: f64) -> String {
+    let mut d = String::new();
+    for &idx in indices {
+        let c = &contours[idx];
+        d.push('M');
+        d.push_str(&pt(c.start, k));
+        let mut prev = c.start;
+        for cv in &c.curves {
+            if is_straight(prev, cv[0], cv[1], cv[2], k) {
+                d.push('L');
+                d.push_str(&pt(cv[2], k));
+            } else {
+                d.push('C');
+                d.push_str(&pt(cv[0], k));
+                d.push(' ');
+                d.push_str(&pt(cv[1], k));
+                d.push(' ');
+                d.push_str(&pt(cv[2], k));
+            }
+            prev = cv[2];
+        }
+        d.push('Z');
+    }
+    d
+}
+
 fn stroke_d(s: &StrokeData, k: f64) -> String {
     let mut d = String::from("M");
     d.push_str(&pt(s.curves[0][0], k));
@@ -204,7 +281,7 @@ fn stroke_d(s: &StrokeData, k: f64) -> String {
     d
 }
 
-/// SVG element of a recognised shape. `extra` carries the optional trap stroke attributes.
+/// SVG element of a recognised shape. `extra` carries optional trap stroke and `data-trasea-id` attributes.
 fn primitive_svg(p: &Primitive, color: &str, extra: &str, k: f64) -> String {
     let rot = |a: f64, cx: f64, cy: f64| if a.abs() > 0.5 { format!(" transform=\"rotate({} {} {})\"", num(a), num(cx / k), num(cy / k)) } else { String::new() };
     match p {
@@ -263,19 +340,49 @@ fn group_names(index: usize, color: Rgb) -> (String, String) {
     (format!("Warna_{:02}_{}", index, &h[1..]), format!("Warna {:02} {}", index, h))
 }
 
+fn sanitize_svg_id(name: &str) -> String {
+    let clean = sanitize_spot_name(name).replace(' ', "_");
+    if clean.is_empty() {
+        "CutContour".to_string()
+    } else {
+        clean
+    }
+}
+
 pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
     let k = doc.scale;
+    let die_cut_contours = if opts.die_cut_contour {
+        build_die_cut_contours(doc, opts)
+    } else {
+        Vec::new()
+    };
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+        (0.0, 0.0, doc.width as f64, doc.height as f64)
+    } else {
+        die_cut_bounds_svg(doc, &die_cut_contours)
+    };
+    let content_w = dc_max_x - dc_min_x;
+    let content_h = dc_max_y - dc_min_y;
+    let shift_x = (-dc_min_x).max(0.0);
+    let shift_y = (-dc_min_y).max(0.0);
+    let reg_m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
+    let total_tx = shift_x + reg_m;
+    let total_ty = shift_y + reg_m;
+    let needs_transform = total_tx.abs() > 1e-6 || total_ty.abs() > 1e-6;
+
     let mut s = String::new();
     s.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    if opts.registration_marks {
-        let vw = doc.width as f64 + 2.0 * REG_MARGIN;
-        let vh = doc.height as f64 + 2.0 * REG_MARGIN;
+    if opts.registration_marks || !die_cut_contours.is_empty() {
+        let vw = content_w + 2.0 * reg_m;
+        let vh = content_h + 2.0 * reg_m;
         s.push_str(&format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"{vw}\" height=\"{vh}\" viewBox=\"0 0 {vw} {vh}\">\n",
             vw = num(vw),
             vh = num(vh)
         ));
-        s.push_str(&format!("<g transform=\"translate({}, {})\">\n", num(REG_MARGIN), num(REG_MARGIN)));
+        if needs_transform {
+            s.push_str(&format!("<g transform=\"translate({}, {})\">\n", num(total_tx), num(total_ty)));
+        }
     } else {
         s.push_str(&format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n",
@@ -286,17 +393,29 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
 
     // trap: a stroke of the fill colour makes every field grow by half of this width on each side
     let trap_px = opts.trap_pt * 96.0 / 72.0;
-    let field = |layer: &Layer, index: usize, with_trap: bool, out: &mut String| {
+    let field = |layer: &Layer, field_idx: usize, index: usize, with_trap: bool, out: &mut String| {
         let (id, name) = group_names(index, layer.color);
         let color = hex(layer.color);
-        let trap = if with_trap && trap_px > 0.0 { format!(" stroke=\"{color}\" stroke-width=\"{}\" stroke-linejoin=\"round\"", num(trap_px)) } else { String::new() };
+        let trap = if with_trap && trap_px > 0.0 {
+            format!(" stroke=\"{color}\" stroke-width=\"{}\" stroke-linejoin=\"round\"", num(trap_px))
+        } else {
+            String::new()
+        };
         out.push_str(&format!("<g id=\"{id}\" data-name=\"{name}\">\n"));
-        // a layer whose every solid was recognised as a basic shape has no path left
-        if !layer.contours.is_empty() || layer.prims.is_empty() {
-            out.push_str(&format!("<path fill=\"{color}\" fill-rule=\"evenodd\"{trap} d=\"{}\"/>\n", path_d(&layer.contours, k)));
+        if !layer.contours.is_empty() {
+            let compounds = group_contours_into_compounds(&layer.contours);
+            for (ci, members) in compounds.iter().enumerate() {
+                out.push_str(&format!(
+                    "<path data-trasea-id=\"f:{field_idx}:{ci}\" fill=\"{color}\" fill-rule=\"evenodd\"{trap} d=\"{}\"/>\n",
+                    path_d_indexed(&layer.contours, members, k)
+                ));
+            }
+        } else if layer.prims.is_empty() {
+            out.push_str(&format!("<path data-trasea-id=\"f:{field_idx}:0\" fill=\"{color}\" fill-rule=\"evenodd\"{trap} d=\"\"/>\n"));
         }
-        for p in &layer.prims {
-            out.push_str(&primitive_svg(p, &color, &trap, k));
+        for (pi, p) in layer.prims.iter().enumerate() {
+            let extra = format!(" data-trasea-id=\"fp:{field_idx}:{pi}\"{trap}");
+            out.push_str(&primitive_svg(p, &color, &extra, k));
         }
         out.push_str("</g>\n");
     };
@@ -306,7 +425,7 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
     // 1. Latar: background layer (omitted when strip_background is active or no canvas layer exists)
     if !opts.strip_background && has_canvas_bg {
         s.push_str("<g id=\"Latar\" data-name=\"Latar\">\n");
-        field(&doc.fields[0], idx, false, &mut s);
+        field(&doc.fields[0], 0, idx, false, &mut s);
         idx += 1;
         s.push_str("</g>\n");
     } else if !opts.strip_background && !has_canvas_bg && doc.fields.is_empty() {
@@ -315,31 +434,45 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
     // 2. Bidang warna: one sub-group per colour
     s.push_str("<g id=\"Bidang_warna\" data-name=\"Bidang warna\">\n");
     let skip_first = if has_canvas_bg { 1 } else { 0 };
-    for layer in doc.fields.iter().skip(skip_first) {
-        field(layer, idx, true, &mut s);
+    for (fi, layer) in doc.fields.iter().enumerate().skip(skip_first) {
+        field(layer, fi, idx, true, &mut s);
         idx += 1;
     }
     s.push_str("</g>\n");
-    // 3. Garis: thin lines on top
+    // 3. Garis: thin lines / centerline strokes on top
     s.push_str("<g id=\"Garis\" data-name=\"Garis\">\n");
     match opts.lines_as {
         LinesAs::Shape => {
-            for l in &doc.line_shapes {
-                s.push_str(&format!("<path fill=\"{}\" fill-rule=\"evenodd\" d=\"{}\"/>\n", hex(l.color), path_d(&l.contours, k)));
+            for (li, l) in doc.line_shapes.iter().enumerate() {
+                let compounds = group_contours_into_compounds(&l.contours);
+                for (ci, members) in compounds.iter().enumerate() {
+                    s.push_str(&format!(
+                        "<path data-trasea-id=\"ls:{li}:{ci}\" fill=\"{}\" fill-rule=\"evenodd\" d=\"{}\"/>\n",
+                        hex(l.color),
+                        path_d_indexed(&l.contours, members, k)
+                    ));
+                }
             }
         }
         LinesAs::Stroke => {
-            for l in &doc.line_fallback {
-                s.push_str(&format!("<path fill=\"{}\" fill-rule=\"evenodd\" d=\"{}\"/>\n", hex(l.color), path_d(&l.contours, k)));
+            for (li, l) in doc.line_fallback.iter().enumerate() {
+                let compounds = group_contours_into_compounds(&l.contours);
+                for (ci, members) in compounds.iter().enumerate() {
+                    s.push_str(&format!(
+                        "<path data-trasea-id=\"lf:{li}:{ci}\" fill=\"{}\" fill-rule=\"evenodd\" d=\"{}\"/>\n",
+                        hex(l.color),
+                        path_d_indexed(&l.contours, members, k)
+                    ));
+                }
             }
-            for sl in &doc.strokes {
+            for (sli, sl) in doc.strokes.iter().enumerate() {
                 let color = hex(sl.color);
-                for st in &sl.strokes {
+                for (si, st) in sl.strokes.iter().enumerate() {
                     if st.curves.is_empty() {
                         continue;
                     }
                     s.push_str(&format!(
-                        "<path fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"{}\"/>\n",
+                        "<path data-trasea-id=\"s:{sli}:{si}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"{}\"/>\n",
                         num(st.width / k),
                         stroke_d(st, k)
                     ));
@@ -348,9 +481,29 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
         }
     }
     s.push_str("</g>\n");
-    if opts.registration_marks {
+
+    // 4. Optional Die-Cut Contour layer (`CutContour`)
+    if !die_cut_contours.is_empty() {
+        let spot_display = sanitize_spot_name(&opts.die_cut_spot_name);
+        let group_id = sanitize_svg_id(&spot_display);
+        let cut_hex = hex(DIE_CUT_RGB);
+        let stroke_px = DIE_CUT_STROKE_PT * 96.0 / 72.0;
+        s.push_str(&format!("<g id=\"{group_id}\" data-name=\"{spot_display}\">\n"));
+        for c in &die_cut_contours {
+            s.push_str(&format!(
+                "<path fill=\"none\" stroke=\"{cut_hex}\" stroke-width=\"{}\" stroke-linejoin=\"round\" d=\"{}\"/>\n",
+                num(stroke_px),
+                path_d(std::slice::from_ref(c), k)
+            ));
+        }
         s.push_str("</g>\n");
-        s.push_str(&registration_marks_svg(doc.width as f64, doc.height as f64, REG_MARGIN));
+    }
+
+    if needs_transform {
+        s.push_str("</g>\n");
+    }
+    if opts.registration_marks {
+        s.push_str(&registration_marks_svg(content_w, content_h, REG_MARGIN));
     }
     s.push_str("</svg>\n");
     s
@@ -471,7 +624,6 @@ pub fn to_separation_svgs(doc: &Doc, opts: &ExportOptions) -> Vec<SeparationFilm
             for p in &layer.prims {
                 s.push_str(&primitive_svg(p, black, &trap, k));
             }
-            // Include thin lines assigned to this spot colour.
             match opts.lines_as {
                 LinesAs::Shape => {
                     for l in &doc.line_shapes {
@@ -547,10 +699,12 @@ pub fn to_separation_pdfs(doc: &Doc, opts: &ExportOptions) -> Result<Vec<(Separa
             registration_marks: true,
             strip_background: false,
             color_space: ColorSpace::Cmyk,
+            die_cut_contour: false,
+            spot_colors: Vec::new(),
             ..opts.clone()
         };
         let label = format!("Film {:02}/{:02} - {}", film.index, total, hex(film.color));
-        let pdf = to_pdf_cmyk(&sub_doc, &sub_opts, Some(&label));
+        let pdf = to_pdf_native(&sub_doc, &sub_opts, Some(&label));
         out.push((film, pdf));
     }
     Ok(out)
@@ -576,6 +730,8 @@ pub fn to_separation_eps(doc: &Doc, opts: &ExportOptions) -> Vec<(SeparationFilm
             let sub_opts = ExportOptions {
                 registration_marks: true,
                 strip_background: false,
+                die_cut_contour: false,
+                spot_colors: Vec::new(),
                 ..opts.clone()
             };
             let eps = to_eps(&sub_doc, &sub_opts);
@@ -592,14 +748,15 @@ pub fn svg_to_pdf(svg: &str) -> Result<Vec<u8>> {
     svg2pdf::to_pdf(&tree, svg2pdf::ConversionOptions::default(), svg2pdf::PageOptions::default()).map_err(|e| Error::Other(format!("PDF export failed: {e}")))
 }
 
-/// Export `Doc` to PDF bytes respecting `opts.color_space`:
-/// - `ColorSpace::Rgb`: converts via `svg_to_pdf(&to_svg(doc, opts))`.
-/// - `ColorSpace::Cmyk`: emits a pure PDF 1.4 DeviceCMYK document using `k`/`K` operators
-///   with zero RGB operators and `0 0 0 1` Pure Black for blacks & registration marks.
+/// Export `Doc` to PDF bytes respecting `opts.color_space`, `opts.spot_colors`, and `opts.die_cut_contour`:
+/// - `ColorSpace::Rgb` without spot colours or die-cut: converts via `svg_to_pdf(&to_svg(doc, opts))`.
+/// - `ColorSpace::Cmyk` or when Named Spot Colors / `CutContour` are active: emits a pure PDF 1.4
+///   document with `/Separation /<SpotName> /DeviceCMYK` colour space resources and `CS`/`SCN`/`cs`/`scn`.
 pub fn to_pdf(doc: &Doc, opts: &ExportOptions) -> Result<Vec<u8>> {
-    match opts.color_space {
-        ColorSpace::Rgb => svg_to_pdf(&to_svg(doc, opts)),
-        ColorSpace::Cmyk => Ok(to_pdf_cmyk(doc, opts, None)),
+    if opts.color_space == ColorSpace::Rgb && opts.spot_colors.is_empty() && !opts.die_cut_contour {
+        svg_to_pdf(&to_svg(doc, opts))
+    } else {
+        Ok(to_pdf_native(doc, opts, None))
     }
 }
 
@@ -618,18 +775,95 @@ fn cmyk_fmt(c: [f32; 4]) -> String {
     format!("{} {} {} {}", f(c[0]), f(c[1]), f(c[2]), f(c[3]))
 }
 
+fn rgb_pdf_fmt(c: Rgb) -> String {
+    format!(
+        "{:.4} {:.4} {:.4}",
+        c[0] as f64 / 255.0,
+        c[1] as f64 / 255.0,
+        c[2] as f64 / 255.0
+    )
+}
+
 fn pdf_escape_text(s: &str) -> String {
     s.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)")
 }
 
-/// Pure PDF 1.4 writer emitting DeviceCMYK (`k` / `K`) vector paths directly from `Doc`.
-fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> Vec<u8> {
+/// Registry of Named Spot Colors for one PDF or EPS export.
+struct SpotRegistry {
+    /// `(resource_key "CS1", sanitized_name, fallback_cmyk, optional_source_rgb)`
+    entries: Vec<(String, String, [f32; 4], Option<Rgb>)>,
+}
+
+impl SpotRegistry {
+    fn build(opts: &ExportOptions, has_die_cut: bool) -> Self {
+        let mut entries: Vec<(String, String, [f32; 4], Option<Rgb>)> = Vec::new();
+        let mut push_unique = |name: String, cmyk: [f32; 4], rgb: Option<Rgb>| {
+            let clean = sanitize_spot_name(&name);
+            if !entries.iter().any(|(_, n, _, _)| n == &clean) {
+                let key = format!("CS{}", entries.len() + 1);
+                entries.push((key, clean, cmyk, rgb));
+            }
+        };
+        if has_die_cut {
+            push_unique(opts.die_cut_spot_name.clone(), DIE_CUT_CMYK, None);
+        }
+        for m in &opts.spot_colors {
+            if let Some(rgb) = parse_hex_rgb(&m.hex) {
+                push_unique(m.spot_name.clone(), rgb_arr_to_cmyk(rgb), Some(rgb));
+            }
+        }
+        Self { entries }
+    }
+
+    fn key_for_rgb(&self, rgb: Rgb) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|(_, _, _, src)| *src == Some(rgb))
+            .map(|(k, _, _, _)| k.as_str())
+    }
+
+    fn entry_for_rgb(&self, rgb: Rgb) -> Option<(&str, [f32; 4])> {
+        self.entries
+            .iter()
+            .find(|(_, _, _, src)| *src == Some(rgb))
+            .map(|(_, name, cmyk, _)| (name.as_str(), *cmyk))
+    }
+
+    fn key_for_name(&self, raw_name: &str) -> Option<&str> {
+        let clean = sanitize_spot_name(raw_name);
+        self.entries
+            .iter()
+            .find(|(_, n, _, _)| n == &clean)
+            .map(|(k, _, _, _)| k.as_str())
+    }
+}
+
+/// Pure PDF 1.4 writer supporting DeviceCMYK, DeviceRGB, Named Spot `/Separation` colour spaces,
+/// and `CutContour` die-cut layers.
+fn to_pdf_native(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> Vec<u8> {
     let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
     let m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
-    let total_w = doc.width as f64 + 2.0 * m;
-    let total_h = doc.height as f64 + 2.0 * m;
 
-    let map_svg = |sx: f64, sy: f64| -> (f64, f64) { (sx, total_h - sy) };
+    let die_cut_contours = if opts.die_cut_contour {
+        build_die_cut_contours(doc, opts)
+    } else {
+        Vec::new()
+    };
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+        (0.0, 0.0, doc.width as f64, doc.height as f64)
+    } else {
+        die_cut_bounds_svg(doc, &die_cut_contours)
+    };
+    let shift_x = (-dc_min_x).max(0.0);
+    let shift_y = (-dc_min_y).max(0.0);
+    let content_w = dc_max_x - dc_min_x;
+    let content_h = dc_max_y - dc_min_y;
+    let total_w = content_w + 2.0 * m;
+    let total_h = content_h + 2.0 * m;
+
+    let spots = SpotRegistry::build(opts, !die_cut_contours.is_empty());
+
+    let map_svg = |sx: f64, sy: f64| -> (f64, f64) { (sx + shift_x, total_h - (sy + shift_y)) };
     let map_work = |p: (f64, f64)| -> (f64, f64) { map_svg(p.0 / k + m, p.1 / k + m) };
 
     let mut stream = String::with_capacity(16 * 1024);
@@ -661,6 +895,28 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
         }
     };
 
+    let set_fill = |color: Rgb, out: &mut String| {
+        if let Some(cs_key) = spots.key_for_rgb(color) {
+            out.push_str(&format!("/{cs_key} cs 1 scn\n"));
+        } else {
+            match opts.color_space {
+                ColorSpace::Cmyk => out.push_str(&format!("{} k\n", cmyk_fmt(rgb_arr_to_cmyk(color)))),
+                ColorSpace::Rgb => out.push_str(&format!("{} rg\n", rgb_pdf_fmt(color))),
+            }
+        }
+    };
+
+    let set_stroke = |color: Rgb, out: &mut String| {
+        if let Some(cs_key) = spots.key_for_rgb(color) {
+            out.push_str(&format!("/{cs_key} CS 1 SCN\n"));
+        } else {
+            match opts.color_space {
+                ColorSpace::Cmyk => out.push_str(&format!("{} K\n", cmyk_fmt(rgb_arr_to_cmyk(color)))),
+                ColorSpace::Rgb => out.push_str(&format!("{} RG\n", rgb_pdf_fmt(color))),
+            }
+        }
+    };
+
     let trap_px = opts.trap_pt.max(0.0) * 96.0 / 72.0;
     let emit_layer = |layer: &Layer, with_trap: bool, out: &mut String| {
         let mut all_contours: Vec<Contour> = layer.contours.clone();
@@ -670,10 +926,10 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
         if all_contours.is_empty() {
             return;
         }
-        let col = cmyk_fmt(rgb_arr_to_cmyk(layer.color));
-        out.push_str(&format!("{col} k\n"));
+        set_fill(layer.color, out);
         if with_trap && trap_px > 0.0 {
-            out.push_str(&format!("{col} K\n1 j {} w\n", ps_num(trap_px)));
+            set_stroke(layer.color, out);
+            out.push_str(&format!("1 j {} w\n", ps_num(trap_px)));
             emit_contours(&all_contours, out);
             out.push_str("B*\n");
         } else {
@@ -692,7 +948,7 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
         emit_layer(layer, true, &mut stream);
     }
 
-    // 3. Thin lines
+    // 3. Thin lines / Centerline strokes
     match opts.lines_as {
         LinesAs::Shape => {
             for l in &doc.line_shapes {
@@ -704,8 +960,8 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
                 emit_layer(l, false, &mut stream);
             }
             for sl in &doc.strokes {
-                let col = cmyk_fmt(rgb_arr_to_cmyk(sl.color));
-                stream.push_str(&format!("{col} K\n1 J 1 j\n"));
+                set_stroke(sl.color, &mut stream);
+                stream.push_str("1 J 1 j\n");
                 for st in &sl.strokes {
                     if st.curves.is_empty() {
                         continue;
@@ -736,16 +992,29 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
         }
     }
 
-    // 4. Registration marks (Pure K = 0 0 0 1)
+    // 4. Die-Cut Contour layer (`/Separation /CutContour /DeviceCMYK`, stroke 0.25 pt)
+    if !die_cut_contours.is_empty() {
+        if let Some(cut_key) = spots.key_for_name(&opts.die_cut_spot_name) {
+            stream.push_str(&format!("/{cut_key} CS 1 SCN\n1 j {} w\n", ps_num(DIE_CUT_STROKE_PT)));
+        } else {
+            stream.push_str(&format!("0 1 0 0 K\n1 j {} w\n", ps_num(DIE_CUT_STROKE_PT)));
+        }
+        emit_contours(&die_cut_contours, &mut stream);
+        stream.push_str("S\n");
+    }
+
+    // 5. Registration marks (Pure K = 0 0 0 1 in CMYK, 0 0 0 in RGB)
     if opts.registration_marks {
-        let (w, h) = (doc.width as f64, doc.height as f64);
         let pts = [
-            (m / 2.0, m / 2.0),
-            (w + 1.5 * m, m / 2.0),
-            (m / 2.0, h + 1.5 * m),
-            (w + 1.5 * m, h + 1.5 * m),
+            (m / 2.0 - shift_x, m / 2.0 - shift_y),
+            (content_w + 1.5 * m - shift_x, m / 2.0 - shift_y),
+            (m / 2.0 - shift_x, content_h + 1.5 * m - shift_y),
+            (content_w + 1.5 * m - shift_x, content_h + 1.5 * m - shift_y),
         ];
-        stream.push_str("0 0 0 1 K\n0.75 w\n");
+        match opts.color_space {
+            ColorSpace::Cmyk => stream.push_str("0 0 0 1 K\n0.75 w\n"),
+            ColorSpace::Rgb => stream.push_str("0 0 0 RG\n0.75 w\n"),
+        }
         const KAPPA: f64 = 0.5522847498307936;
         let r = 6.0;
         let kr = r * KAPPA;
@@ -777,8 +1046,24 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
 
     stream.push_str("Q\n");
 
+    // Build `/ColorSpace` resource dictionary for registered Named Spot Colors.
+    let cs_resource = if spots.entries.is_empty() {
+        String::new()
+    } else {
+        let mut dict = String::from(" /ColorSpace <<");
+        for (key, name, cmyk, _) in &spots.entries {
+            let encoded = pdf_name_encode(name);
+            let c1 = cmyk_fmt(*cmyk);
+            dict.push_str(&format!(
+                " /{key} [/Separation /{encoded} /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [{c1}] /N 1 >>]"
+            ));
+        }
+        dict.push_str(" >>");
+        dict
+    };
+
     // Assemble PDF 1.4 container with exact byte offsets.
-    let mut pdf = Vec::<u8>::with_capacity(stream.len() + 1024);
+    let mut pdf = Vec::<u8>::with_capacity(stream.len() + 1024 + cs_resource.len());
     pdf.extend_from_slice(b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
     let mut offsets = vec![0usize; 6]; // 1..=5
 
@@ -790,7 +1075,7 @@ fn to_pdf_cmyk(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) -> V
 
     offsets[3] = pdf.len();
     let page_obj = format!(
-        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n",
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 5 0 R >>{cs_resource} >> /Contents 4 0 R >>\nendobj\n",
         ps_num(total_w),
         ps_num(total_h)
     );
@@ -835,39 +1120,79 @@ pub fn to_ase(palette: &[Rgb]) -> Vec<u8> {
 
 /// `.ase` file in either RGB (`RGB ` + 3 floats) or CMYK (`CMYK` + 4 floats) colour model.
 pub fn to_ase_with_color_space(palette: &[Rgb], color_space: ColorSpace) -> Vec<u8> {
+    to_ase_with_spots(palette, color_space, &[], None)
+}
+
+/// `.ase` file supporting Named Spot Colors (ASE colour type `0x0001` Spot vs `0x0000` Global)
+/// and an optional `die_cut_spot` swatch (e.g. `"CutContour"` at CMYK `0/100/0/0`).
+pub fn to_ase_with_spots(
+    palette: &[Rgb],
+    color_space: ColorSpace,
+    spot_colors: &[SpotColorMapping],
+    die_cut_spot: Option<&str>,
+) -> Vec<u8> {
+    let die_cut_clean = die_cut_spot.map(sanitize_spot_name);
+    let extra_cut = die_cut_clean
+        .as_ref()
+        .filter(|name| {
+            !spot_colors
+                .iter()
+                .any(|m| sanitize_spot_name(&m.spot_name) == **name && parse_hex_rgb(&m.hex).map_or(false, |rgb| palette.contains(&rgb)))
+        })
+        .cloned();
+
+    let total_swatches = palette.len() + if extra_cut.is_some() { 1 } else { 0 };
     let mut out = Vec::new();
     out.extend_from_slice(b"ASEF");
     out.extend_from_slice(&1u16.to_be_bytes()); // version 1.0
     out.extend_from_slice(&0u16.to_be_bytes());
-    out.extend_from_slice(&((palette.len() + 2) as u32).to_be_bytes()); // blocks: group start, colours, group end
+    out.extend_from_slice(&((total_swatches + 2) as u32).to_be_bytes()); // blocks: group start, colours, group end
+
     // group start
     let mut gs = Vec::new();
     ase_name(&mut gs, "Trasea");
     out.extend_from_slice(&0xC001u16.to_be_bytes());
     out.extend_from_slice(&(gs.len() as u32).to_be_bytes());
     out.extend_from_slice(&gs);
-    for (i, c) in palette.iter().enumerate() {
+
+    let emit_swatch = |out: &mut Vec<u8>, name: &str, rgb: Rgb, cmyk_override: Option<[f32; 4]>, is_spot: bool| {
         let mut body = Vec::new();
-        ase_name(&mut body, &format!("Trasea {:02} {}", i + 1, hex(*c)));
+        ase_name(&mut body, name);
         match color_space {
-            ColorSpace::Rgb => {
+            ColorSpace::Rgb if !is_spot || cmyk_override.is_none() => {
                 body.extend_from_slice(b"RGB ");
-                for ch in c {
-                    body.extend_from_slice(&(*ch as f32 / 255.0).to_be_bytes());
+                for ch in rgb {
+                    body.extend_from_slice(&(ch as f32 / 255.0).to_be_bytes());
                 }
             }
-            ColorSpace::Cmyk => {
+            _ => {
                 body.extend_from_slice(b"CMYK");
-                for ch in rgb_arr_to_cmyk(*c) {
+                let cmyk = cmyk_override.unwrap_or_else(|| rgb_arr_to_cmyk(rgb));
+                for ch in cmyk {
                     body.extend_from_slice(&ch.to_be_bytes());
                 }
             }
         }
-        body.extend_from_slice(&0u16.to_be_bytes()); // colour type: global
+        let color_type: u16 = if is_spot { 0x0001 } else { 0x0000 }; // 0x0001 = Spot, 0x0000 = Global
+        body.extend_from_slice(&color_type.to_be_bytes());
         out.extend_from_slice(&0x0001u16.to_be_bytes());
         out.extend_from_slice(&(body.len() as u32).to_be_bytes());
         out.extend_from_slice(&body);
+    };
+
+    for (i, &c) in palette.iter().enumerate() {
+        if let Some(spot_name) = lookup_spot_name(c, spot_colors) {
+            emit_swatch(&mut out, &spot_name, c, None, true);
+        } else {
+            let label = format!("Trasea {:02} {}", i + 1, hex(c));
+            emit_swatch(&mut out, &label, c, None, false);
+        }
     }
+
+    if let Some(cut_name) = extra_cut {
+        emit_swatch(&mut out, &cut_name, DIE_CUT_RGB, Some(DIE_CUT_CMYK), true);
+    }
+
     // group end
     out.extend_from_slice(&0xC002u16.to_be_bytes());
     out.extend_from_slice(&0u32.to_be_bytes());
@@ -881,7 +1206,10 @@ fn ps_num(v: f64) -> String {
     num(safe)
 }
 
-fn ps_color(c: Rgb, cs: ColorSpace) -> String {
+fn ps_color(c: Rgb, cs: ColorSpace, spots: &SpotRegistry) -> String {
+    if let Some((name, cmyk)) = spots.entry_for_rgb(c) {
+        return format!("{} ({}) SPOT\n", cmyk_fmt(cmyk), eps_string_escape(name));
+    }
     match cs {
         ColorSpace::Rgb => format!(
             "{:.4} {:.4} {:.4} RGB\n",
@@ -993,23 +1321,56 @@ pub(crate) fn primitive_to_contour(p: &Primitive) -> Contour {
 }
 
 /// Pure PostScript Level 2 / EPSF-3.0 export directly from `Doc` (no Ghostscript or Inkscape needed).
-/// Supports both RGB (`setrgbcolor`) and CMYK (`setcmykcolor`, zero `setrgbcolor` in output) via `opts.color_space`.
+/// Supports RGB (`setrgbcolor`), CMYK (`setcmykcolor`, zero `setrgbcolor` in output),
+/// Named Spot Colors (`%%DocumentCustomColors:`, `%%CMYKCustomColor:`, Level-2 Separation `/SPOT`),
+/// and `CutContour` die-cut layers.
 pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
     let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
     let m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
-    let total_w = doc.width as f64 + 2.0 * m;
-    let total_h = doc.height as f64 + 2.0 * m;
+
+    let die_cut_contours = if opts.die_cut_contour {
+        build_die_cut_contours(doc, opts)
+    } else {
+        Vec::new()
+    };
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+        (0.0, 0.0, doc.width as f64, doc.height as f64)
+    } else {
+        die_cut_bounds_svg(doc, &die_cut_contours)
+    };
+    let shift_x = (-dc_min_x).max(0.0);
+    let shift_y = (-dc_min_y).max(0.0);
+    let content_w = dc_max_x - dc_min_x;
+    let content_h = dc_max_y - dc_min_y;
+    let total_w = content_w + 2.0 * m;
+    let total_h = content_h + 2.0 * m;
     let bb_w = total_w.ceil() as u32;
     let bb_h = total_h.ceil() as u32;
     let cs = opts.color_space;
+    let spots = SpotRegistry::build(opts, !die_cut_contours.is_empty());
 
     let mut s = String::new();
     s.push_str("%!PS-Adobe-3.0 EPSF-3.0\n");
-    s.push_str("%%Creator: Trasea 1.1.0\n");
+    s.push_str("%%Creator: Trasea\n");
     s.push_str(&format!("%%BoundingBox: 0 0 {bb_w} {bb_h}\n"));
     s.push_str(&format!("%%HiResBoundingBox: 0 0 {:.2} {:.2}\n", total_w, total_h));
     s.push_str("%%LanguageLevel: 2\n");
     s.push_str("%%Pages: 1\n");
+    if !spots.entries.is_empty() {
+        let names: Vec<String> = spots
+            .entries
+            .iter()
+            .map(|(_, name, _, _)| format!("({})", eps_string_escape(name)))
+            .collect();
+        s.push_str(&format!("%%DocumentCustomColors: {}\n", names.join(" ")));
+        for (_, name, cmyk, _) in &spots.entries {
+            s.push_str(&format!(
+                "%%CMYKCustomColor: {} ({})\n",
+                cmyk_fmt(*cmyk),
+                eps_string_escape(name)
+            ));
+        }
+    }
     s.push_str("%%EndComments\n");
     s.push_str("%%BeginProlog\n");
     s.push_str("/M { moveto } bind def\n");
@@ -1022,10 +1383,16 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
         ColorSpace::Rgb => s.push_str("/RGB { setrgbcolor } bind def\n"),
         ColorSpace::Cmyk => s.push_str("/CMYK { setcmykcolor } bind def\n"),
     }
+    if !spots.entries.is_empty() {
+        // PostScript Level 2 Separation colour space with automatic Level-1 CMYK fallback.
+        s.push_str(
+            "/SPOT {\n  /setcolorspace where {\n    pop\n    5 1 roll 4 array astore /_sc exch def\n    [/Separation 3 -1 roll /DeviceCMYK [ /dup _sc 0 get /mul /exch /dup _sc 1 get /mul /exch /dup _sc 2 get /mul /exch _sc 3 get /mul ] cvx] setcolorspace 1 setcolor\n  } {\n    pop setcmykcolor\n  } ifelse\n} bind def\n",
+        );
+    }
     s.push_str("%%EndProlog\n");
     s.push_str("gsave\n");
 
-    let map_svg = |sx: f64, sy: f64| -> (f64, f64) { (sx, total_h - sy) };
+    let map_svg = |sx: f64, sy: f64| -> (f64, f64) { (sx + shift_x, total_h - (sy + shift_y)) };
     let map_work = |p: (f64, f64)| -> (f64, f64) { map_svg(p.0 / k + m, p.1 / k + m) };
 
     let emit_contours = |contours: &[Contour], out: &mut String| {
@@ -1063,7 +1430,7 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
         if all_contours.is_empty() {
             return;
         }
-        out.push_str(&ps_color(layer.color, cs));
+        out.push_str(&ps_color(layer.color, cs, &spots));
         out.push_str("newpath\n");
         emit_contours(&all_contours, out);
         if with_trap && trap_px > 0.0 {
@@ -1083,7 +1450,7 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
         emit_layer(layer, true, &mut s);
     }
 
-    // 3. Garis
+    // 3. Garis / Centerline strokes
     match opts.lines_as {
         LinesAs::Shape => {
             for l in &doc.line_shapes {
@@ -1095,7 +1462,7 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
                 emit_layer(l, false, &mut s);
             }
             for sl in &doc.strokes {
-                s.push_str(&ps_color(sl.color, cs));
+                s.push_str(&ps_color(sl.color, cs, &spots));
                 for st in &sl.strokes {
                     if st.curves.is_empty() {
                         continue;
@@ -1126,14 +1493,25 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
         }
     }
 
-    // 4. Registration marks (4 corners in outer margin)
+    // 4. Die-Cut Contour layer (Spot CutContour, 0.25 pt)
+    if !die_cut_contours.is_empty() {
+        let cut_name = eps_string_escape(&opts.die_cut_spot_name);
+        s.push_str(&format!(
+            "{} ({cut_name}) SPOT\n1 setlinejoin {} setlinewidth newpath\n",
+            cmyk_fmt(DIE_CUT_CMYK),
+            ps_num(DIE_CUT_STROKE_PT)
+        ));
+        emit_contours(&die_cut_contours, &mut s);
+        s.push_str("S\n");
+    }
+
+    // 5. Registration marks (4 corners in outer margin)
     if opts.registration_marks {
-        let (w, h) = (doc.width as f64, doc.height as f64);
         let pts = [
-            (m / 2.0, m / 2.0),
-            (w + 1.5 * m, m / 2.0),
-            (m / 2.0, h + 1.5 * m),
-            (w + 1.5 * m, h + 1.5 * m),
+            (m / 2.0 - shift_x, m / 2.0 - shift_y),
+            (content_w + 1.5 * m - shift_x, m / 2.0 - shift_y),
+            (m / 2.0 - shift_x, content_h + 1.5 * m - shift_y),
+            (content_w + 1.5 * m - shift_x, content_h + 1.5 * m - shift_y),
         ];
         match cs {
             ColorSpace::Rgb => s.push_str("0 0 0 RGB 0.75 setlinewidth\n"),

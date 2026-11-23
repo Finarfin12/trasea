@@ -3,7 +3,7 @@
 use crate::color::ColorSpace;
 use crate::dxf::DxfUnit;
 use crate::export::{
-    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    export_options_for_production, palette_of, to_dxf, to_eps, to_pdf,
     to_separation_eps, to_separation_pdfs, to_separation_svgs, to_svg, ExportOptions,
 };
 use crate::load;
@@ -205,6 +205,11 @@ pub fn resolve_effective_export(config: &BatchConfig) -> ExportOptions {
             }
         }
         crate::production::ProductionMode::Standard | crate::production::ProductionMode::Shading => {}
+        crate::production::ProductionMode::Centerline => {
+            eff_export.lines_as = crate::export::LinesAs::Stroke;
+            eff_export.strip_background = true;
+            eff_export.trap_pt = 0.0;
+        }
     }
     eff_export
 }
@@ -310,7 +315,16 @@ pub fn process_single_file(input: &Path, stem: &str, cfg: &BatchConfig, eff_expo
 
     if cfg.write_ase {
         let ase_path = cfg.output_dir.join(format!("{stem}.ase"));
-        if let Err(e) = std::fs::write(&ase_path, to_ase_with_color_space(&palette_of(&out.doc), eff_export.color_space)) {
+        let cut_spot = eff_export
+            .die_cut_contour
+            .then_some(eff_export.die_cut_spot_name.as_str());
+        let ase_bytes = crate::export::to_ase_with_spots(
+            &palette_of(&out.doc),
+            eff_export.color_space,
+            &eff_export.spot_colors,
+            cut_spot,
+        );
+        if let Err(e) = std::fs::write(&ase_path, ase_bytes) {
             warnings.push(format!("Gagal tulis ASE: {e}"));
         }
     }
