@@ -47,7 +47,15 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 	const { t, lang } = useI18n();
 	const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError);
 	const modeLabel = (m: ProductionMode): string =>
-		m === "screenPrint" ? t.modeScreenPrint : m === "cutEmbroidery" ? t.modeCutEmbroidery : m === "shading" ? t.modeShading : t.modeStandard;
+		m === "screenPrint"
+			? t.modeScreenPrint
+			: m === "cutEmbroidery"
+				? t.modeCutEmbroidery
+				: m === "shading"
+					? t.modeShading
+					: m === "centerline"
+						? t.modeCenterline
+						: t.modeStandard;
 
 	const [subTab, setSubTab] = useState<SubTab>("batch");
 
@@ -207,7 +215,7 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 			const res = await runBatch({
 				inputs: files,
 				outputDir,
-				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [] },
+				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
 				export: effExport,
 				writePdf,
 				writeEps,
@@ -256,7 +264,7 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 				inDir: watchInDir,
 				outDir: watchOutDir,
 				includeSubfolders: watchSubfolders,
-				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [] },
+				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
 				export: effExport,
 				writePdf,
 				writeEps,
@@ -322,11 +330,12 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 							{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
 						</select>
 					)}
-					<div className="seg seg4" role="group" aria-label={t.productionModeAria}>
+					<div className="seg seg5" role="group" aria-label={t.productionModeAria}>
 						<button aria-pressed={opts.productionMode === "standard"} disabled={busyAny} onClick={() => onChangeMode("standard")}>{t.modeStandard}</button>
 						<button aria-pressed={opts.productionMode === "screenPrint"} disabled={busyAny} onClick={() => onChangeMode("screenPrint")}>{t.modeScreenPrint}</button>
 						<button aria-pressed={opts.productionMode === "cutEmbroidery"} disabled={busyAny} onClick={() => onChangeMode("cutEmbroidery")}>{t.modeCutEmbroidery}</button>
 						<button aria-pressed={opts.productionMode === "shading"} disabled={busyAny} onClick={() => onChangeMode("shading")}>{t.modeShading}</button>
+						<button aria-pressed={opts.productionMode === "centerline"} disabled={busyAny} onClick={() => onChangeMode("centerline")}>{t.modeCenterline}</button>
 					</div>
 				</div>
 			</div>
@@ -408,6 +417,8 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 						<span>{t.batchColorSpace} <b>{colorSpace.toUpperCase()}</b></span>
 						{opts.productionMode === "screenPrint" && <span>{t.batchMinStroke} <b>{opts.minStrokePt} pt</b> · {t.batchReg} <b>{opts.registrationMarks ? t.yes : t.no}</b></span>}
 						{opts.productionMode === "cutEmbroidery" && <span>{t.batchStripBg} <b>{opts.stripBackground ? t.yes : t.no}</b> · Trap: <b>0 pt</b></span>}
+						{opts.preprocess.removeBackground && <span>{t.batchStripBg} <b>{t.yes} (ΔE {opts.preprocess.bgTolerance})</b></span>}
+						{exp.dieCutContour && <span>{t.batchDieCut} <b>{exp.dieCutSpotName} ({exp.dieCutOffsetMm.toFixed(1)} mm)</b></span>}
 						<span>{t.batchCleaner} <b>{opts.aiClean ? t.cleanerAiSeq : t.cleanerMedPar}</b></span>
 					</div>
 

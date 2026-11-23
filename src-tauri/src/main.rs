@@ -3,6 +3,7 @@
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,13 +11,14 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 use trasea_core::batch::{is_supported_image, run_batch as core_run_batch, scan_image_files, BatchConfig, BatchSummary};
 use trasea_core::clean::plain_path;
-use trasea_core::color::ColorSpace;
+use trasea_core::color::{is_out_of_cmyk_gamut, rgb_to_soft_proof_rgb, ColorSpace, SpotColorMapping};
 use trasea_core::dxf::DxfUnit;
 use trasea_core::export::{
-    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    export_options_for_production, palette_of, to_ase_with_spots, to_dxf, to_eps, to_pdf,
     to_separation_pdfs, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs,
 };
 use trasea_core::license::{verify_embedded, LicenseInfo};
+use trasea_core::path_edit::PathEdit;
 use trasea_core::preprocess::PreprocessOptions;
 use trasea_core::project::{
     load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject,
@@ -73,6 +75,22 @@ impl Default for WatchControl {
     }
 }
 
+fn default_centerline_stroke_pt() -> f64 {
+    1.0
+}
+
+fn default_die_cut_mm() -> f64 {
+    2.0
+}
+
+fn default_die_cut_spot_name() -> String {
+    "CutContour".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct UiParams {
@@ -104,6 +122,20 @@ struct UiParams {
     sablon_knockout: bool,
     #[serde(default)]
     preprocess: PreprocessOptions,
+    #[serde(default)]
+    centerline_invert: bool,
+    #[serde(default = "default_centerline_stroke_pt")]
+    centerline_stroke_pt: f64,
+    #[serde(default)]
+    path_edits: Vec<PathEdit>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PaletteProofItem {
+    hex: String,
+    proof_hex: String,
+    out_of_gamut: bool,
 }
 
 #[derive(Serialize)]
@@ -119,6 +151,7 @@ struct Processed {
     mae: Option<f64>,
     notes: Vec<String>,
     palette: Vec<String>,
+    palette_proof: Vec<PaletteProofItem>,
     used_ai: bool,
     secs: f64,
     thin_pixels: usize,
@@ -160,6 +193,16 @@ struct UiExport {
     dxf_unit: DxfUnit,
     #[serde(default)]
     dxf_target_width_mm: Option<f32>,
+    #[serde(default)]
+    die_cut_contour: bool,
+    #[serde(default = "default_die_cut_mm")]
+    die_cut_offset_mm: f64,
+    #[serde(default = "default_die_cut_spot_name")]
+    die_cut_spot_name: String,
+    #[serde(default = "default_true")]
+    die_cut_bridge_islands: bool,
+    #[serde(default)]
+    spot_colors: Vec<SpotColorMapping>,
 }
 
 #[derive(Deserialize)]
@@ -227,20 +270,114 @@ struct UserPreset {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SavedPaletteColor {
+    hex: String,
+    #[serde(default)]
+    spot_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedPalette {
+    id: String,
+    name: String,
+    colors: Vec<SavedPaletteColor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AppSettings {
     #[serde(default = "default_language")]
     language: String,
+    #[serde(default = "default_theme")]
+    theme: String,
+    #[serde(default = "default_canvas_bg")]
+    canvas_bg: String,
+    #[serde(default)]
+    open_folder_after_export: bool,
+    #[serde(default)]
+    default_color_space: ColorSpace,
+    #[serde(default)]
+    default_dxf_unit: DxfUnit,
+    #[serde(default = "default_dpi")]
+    default_dpi: u32,
+    #[serde(default = "default_die_cut_mm")]
+    default_die_cut_offset_mm: f64,
+    #[serde(default = "default_die_cut_spot_name")]
+    default_die_cut_spot_name: String,
+    #[serde(default = "default_true")]
+    default_die_cut_bridge: bool,
+    #[serde(default)]
+    prefer_median_only: bool,
+    #[serde(default = "default_undo_limit")]
+    undo_limit: usize,
+    #[serde(default)]
+    shortcuts: HashMap<String, String>,
 }
 
 fn default_language() -> String {
     "id".to_string()
 }
 
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
+fn default_canvas_bg() -> String {
+    "checkerDark".to_string()
+}
+
+fn default_dpi() -> u32 {
+    96
+}
+
+fn default_undo_limit() -> usize {
+    50
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             language: default_language(),
+            theme: default_theme(),
+            canvas_bg: default_canvas_bg(),
+            open_folder_after_export: false,
+            default_color_space: ColorSpace::Rgb,
+            default_dxf_unit: DxfUnit::Mm,
+            default_dpi: default_dpi(),
+            default_die_cut_offset_mm: default_die_cut_mm(),
+            default_die_cut_spot_name: default_die_cut_spot_name(),
+            default_die_cut_bridge: true,
+            prefer_median_only: false,
+            undo_limit: default_undo_limit(),
+            shortcuts: HashMap::new(),
         }
+    }
+}
+
+fn sanitize_settings(s: &mut AppSettings) {
+    if s.language != "en" && s.language != "id" {
+        s.language = default_language();
+    }
+    if !matches!(s.theme.as_str(), "dark" | "light" | "system") {
+        s.theme = default_theme();
+    }
+    if !matches!(s.canvas_bg.as_str(), "checkerLight" | "checkerDark" | "solid") {
+        s.canvas_bg = default_canvas_bg();
+    }
+    if !matches!(s.default_dpi, 72 | 96 | 300) {
+        s.default_dpi = default_dpi();
+    }
+    if !s.default_die_cut_offset_mm.is_finite() {
+        s.default_die_cut_offset_mm = default_die_cut_mm();
+    } else {
+        s.default_die_cut_offset_mm = s.default_die_cut_offset_mm.clamp(0.5, 10.0);
+    }
+    if s.default_die_cut_spot_name.trim().is_empty() {
+        s.default_die_cut_spot_name = default_die_cut_spot_name();
+    }
+    if !matches!(s.undo_limit, 20 | 50 | 100) {
+        s.undo_limit = default_undo_limit();
     }
 }
 
@@ -264,6 +401,10 @@ fn presets_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("presets.json"))
 }
 
+fn palettes_file(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(config_dir(app)?.join("palettes.json"))
+}
+
 fn settings_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("settings.json"))
 }
@@ -276,7 +417,7 @@ fn read_active_license(app: &AppHandle) -> Option<LicenseInfo> {
 
 fn require_pro_license(app: &AppHandle, feature: &str) -> Result<LicenseInfo, String> {
     read_active_license(app).ok_or_else(|| {
-        format!("{feature} adalah fitur Trasea Pro (bayar sekali, 100% offline). Buka Privasi & Lisensi untuk memasukkan kunci aktivasi.")
+        format!("{feature} adalah fitur Trasea Pro (bayar sekali, verifikasi lokal). Buka Privasi & Lisensi untuk memasukkan kunci aktivasi.")
     })
 }
 
@@ -334,6 +475,12 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         prod.registration_marks = rm;
     }
     prod.sablon_knockout = params.sablon_knockout;
+    prod.centerline_invert = params.centerline_invert;
+    prod.centerline_stroke_pt = if params.centerline_stroke_pt.is_finite() {
+        params.centerline_stroke_pt.clamp(0.25, 12.0)
+    } else {
+        default_centerline_stroke_pt()
+    };
 
     let colors = match mode {
         ProductionMode::Shading => params.colors.clamp(2, 32),
@@ -356,6 +503,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         brush_strokes: params.brush_strokes.clone(),
         production: prod,
         preprocess: params.preprocess.clone(),
+        path_edits: params.path_edits.clone(),
         ..Params::default()
     }
 }
@@ -369,13 +517,25 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         color_space: options.color_space,
         dxf_unit: options.dxf_unit,
         dxf_target_width_mm: options.dxf_target_width_mm.filter(|v| v.is_finite() && *v > 0.0),
-        ..ExportOptions::default()
+        die_cut_contour: options.die_cut_contour,
+        die_cut_offset_mm: if options.die_cut_offset_mm.is_finite() {
+            options.die_cut_offset_mm.clamp(0.5, 10.0)
+        } else {
+            default_die_cut_mm()
+        },
+        die_cut_spot_name: if options.die_cut_spot_name.trim().is_empty() {
+            default_die_cut_spot_name()
+        } else {
+            options.die_cut_spot_name.trim().to_string()
+        },
+        die_cut_bridge_islands: options.die_cut_bridge_islands,
+        spot_colors: options.spot_colors.clone(),
     }
 }
 
 fn merge_batch_export(p: &Params, options: &UiExport) -> ExportOptions {
     let mut eo = to_core_export(options);
-    if p.production.mode == ProductionMode::CutEmbroidery {
+    if matches!(p.production.mode, ProductionMode::CutEmbroidery | ProductionMode::Centerline) {
         let prod_eo = export_options_for_production(&p.production);
         eo.lines_as = prod_eo.lines_as;
         eo.trap_pt = prod_eo.trap_pt;
@@ -427,6 +587,15 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             }
         };
         let out = vectorize_prepared(&prep, &p, &progress).map_err(|e| e.to_string())?;
+        let palette_proof: Vec<PaletteProofItem> = out
+            .palette
+            .iter()
+            .map(|&c| PaletteProofItem {
+                hex: hex(c),
+                proof_hex: hex(rgb_to_soft_proof_rgb(c[0], c[1], c[2])),
+                out_of_gamut: is_out_of_cmyk_gamut(c[0], c[1], c[2]),
+            })
+            .collect();
         let processed = Processed {
             svg: out.svg.clone(),
             original,
@@ -438,6 +607,7 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             mae: out.stats.mae,
             notes: out.notes.clone(),
             palette: out.palette.iter().map(|c| hex(*c)).collect(),
+            palette_proof,
             used_ai: out.used_ai,
             secs: t0.elapsed().as_secs_f64(),
             thin_pixels: out.thin_pixels,
@@ -496,8 +666,28 @@ fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
     Ok(hex([med(&mut r), med(&mut g), med(&mut b)]))
 }
 
+/// Render a fast preview SVG from the last vectorized `Doc` with current export/contour options
+/// (e.g. live `CutContour` preview without re-running vectorization).
+#[tauri::command]
+fn render_preview_svg(last: State<'_, Last>, options: UiExport) -> Result<String, String> {
+    let doc = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .ok_or("Belum ada hasil vektor untuk dipratinjau.")?;
+    let opts = to_core_export(&options);
+    Ok(to_svg(&doc, &opts))
+}
+
+/// Write arbitrary UTF-8 text (e.g. `.gpl`, `.json`, or `.css` palette export).
+#[tauri::command]
+fn save_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content.into_bytes()).map_err(|e| format!("Gagal menulis {path}: {e}"))
+}
+
 /// Write the last result. `kind` is "svg", "pdf", "eps", "dxf", or "ase".
-/// Per QT-1=B, all 1.1.0 features (DXF, CMYK PDF/ASE) are open without a Pro key.
+/// Per QT-1=A, all 1.1.0 & 1.2.0 features (DXF, CMYK PDF/ASE, Die-Cut Contour, Named Spot, Centerline) are open without a Pro key.
 #[tauri::command]
 fn save_file(app: AppHandle, last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
     if kind == "eps" {
@@ -516,7 +706,10 @@ fn save_file(app: AppHandle, last: State<'_, Last>, kind: String, path: String, 
         "pdf" => write(to_pdf(&doc, &opts).map_err(|e| e.to_string())?),
         "eps" => write(to_eps(&doc, &opts).into_bytes()),
         "dxf" => write(to_dxf(&doc, &opts).into_bytes()),
-        "ase" => write(to_ase_with_color_space(&palette_of(&doc), opts.color_space)),
+        "ase" => {
+            let cut_spot = opts.die_cut_contour.then_some(opts.die_cut_spot_name.as_str());
+            write(to_ase_with_spots(&palette_of(&doc), opts.color_space, &opts.spot_colors, cut_spot))
+        }
         _ => Err("unknown export format".into()),
     }
 }
@@ -642,21 +835,79 @@ fn get_app_settings(app: AppHandle) -> AppSettings {
         return AppSettings::default();
     };
     let mut s: AppSettings = serde_json::from_str(&raw).unwrap_or_default();
-    if s.language != "en" && s.language != "id" {
-        s.language = "id".to_string();
-    }
+    sanitize_settings(&mut s);
     s
 }
 
 #[tauri::command]
 fn save_app_settings(app: AppHandle, mut settings: AppSettings) -> Result<AppSettings, String> {
-    if settings.language != "en" && settings.language != "id" {
-        settings.language = "id".to_string();
-    }
+    sanitize_settings(&mut settings);
     let p = settings_file(&app)?;
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&p, json).map_err(|e| format!("Gagal menyimpan pengaturan aplikasi: {e}"))?;
     Ok(settings)
+}
+
+#[tauri::command]
+fn get_settings_path(app: AppHandle) -> Result<String, String> {
+    let p = settings_file(&app)?;
+    Ok(plain_path(&p).to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn list_saved_palettes(app: AppHandle) -> Result<Vec<SavedPalette>, String> {
+    let p = palettes_file(&app)?;
+    if !p.is_file() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(&p).map_err(|e| format!("Gagal membaca palettes.json: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Format palettes.json rusak: {e}"))
+}
+
+#[tauri::command]
+fn save_palette_library_item(app: AppHandle, palette: SavedPalette) -> Result<Vec<SavedPalette>, String> {
+    let name = palette.name.trim();
+    if name.is_empty() {
+        return Err("Nama palet tidak boleh kosong.".into());
+    }
+    if palette.colors.is_empty() {
+        return Err("Palet harus memiliki minimal 1 warna.".into());
+    }
+    let mut list = list_saved_palettes(app.clone()).unwrap_or_default();
+    let item = SavedPalette {
+        id: if palette.id.trim().is_empty() {
+            format!(
+                "pal-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            )
+        } else {
+            palette.id
+        },
+        name: name.to_string(),
+        colors: palette.colors,
+    };
+    if let Some(pos) = list.iter().position(|x| x.id == item.id || x.name.eq_ignore_ascii_case(name)) {
+        list[pos] = item;
+    } else {
+        list.push(item);
+    }
+    let p = palettes_file(&app)?;
+    let json = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    std::fs::write(&p, json).map_err(|e| format!("Gagal menyimpan palet: {e}"))?;
+    Ok(list)
+}
+
+#[tauri::command]
+fn delete_saved_palette(app: AppHandle, id: String) -> Result<Vec<SavedPalette>, String> {
+    let mut list = list_saved_palettes(app.clone()).unwrap_or_default();
+    list.retain(|x| x.id != id);
+    let p = palettes_file(&app)?;
+    let json = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    std::fs::write(&p, json).map_err(|e| format!("Gagal memperbarui palettes.json: {e}"))?;
+    Ok(list)
 }
 
 #[tauri::command]
@@ -963,15 +1214,21 @@ fn main() {
         .manage(WatchControl::default())
         .invoke_handler(tauri::generate_handler![
             process,
+            render_preview_svg,
             load_raw_image_preview,
             pick_color,
             save_file,
+            save_text_file,
             export_dxf,
             paste_clipboard_image,
             copy_svg_to_clipboard,
             save_separations,
             get_app_settings,
             save_app_settings,
+            get_settings_path,
+            list_saved_palettes,
+            save_palette_library_item,
+            delete_saved_palette,
             license_status,
             activate_license,
             deactivate_license,

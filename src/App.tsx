@@ -1,35 +1,66 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type MouseEvent as ReactMouseEvent,
+	type PointerEvent as ReactPointerEvent,
+} from "react";
 import BatchView from "./BatchView";
 import CropModal from "./CropModal";
-import Licenses from "./Licenses";
+import SettingsModal, { type SettingsTab } from "./SettingsModal";
+import {
+	IconChecker,
+	IconCrop,
+	IconDetailBrush,
+	IconEyedropper,
+	IconGear,
+	IconHand,
+	IconHeatmap,
+	IconOutline,
+	IconPointer,
+	IconRedo,
+	IconSmoothBrush,
+	IconSoftProof,
+	IconUndo,
+} from "./ToolbarIcons";
 import {
 	collectDroppedImages,
 	copySvgToClipboard,
+	DEFAULT_APP_SETTINGS,
 	DEFAULT_PREPROCESS,
 	deletePreset,
+	deleteSavedPalette,
 	exportDxf,
 	getAppSettings,
 	getLicenseStatus,
 	getSampleImagePath,
-	licenses,
 	listPresets,
+	listSavedPalettes,
 	loadProjectFile,
 	onDrop,
 	onProgress,
+	openFolder,
 	pasteClipboardImage,
 	pickColor,
 	pickFolder,
 	pickImage,
 	pickImageOrProject,
+	pickPaletteTextSavePath,
 	pickProjectSavePath,
 	pickSavePath,
 	processImage,
+	renderPreviewSvg,
 	saveAppSettings,
 	saveFile,
+	savePaletteLibraryItem,
 	savePreset,
 	saveProjectFile,
 	saveSeparations,
+	saveTextFile,
 	sidecarAvailable,
+	type AppSettings,
 	type BrushStroke,
 	type ColorSpace,
 	type DxfUnit,
@@ -37,11 +68,23 @@ import {
 	type ExportOptions,
 	type LicenseStatus,
 	type Options,
+	type PaletteTextExportKind,
+	type PathEdit,
 	type PreprocessOptions,
 	type Processed,
 	type ProductionMode,
+	type SavedPalette,
+	type SpotColorMapping,
 	type UserPreset,
 } from "./api";
+import {
+	buildCssPalette,
+	buildGplPalette,
+	buildJsonPalette,
+	effectiveShortcuts,
+	formatColorCodes,
+	matchShortcut,
+} from "./colorUtils";
 import { emptyHistory, pushSnapshot, stepRedo, stepUndo, type EditorSnapshot, type HistoryState, type TargetChoice } from "./history";
 import { I18nProvider, useI18n, type Lang } from "./i18n";
 
@@ -63,6 +106,9 @@ const DEFAULTS: Options = {
 	registrationMarks: false,
 	sablonKnockout: false,
 	preprocess: { ...DEFAULT_PREPROCESS },
+	centerlineInvert: false,
+	centerlineStrokePt: 1.0,
+	pathEdits: [],
 };
 
 const DEFAULT_EXP: ExportOptions = {
@@ -73,15 +119,22 @@ const DEFAULT_EXP: ExportOptions = {
 	colorSpace: "rgb",
 	dxfUnit: "mm",
 	dxfTargetWidthMm: null,
+	dieCutContour: false,
+	dieCutOffsetMm: 2.0,
+	dieCutSpotName: "CutContour",
+	dieCutBridgeIslands: true,
+	spotColors: [],
 };
 
 type View = "editor" | "batch";
-type Tool = "pan" | "detail" | "smooth" | "pipet";
+type Tool = "pan" | "selectPath" | "detail" | "smooth" | "pipet";
 
 const GARIS_LAYER = "__GARIS__";
 const REG_LAYER = "__REGISTRASI__";
+const CUT_LAYER = "__CUTCONTOUR__";
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
+const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 const heatColor = (r: number): string => `hsl(${Math.round(120 * (1 - Math.min(1, Math.max(0, r))))}, 90%, 50%)`;
@@ -90,7 +143,18 @@ const normalizeOptions = (po: Partial<Options>): Options => ({
 	...DEFAULTS,
 	...po,
 	sablonKnockout: po.sablonKnockout ?? false,
-	preprocess: po.preprocess ? { crop: po.preprocess.crop ?? null, rotateDeg: po.preprocess.rotateDeg ?? 0 } : { ...DEFAULT_PREPROCESS },
+	centerlineInvert: po.centerlineInvert ?? false,
+	centerlineStrokePt: po.centerlineStrokePt ?? 1.0,
+	pathEdits: Array.isArray(po.pathEdits) ? po.pathEdits : [],
+	preprocess: po.preprocess
+		? {
+				crop: po.preprocess.crop ?? null,
+				rotateDeg: po.preprocess.rotateDeg ?? 0,
+				removeBackground: po.preprocess.removeBackground ?? false,
+				bgTolerance: po.preprocess.bgTolerance ?? 24,
+				defringePx: po.preprocess.defringePx ?? 1,
+			}
+		: { ...DEFAULT_PREPROCESS },
 });
 
 const normalizeExport = (pe: Partial<ExportOptions>): ExportOptions => ({
@@ -99,16 +163,49 @@ const normalizeExport = (pe: Partial<ExportOptions>): ExportOptions => ({
 	colorSpace: pe.colorSpace ?? "rgb",
 	dxfUnit: pe.dxfUnit ?? "mm",
 	dxfTargetWidthMm: pe.dxfTargetWidthMm ?? null,
+	dieCutContour: pe.dieCutContour ?? false,
+	dieCutOffsetMm: pe.dieCutOffsetMm ?? 2.0,
+	dieCutSpotName: pe.dieCutSpotName ?? "CutContour",
+	dieCutBridgeIslands: pe.dieCutBridgeIslands ?? true,
+	spotColors: Array.isArray(pe.spotColors) ? pe.spotColors : [],
 });
 
-function buildPreviewSvg(rawSvg: string, outline: boolean, hidden: Set<string>): string {
-	if (!outline && hidden.size === 0) return rawSvg;
+function applySoftProofToSvg(svg: string, proofMap: Map<string, string>): string {
+	if (proofMap.size === 0) return svg;
+	// Preserve #CutContour magenta intact while replacing all palette fills/strokes
+	const cutMarker = '<g id="CutContour"';
+	const cutIdx = svg.indexOf(cutMarker);
+	const body = cutIdx >= 0 ? svg.slice(0, cutIdx) : svg;
+	const tail = cutIdx >= 0 ? svg.slice(cutIdx) : "";
+	const swapped = body.replace(/(fill|stroke)="(#[0-9A-Fa-f]{6})"/g, (m, attr: string, hex: string) => {
+		const mapped = proofMap.get(hex.toUpperCase());
+		return mapped ? `${attr}="${mapped}"` : m;
+	});
+	return swapped + tail;
+}
+
+function buildPreviewSvg(
+	rawSvg: string,
+	outline: boolean,
+	hidden: Set<string>,
+	softProof: boolean,
+	proofMap: Map<string, string>,
+	selectedPathId: string | null,
+): string {
+	let svg = softProof ? applySoftProofToSvg(rawSvg, proofMap) : rawSvg;
 	const rules: string[] = [];
 	if (outline) {
 		rules.push(
 			"path, circle, ellipse, rect, polygon, polyline { fill: none !important; stroke: #2563eb !important; stroke-width: 1.25px !important; vector-effect: non-scaling-stroke !important; }",
 			"#Garis path { stroke: #0ea5e9 !important; }",
+			"#CutContour path { stroke: #EC008C !important; stroke-width: 1.5px !important; }",
 			"#Registrasi circle, #Registrasi line { stroke: #ef4444 !important; }",
+		);
+	}
+	if (selectedPathId) {
+		const safe = selectedPathId.replace(/["\\]/g, "");
+		rules.push(
+			`[data-trasea-id="${safe}"] { stroke: #2563eb !important; stroke-width: 2.5px !important; stroke-dasharray: 5 3 !important; vector-effect: non-scaling-stroke !important; }`,
 		);
 	}
 	for (const key of hidden) {
@@ -116,16 +213,18 @@ function buildPreviewSvg(rawSvg: string, outline: boolean, hidden: Set<string>):
 			rules.push("#Garis { display: none !important; }");
 		} else if (key === REG_LAYER) {
 			rules.push("#Registrasi { display: none !important; }");
+		} else if (key === CUT_LAYER) {
+			rules.push("#CutContour { display: none !important; }");
 		} else if (/^#[0-9A-Fa-f]{6}$/.test(key)) {
 			const suffix = key.slice(1).toUpperCase();
 			rules.push(`g[id$="_${suffix}"] { display: none !important; }`);
 		}
 	}
-	if (rules.length === 0) return rawSvg;
+	if (rules.length === 0) return svg;
 	const styleTag = `<style>${rules.join(" ")}</style>`;
-	const idx = rawSvg.indexOf(">", rawSvg.indexOf("<svg"));
-	if (idx === -1) return rawSvg;
-	return rawSvg.slice(0, idx + 1) + styleTag + rawSvg.slice(idx + 1);
+	const idx = svg.indexOf(">", svg.indexOf("<svg"));
+	if (idx === -1) return svg;
+	return svg.slice(0, idx + 1) + styleTag + svg.slice(idx + 1);
 }
 
 function EyeIcon({ hidden }: { hidden: boolean }) {
@@ -143,7 +242,12 @@ function EyeIcon({ hidden }: { hidden: boolean }) {
 	);
 }
 
-function TraseaApp() {
+interface TraseaAppProps {
+	appSettings: AppSettings;
+	onUpdateSettings: (next: AppSettings) => void;
+}
+
+function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const { t, lang, setLang } = useI18n();
 	const errText = useCallback((e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError), [t.unknownError]);
 
@@ -154,6 +258,7 @@ function TraseaApp() {
 	const [missingSourceProject, setMissingSourceProject] = useState<string | null>(null);
 	const [opts, setOpts] = useState<Options>(DEFAULTS);
 	const [result, setResult] = useState<Processed | null>(null);
+	const [liveSvg, setLiveSvg] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [stage, setStage] = useState("");
 	const [fraction, setFraction] = useState(0);
@@ -161,28 +266,48 @@ function TraseaApp() {
 	const [info, setInfo] = useState("");
 	const [over, setOver] = useState(false);
 	const [split, setSplit] = useState(50);
-	const [exp, setExp] = useState<ExportOptions>(DEFAULT_EXP);
+	const [exp, setExp] = useState<ExportOptions>(() => ({
+		...DEFAULT_EXP,
+		colorSpace: appSettings.defaultColorSpace,
+		dxfUnit: appSettings.defaultDxfUnit,
+		dieCutOffsetMm: appSettings.defaultDieCutOffsetMm,
+		dieCutSpotName: appSettings.defaultDieCutSpotName,
+		dieCutBridgeIslands: appSettings.defaultDieCutBridge,
+	}));
 	const [dxfWidthInput, setDxfWidthInput] = useState("");
 	const [withAse, setWithAse] = useState(true);
 	const [sepPdf, setSepPdf] = useState(false);
 	const [checker, setChecker] = useState(false);
 	const [outlineView, setOutlineView] = useState(false);
+	const [softProof, setSoftProof] = useState(false);
 	const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(() => new Set());
 	const [cropOpen, setCropOpen] = useState(false);
+	const [settingsModal, setSettingsModal] = useState<{
+		tab: SettingsTab;
+		licenseSubTab?: "license" | "privacy" | "thirdParty";
+		licenseHint?: string;
+	} | null>(null);
 	const [showText, setShowText] = useState(false);
 	const [showHeat, setShowHeat] = useState(false);
 	const [tool, setTool] = useState<Tool>("pan");
+	const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
 	const [brushSize, setBrushSize] = useState(40);
 	const [strokes, setStrokes] = useState<BrushStroke[]>([]);
 	const [live, setLive] = useState<BrushStroke | null>(null);
+	const [pathEdits, setPathEdits] = useState<PathEdit[]>([]);
 	const [palette, setPalette] = useState<string[] | null>(null);
 	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
 	const [mergeSource, setMergeSource] = useState<string | null>(null);
+	const [inspectedColor, setInspectedColor] = useState<string | null>(null);
+	const [copiedKey, setCopiedKey] = useState<string>("");
+	const [savedPalettes, setSavedPalettes] = useState<SavedPalette[]>([]);
+	const [selectedSavedPaletteId, setSelectedSavedPaletteId] = useState("");
+	const [addingSavedPalette, setAddingSavedPalette] = useState(false);
+	const [savedPaletteName, setSavedPaletteName] = useState("");
 	const [targetChoice, setTargetChoice] = useState<TargetChoice>("auto");
 	const [customTarget, setCustomTarget] = useState("800");
 	const [hasSidecar, setHasSidecar] = useState(true);
 	const [license, setLicense] = useState<LicenseStatus>({ active: false, info: null });
-	const [modalOpen, setModalOpen] = useState<{ markdown: string; tab: "license" | "privacy" | "thirdParty"; hint: string } | null>(null);
 	const [presets, setPresets] = useState<UserPreset[]>([]);
 	const [selectedPresetId, setSelectedPresetId] = useState("");
 	const [presetNameInput, setPresetNameInput] = useState("");
@@ -193,9 +318,34 @@ function TraseaApp() {
 	const busyRef = useRef(false);
 	const optsRef = useRef(opts);
 	optsRef.current = opts;
+	const settingsInitApplied = useRef(false);
 	const standardBackupRef = useRef({ colors: DEFAULTS.colors, smooth: DEFAULTS.smooth });
 	const overlayRef = useRef<SVGSVGElement | null>(null);
 	const liveRef = useRef<BrushStroke | null>(null);
+
+	const activeShortcuts = useMemo(() => effectiveShortcuts(appSettings.shortcuts), [appSettings.shortcuts]);
+
+	// Sync initial loaded export defaults once after settings arrive from disk
+	useEffect(() => {
+		if (!settingsInitApplied.current && !path) {
+			settingsInitApplied.current = true;
+			setExp(ex => ({
+				...ex,
+				colorSpace: appSettings.defaultColorSpace,
+				dxfUnit: appSettings.defaultDxfUnit,
+				dieCutOffsetMm: appSettings.defaultDieCutOffsetMm,
+				dieCutSpotName: appSettings.defaultDieCutSpotName,
+				dieCutBridgeIslands: appSettings.defaultDieCutBridge,
+			}));
+		}
+	}, [appSettings, path]);
+
+	// Respect preferMedianOnly setting
+	useEffect(() => {
+		if (appSettings.preferMedianOnly && opts.aiClean) {
+			setOpts(o => ({ ...o, aiClean: false }));
+		}
+	}, [appSettings.preferMedianOnly, opts.aiClean]);
 
 	const targetNodes = useMemo((): number | null => {
 		if (targetChoice === "auto") return null;
@@ -207,79 +357,32 @@ function TraseaApp() {
 		(label: string): EditorSnapshot => ({
 			opts: {
 				...opts,
-				preprocess: { crop: opts.preprocess.crop ? [...opts.preprocess.crop] : null, rotateDeg: opts.preprocess.rotateDeg },
+				preprocess: {
+					crop: opts.preprocess.crop ? [...opts.preprocess.crop] : null,
+					rotateDeg: opts.preprocess.rotateDeg,
+					removeBackground: opts.preprocess.removeBackground,
+					bgTolerance: opts.preprocess.bgTolerance,
+					defringePx: opts.preprocess.defringePx,
+				},
 			},
 			palette: palette ? [...palette] : null,
 			paletteMerges: paletteMerges.map(m => [m[0], m[1]]),
 			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
+			pathEdits: pathEdits.map(pe => ({ ...pe })),
 			targetChoice,
 			customTarget,
-			exp: { ...exp },
+			exp: { ...exp, spotColors: exp.spotColors.map(s => ({ ...s })) },
 			label,
 		}),
-		[opts, palette, paletteMerges, strokes, targetChoice, customTarget, exp],
+		[opts, palette, paletteMerges, strokes, pathEdits, targetChoice, customTarget, exp],
 	);
 
 	const recordHistory = useCallback(
 		(label: string) => {
-			setHistory(h => pushSnapshot(h, makeSnapshot(label)));
+			setHistory(h => pushSnapshot(h, makeSnapshot(label), appSettings.undoLimit));
 		},
-		[makeSnapshot],
+		[makeSnapshot, appSettings.undoLimit],
 	);
-
-	const restoreSnapshot = useCallback((snap: EditorSnapshot) => {
-		const normOpts = normalizeOptions(snap.opts);
-		const normExp = normalizeExport(snap.exp);
-		setOpts(normOpts);
-		setPalette(snap.palette);
-		setPaletteMerges(snap.paletteMerges);
-		setStrokes(snap.strokes);
-		setTargetChoice(snap.targetChoice);
-		setCustomTarget(snap.customTarget);
-		setExp(normExp);
-		setDxfWidthInput(normExp.dxfTargetWidthMm ? String(normExp.dxfTargetWidthMm) : "");
-		setChecker(normOpts.productionMode === "cutEmbroidery" && normOpts.stripBackground);
-		setMergeSource(null);
-	}, []);
-
-	const doUndo = useCallback(() => {
-		const res = stepUndo(history, makeSnapshot(t.undo));
-		if (!res) return;
-		setHistory(res.history);
-		restoreSnapshot(res.target);
-		setInfo(`Undo: ${res.target.label}`);
-	}, [history, makeSnapshot, restoreSnapshot, t.undo]);
-
-	const doRedo = useCallback(() => {
-		const res = stepRedo(history, makeSnapshot(t.redo));
-		if (!res) return;
-		setHistory(res.history);
-		restoreSnapshot(res.target);
-		setInfo(`Redo: ${res.target.label}`);
-	}, [history, makeSnapshot, restoreSnapshot, t.redo]);
-
-	const signature = useMemo(
-		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes }),
-		[opts, palette, paletteMerges, targetNodes, strokes],
-	);
-
-	const openPrivacyModal = useCallback(async (tab: "license" | "privacy" | "thirdParty" = "license", hint = "") => {
-		const md = await licenses();
-		setModalOpen({ markdown: md, tab, hint });
-	}, []);
-
-	const effectiveExport = useCallback((): ExportOptions => {
-		const parsedW = Number.parseFloat(dxfWidthInput);
-		const dxfTargetWidthMm = exp.dxfUnit === "mm" && Number.isFinite(parsedW) && parsedW > 0 ? parsedW : null;
-		const base: ExportOptions = { ...exp, dxfTargetWidthMm };
-		if (opts.productionMode === "cutEmbroidery") {
-			return { ...base, linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: opts.stripBackground };
-		}
-		if (opts.productionMode === "screenPrint") {
-			return { ...base, registrationMarks: opts.registrationMarks, stripBackground: false };
-		}
-		return { ...base, registrationMarks: false, stripBackground: false };
-	}, [exp, dxfWidthInput, opts.productionMode, opts.stripBackground, opts.registrationMarks]);
 
 	const run = useCallback(
 		async (p: string, o: Options) => {
@@ -291,11 +394,14 @@ function TraseaApp() {
 			setStage(t.loadingImage);
 			setFraction(0);
 			setPath(p);
+			const effectiveOpts: Options = appSettings.preferMedianOnly ? { ...o, aiClean: false } : o;
 			try {
-				const r = await processImage(p, o);
+				const r = await processImage(p, effectiveOpts);
 				setResult(r);
+				setLiveSvg(null);
 				setHiddenLayers(new Set());
-				setAppliedSig(JSON.stringify(o));
+				setSelectedPathId(null);
+				setAppliedSig(JSON.stringify(effectiveOpts));
 			} catch (e) {
 				setError(errText(e));
 			} finally {
@@ -303,8 +409,131 @@ function TraseaApp() {
 				setBusy(false);
 			}
 		},
-		[errText, t.loadingImage],
+		[errText, t.loadingImage, appSettings.preferMedianOnly],
 	);
+
+	const restoreSnapshot = useCallback(
+		(snap: EditorSnapshot, prevPathEdits: PathEdit[]) => {
+			const normOpts = normalizeOptions(snap.opts);
+			const normExp = normalizeExport(snap.exp);
+			const restoredEdits = snap.pathEdits ?? [];
+			setOpts(normOpts);
+			setPalette(snap.palette);
+			setPaletteMerges(snap.paletteMerges);
+			setStrokes(snap.strokes);
+			setPathEdits(restoredEdits);
+			setTargetChoice(snap.targetChoice);
+			setCustomTarget(snap.customTarget);
+			setExp(normExp);
+			setDxfWidthInput(normExp.dxfTargetWidthMm ? String(normExp.dxfTargetWidthMm) : "");
+			setChecker((normOpts.productionMode === "cutEmbroidery" && normOpts.stripBackground) || normOpts.preprocess.removeBackground);
+			setMergeSource(null);
+			setSelectedPathId(null);
+			// Instant re-render when undoing/redoing path edits (uses fast prep cache!)
+			if (path && JSON.stringify(prevPathEdits) !== JSON.stringify(restoredEdits)) {
+				const tNodes =
+					snap.targetChoice === "auto"
+						? null
+						: Number.parseInt(snap.targetChoice === "custom" ? snap.customTarget : snap.targetChoice, 10) || null;
+				void run(path, {
+					...normOpts,
+					customPalette: snap.palette,
+					paletteMerges: snap.paletteMerges,
+					targetNodes: tNodes,
+					brushStrokes: snap.strokes,
+					pathEdits: restoredEdits,
+				});
+			}
+		},
+		[path, run],
+	);
+
+	const doUndo = useCallback(() => {
+		const res = stepUndo(history, makeSnapshot(t.undo), appSettings.undoLimit);
+		if (!res) return;
+		const prevEdits = pathEdits;
+		setHistory(res.history);
+		restoreSnapshot(res.target, prevEdits);
+		setInfo(`Undo: ${res.target.label}`);
+	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, restoreSnapshot, t.undo]);
+
+	const doRedo = useCallback(() => {
+		const res = stepRedo(history, makeSnapshot(t.redo), appSettings.undoLimit);
+		if (!res) return;
+		const prevEdits = pathEdits;
+		setHistory(res.history);
+		restoreSnapshot(res.target, prevEdits);
+		setInfo(`Redo: ${res.target.label}`);
+	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, restoreSnapshot, t.redo]);
+
+	const signature = useMemo(
+		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits }),
+		[opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
+	);
+
+	const openPrivacyModal = useCallback((licenseSubTab: "license" | "privacy" | "thirdParty" = "license", licenseHint = "") => {
+		setSettingsModal({ tab: "privacy", licenseSubTab, licenseHint });
+	}, []);
+
+	const effectiveExport = useCallback((): ExportOptions => {
+		const parsedW = Number.parseFloat(dxfWidthInput);
+		let dxfTargetWidthMm: number | null = exp.dxfUnit === "mm" && Number.isFinite(parsedW) && parsedW > 0 ? parsedW : null;
+		if (dxfTargetWidthMm === null && exp.dxfUnit === "mm" && appSettings.defaultDpi !== 96 && result) {
+			dxfTargetWidthMm = Number(((result.width * 25.4) / appSettings.defaultDpi).toFixed(3));
+		}
+		const base: ExportOptions = { ...exp, dxfTargetWidthMm };
+		if (opts.productionMode === "cutEmbroidery") {
+			return { ...base, linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: opts.stripBackground };
+		}
+		if (opts.productionMode === "centerline") {
+			return { ...base, linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: true };
+		}
+		if (opts.productionMode === "screenPrint") {
+			return { ...base, registrationMarks: opts.registrationMarks, stripBackground: false };
+		}
+		return { ...base, registrationMarks: false, stripBackground: opts.preprocess.removeBackground };
+	}, [exp, dxfWidthInput, appSettings.defaultDpi, result, opts.productionMode, opts.stripBackground, opts.registrationMarks, opts.preprocess.removeBackground]);
+
+	// Live preview refresh for Die-Cut Contour & export preview changes (no re-vectorization!)
+	useEffect(() => {
+		if (!result) return;
+		const eff = effectiveExport();
+		const needsLive =
+			eff.dieCutContour ||
+			eff.registrationMarks !== opts.registrationMarks ||
+			eff.stripBackground !== (opts.productionMode === "cutEmbroidery" ? opts.stripBackground : false) ||
+			eff.trapPt > 0 ||
+			eff.linesAs === "shape";
+		if (!needsLive) {
+			setLiveSvg(null);
+			return;
+		}
+		let alive = true;
+		const timer = window.setTimeout(() => {
+			void renderPreviewSvg(eff)
+				.then(svg => {
+					if (alive) setLiveSvg(svg);
+				})
+				.catch(() => {});
+		}, 120);
+		return () => {
+			alive = false;
+			window.clearTimeout(timer);
+		};
+	}, [
+		result,
+		exp.dieCutContour,
+		exp.dieCutOffsetMm,
+		exp.dieCutSpotName,
+		exp.dieCutBridgeIslands,
+		exp.linesAs,
+		exp.trapPt,
+		opts.registrationMarks,
+		opts.stripBackground,
+		opts.productionMode,
+		opts.preprocess.removeBackground,
+		effectiveExport,
+	]);
 
 	const openPicture = useCallback(
 		(p: string) => {
@@ -313,9 +542,12 @@ function TraseaApp() {
 			setMissingSourceProject(null);
 			setStrokes([]);
 			setLive(null);
+			setPathEdits([]);
+			setSelectedPathId(null);
 			setPalette(null);
 			setPaletteMerges([]);
 			setMergeSource(null);
+			setInspectedColor(null);
 			setHiddenLayers(new Set());
 			setHistory(emptyHistory());
 			setTool("pan");
@@ -324,6 +556,7 @@ function TraseaApp() {
 				customPalette: null,
 				paletteMerges: [],
 				brushStrokes: [],
+				pathEdits: [],
 				preprocess: { ...DEFAULT_PREPROCESS },
 			};
 			setOpts(nextOpts);
@@ -348,9 +581,11 @@ function TraseaApp() {
 				setPalette(po.customPalette);
 				setPaletteMerges(po.paletteMerges ?? []);
 				setStrokes(po.brushStrokes ?? []);
-				setChecker(po.productionMode === "cutEmbroidery" && po.stripBackground);
+				setPathEdits(po.pathEdits ?? []);
+				setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
 				setHiddenLayers(new Set());
 				setHistory(emptyHistory());
+				setSelectedPathId(null);
 				if (po.targetNodes === null) setTargetChoice("auto");
 				else if (["500", "1000", "2000"].includes(String(po.targetNodes))) setTargetChoice(String(po.targetNodes) as TargetChoice);
 				else {
@@ -379,7 +614,7 @@ function TraseaApp() {
 		const newImg = await pickImage();
 		if (!newImg) return;
 		setMissingSourceProject(null);
-		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
+		const mergedOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits };
 		await run(newImg, mergedOpts);
 		setInfo(`${t.projectRelinked} ${newImg}`);
 	};
@@ -392,7 +627,7 @@ function TraseaApp() {
 			try {
 				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
 				if (!dest) return;
-				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes };
+				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits };
 				await saveProjectFile(dest, path, fullOpts, effectiveExport());
 				setProjectPath(dest);
 				setInfo(`${t.projectSaved} ${dest}`);
@@ -400,7 +635,7 @@ function TraseaApp() {
 				setError(errText(e));
 			}
 		},
-		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, effectiveExport, errText, t.projectSaved],
+		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, pathEdits, effectiveExport, errText, t.projectSaved],
 	);
 
 	const openSample = async () => {
@@ -449,6 +684,7 @@ function TraseaApp() {
 		void sidecarAvailable().then(setHasSidecar);
 		void getLicenseStatus().then(setLicense);
 		void listPresets().then(setPresets).catch(() => {});
+		void listSavedPalettes().then(setSavedPalettes).catch(() => {});
 		const subs: Array<Promise<() => void>> = [
 			onProgress((s, f) => {
 				setStage(s);
@@ -477,42 +713,136 @@ function TraseaApp() {
 		};
 	}, [openPicture, openProject, t.dropInvalidErr]);
 
-	// Global keyboard shortcuts:
-	// Ctrl+Z (Undo), Ctrl+Shift+Z (Redo), Ctrl+Y (Outline toggle), Ctrl+V (Paste image),
-	// Ctrl+Shift+C (Copy SVG), Ctrl+S / Ctrl+Shift+S (Save project), Ctrl+O (Open)
+	// Path Edit helpers (F4)
+	const applyPathEditImmediate = useCallback(
+		(edit: PathEdit, label: string) => {
+			if (!path || busyRef.current) return;
+			recordHistory(label);
+			const nextEdits = [...pathEdits, edit];
+			setPathEdits(nextEdits);
+			setSelectedPathId(null);
+			void run(path, {
+				...opts,
+				customPalette: palette,
+				paletteMerges,
+				targetNodes,
+				brushStrokes: strokes,
+				pathEdits: nextEdits,
+			});
+		},
+		[path, recordHistory, pathEdits, run, opts, palette, paletteMerges, targetNodes, strokes],
+	);
+
+	const deleteSelectedPath = useCallback(() => {
+		if (!selectedPathId) return;
+		applyPathEditImmediate({ kind: "delete", targetId: selectedPathId }, `${t.pathDeleteBtn} ${selectedPathId}`);
+	}, [selectedPathId, applyPathEditImmediate, t.pathDeleteBtn]);
+
+	const recolorSelectedPath = useCallback(
+		(toHex: string) => {
+			if (!selectedPathId) return;
+			applyPathEditImmediate(
+				{ kind: "reassignColor", targetId: selectedPathId, toHex },
+				`${t.pathRecolorLabel} ${selectedPathId} → ${toHex}`,
+			);
+		},
+		[selectedPathId, applyPathEditImmediate, t.pathRecolorLabel],
+	);
+
+	const resetAllPathEdits = useCallback(() => {
+		if (!path || pathEdits.length === 0 || busyRef.current) return;
+		recordHistory(t.pathResetEdits);
+		setPathEdits([]);
+		setSelectedPathId(null);
+		void run(path, {
+			...opts,
+			customPalette: palette,
+			paletteMerges,
+			targetNodes,
+			brushStrokes: strokes,
+			pathEdits: [],
+		});
+	}, [path, pathEdits.length, recordHistory, t.pathResetEdits, run, opts, palette, paletteMerges, targetNodes, strokes]);
+
+	// Global keyboard shortcuts driven by SettingsModal (`activeShortcuts`)
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
+			if (settingsModal !== null) return;
 			const tag = (e.target as HTMLElement | null)?.tagName ?? "";
 			const editingText = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-			if (!e.ctrlKey && !e.metaKey) return;
-			const k = e.key.toLowerCase();
-			if (k === "z" && !editingText && view === "editor") {
+
+			if (!editingText && (e.key === "Delete" || e.key === "Backspace") && view === "editor" && tool === "selectPath" && selectedPathId) {
 				e.preventDefault();
-				if (e.shiftKey) doRedo();
-				else doUndo();
-			} else if (k === "y" && !editingText && view === "editor" && result) {
+				deleteSelectedPath();
+				return;
+			}
+
+			if (matchShortcut(e, activeShortcuts.openSettings)) {
+				e.preventDefault();
+				setSettingsModal({ tab: "general" });
+			} else if (matchShortcut(e, activeShortcuts.redo) && !editingText && view === "editor") {
+				e.preventDefault();
+				doRedo();
+			} else if (matchShortcut(e, activeShortcuts.undo) && !editingText && view === "editor") {
+				e.preventDefault();
+				doUndo();
+			} else if (matchShortcut(e, activeShortcuts.toggleOutline) && !editingText && view === "editor" && result) {
 				e.preventDefault();
 				setOutlineView(v => !v);
-			} else if (k === "v" && !editingText && view === "editor" && !modalOpen && !cropOpen) {
+			} else if (matchShortcut(e, activeShortcuts.togglePathSelect) && !editingText && view === "editor" && result) {
+				e.preventDefault();
+				setTool(tl => (tl === "selectPath" ? "pan" : "selectPath"));
+			} else if (matchShortcut(e, activeShortcuts.toggleSoftProof) && !editingText && view === "editor" && result) {
+				e.preventDefault();
+				setSoftProof(v => !v);
+			} else if (matchShortcut(e, activeShortcuts.paste) && !editingText && view === "editor" && !cropOpen) {
 				e.preventDefault();
 				void doPasteClipboard();
-			} else if (k === "c" && e.shiftKey && !editingText && view === "editor" && result) {
+			} else if (matchShortcut(e, activeShortcuts.copySvg) && !editingText && view === "editor" && result) {
 				e.preventDefault();
 				void doCopySvg();
-			} else if (k === "s" && view === "editor" && path) {
+			} else if (matchShortcut(e, activeShortcuts.saveProject) && view === "editor" && path) {
 				e.preventDefault();
-				void saveProject(e.shiftKey);
-			} else if (k === "o" && !busyRef.current) {
+				void saveProject(false);
+			} else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s" && view === "editor" && path) {
+				e.preventDefault();
+				void saveProject(true);
+			} else if (matchShortcut(e, activeShortcuts.openFile) && !busyRef.current) {
 				e.preventDefault();
 				void choose();
 			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [view, path, result, modalOpen, cropOpen, doUndo, doRedo, doPasteClipboard, doCopySvg, saveProject, choose]);
+	}, [
+		settingsModal,
+		activeShortcuts,
+		view,
+		path,
+		result,
+		cropOpen,
+		tool,
+		selectedPathId,
+		deleteSelectedPath,
+		doUndo,
+		doRedo,
+		doPasteClipboard,
+		doCopySvg,
+		saveProject,
+		choose,
+	]);
 
 	const switchProductionMode = (mode: ProductionMode) => {
-		const mName = mode === "screenPrint" ? t.modeScreenPrint : mode === "cutEmbroidery" ? t.modeCutEmbroidery : mode === "shading" ? t.modeShading : t.modeStandard;
+		const mName =
+			mode === "screenPrint"
+				? t.modeScreenPrint
+				: mode === "cutEmbroidery"
+					? t.modeCutEmbroidery
+					: mode === "shading"
+						? t.modeShading
+						: mode === "centerline"
+							? t.modeCenterline
+							: t.modeStandard;
 		recordHistory(`${t.productionModeTitle}: ${mName}`);
 		setSelectedPresetId("");
 		setOpts(o => {
@@ -554,6 +884,16 @@ function TraseaApp() {
 					sablonKnockout: false,
 				};
 			}
+			if (mode === "centerline") {
+				return {
+					...o,
+					productionMode: "centerline",
+					minStrokePt: 0,
+					stripBackground: true,
+					registrationMarks: false,
+					sablonKnockout: false,
+				};
+			}
 			return {
 				...o,
 				productionMode: "cutEmbroidery",
@@ -567,10 +907,13 @@ function TraseaApp() {
 		});
 		if (mode === "standard" || mode === "shading") {
 			setExp(ex => ({ ...ex, linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: false }));
-			setChecker(false);
+			if (!opts.preprocess.removeBackground) setChecker(false);
 		} else if (mode === "screenPrint") {
 			setExp(ex => ({ ...ex, linesAs: "stroke", trapPt: 0.5, registrationMarks: true, stripBackground: false }));
-			setChecker(false);
+			if (!opts.preprocess.removeBackground) setChecker(false);
+		} else if (mode === "centerline") {
+			setExp(ex => ({ ...ex, linesAs: "stroke", trapPt: 0, registrationMarks: false, stripBackground: true }));
+			setChecker(true);
 		} else {
 			setExp(ex => ({ ...ex, linesAs: "shape", trapPt: 0, registrationMarks: false, stripBackground: true }));
 			setChecker(true);
@@ -585,10 +928,10 @@ function TraseaApp() {
 		if (po.productionMode === "standard") {
 			standardBackupRef.current = { colors: po.colors, smooth: po.smooth };
 		}
-		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, preprocess: opts.preprocess });
+		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, pathEdits, preprocess: opts.preprocess });
 		setExp(pe);
 		setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
-		setChecker(po.productionMode === "cutEmbroidery" && po.stripBackground);
+		setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
 		if (po.targetNodes === null) setTargetChoice("auto");
 		else if (["500", "1000", "2000"].includes(String(po.targetNodes))) setTargetChoice(String(po.targetNodes) as TargetChoice);
 		else {
@@ -607,7 +950,15 @@ function TraseaApp() {
 			const next = await savePreset({
 				id,
 				name,
-				options: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], targetNodes, preprocess: { ...DEFAULT_PREPROCESS } },
+				options: {
+					...opts,
+					customPalette: null,
+					paletteMerges: [],
+					brushStrokes: [],
+					pathEdits: [],
+					targetNodes,
+					preprocess: { ...DEFAULT_PREPROCESS },
+				},
 				exportOptions: effectiveExport(),
 			});
 			setPresets(next);
@@ -637,19 +988,31 @@ function TraseaApp() {
 		setPalette(null);
 		setPaletteMerges([]);
 		setMergeSource(null);
-		if (path && !busyRef.current) void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes });
+		setInspectedColor(null);
+		if (path && !busyRef.current)
+			void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits });
 	};
 
 	const apply = () => {
 		setMergeSource(null);
-		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes });
+		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits });
 	};
 
 	const applyPreprocess = (pp: PreprocessOptions) => {
 		recordHistory(t.cropRotate);
 		setCropOpen(false);
-		const nextOpts: Options = { ...opts, preprocess: pp, customPalette: palette, paletteMerges, targetNodes, brushStrokes: [] };
+		setChecker(pp.removeBackground || (opts.productionMode === "cutEmbroidery" && opts.stripBackground));
+		const nextOpts: Options = {
+			...opts,
+			preprocess: pp,
+			customPalette: palette,
+			paletteMerges,
+			targetNodes,
+			brushStrokes: [],
+			pathEdits: [],
+		};
 		setStrokes([]);
+		setPathEdits([]);
 		setOpts(nextOpts);
 		if (path) void run(path, nextOpts);
 	};
@@ -682,6 +1045,34 @@ function TraseaApp() {
 				msg += ` ${t.andLabel} ${ase}`;
 			}
 			setInfo(msg);
+			if (appSettings.openFolderAfterExport) {
+				void openFolder(parentDir(target)).catch(() => {});
+			}
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const exportPaletteText = async (kind: PaletteTextExportKind) => {
+		const colors = currentPalette();
+		if (colors.length === 0) return;
+		setError("");
+		setInfo("");
+		const stem = path ? baseName(path) : "trasea-palette";
+		try {
+			const target = await pickPaletteTextSavePath(kind, `${stem}.${kind}`);
+			if (!target) return;
+			const content =
+				kind === "gpl"
+					? buildGplPalette(stem, colors, exp.spotColors)
+					: kind === "css"
+						? buildCssPalette(stem, colors, exp.spotColors)
+						: buildJsonPalette(stem, colors, exp.spotColors);
+			await saveTextFile(target, content);
+			setInfo(`${t.savedLabel} ${target}`);
+			if (appSettings.openFolderAfterExport) {
+				void openFolder(parentDir(target)).catch(() => {});
+			}
 		} catch (e) {
 			setError(errText(e));
 		}
@@ -701,6 +1092,9 @@ function TraseaApp() {
 			const effExp: ExportOptions = { ...effectiveExport(), registrationMarks: true, stripBackground: false };
 			const written = await saveSeparations(dir, baseName(path), sepPdf ? "both" : "svg", effExp);
 			setInfo(`${t.savedSepPrefix} ${written.length} ${t.savedSepMid} ${dir}`);
+			if (appSettings.openFolderAfterExport) {
+				void openFolder(dir).catch(() => {});
+			}
 		} catch (e) {
 			setError(errText(e));
 		}
@@ -718,9 +1112,102 @@ function TraseaApp() {
 		});
 	};
 
+	const proofMap = useMemo(() => {
+		const m = new Map<string, string>();
+		for (const p of result?.paletteProof ?? []) {
+			m.set(p.hex.toUpperCase(), p.proofHex.toUpperCase());
+		}
+		return m;
+	}, [result]);
+
+	const outOfGamutSet = useMemo(() => {
+		const s = new Set<string>();
+		for (const p of result?.paletteProof ?? []) {
+			if (p.outOfGamut) s.add(p.hex.toUpperCase());
+		}
+		return s;
+	}, [result]);
+
+	const spotMap = useMemo(() => {
+		const m = new Map<string, string>();
+		for (const sc of exp.spotColors) {
+			if (sc.spotName.trim()) m.set(sc.hex.toUpperCase(), sc.spotName.trim());
+		}
+		return m;
+	}, [exp.spotColors]);
+
+	const setSpotName = (hexColor: string, spotName: string) => {
+		const upper = hexColor.toUpperCase();
+		setExp(ex => {
+			const filtered = ex.spotColors.filter(s => s.hex.toUpperCase() !== upper);
+			const clean = spotName.trim();
+			const next: SpotColorMapping[] = clean ? [...filtered, { hex: upper, spotName: clean }] : filtered;
+			return { ...ex, spotColors: next };
+		});
+	};
+
+	const copyCodeValue = async (key: string, value: string) => {
+		try {
+			await navigator.clipboard.writeText(value);
+			setCopiedKey(key);
+			window.setTimeout(() => setCopiedKey(k => (k === key ? "" : k)), 1400);
+		} catch {
+			setError(t.unknownError);
+		}
+	};
+
+	const saveCurrentToPaletteLibrary = async () => {
+		const name = savedPaletteName.trim();
+		const colors = currentPalette();
+		if (!name || colors.length === 0) return;
+		setError("");
+		try {
+			const id = `pal-${Date.now()}`;
+			const next = await savePaletteLibraryItem({
+				id,
+				name,
+				colors: colors.map(hex => ({ hex, spotName: spotMap.get(hex.toUpperCase()) ?? null })),
+			});
+			setSavedPalettes(next);
+			setSelectedSavedPaletteId(id);
+			setSavedPaletteName("");
+			setAddingSavedPalette(false);
+			setInfo(t.paletteSavedMsg);
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const applySavedPalette = (sp: SavedPalette) => {
+		recordHistory(`${t.paletteLibTitle}: ${sp.name}`);
+		setSelectedSavedPaletteId(sp.id);
+		setPalette(sp.colors.map(c => c.hex.toUpperCase()));
+		setPaletteMerges([]);
+		const nextSpots: SpotColorMapping[] = sp.colors
+			.filter(c => c.spotName && c.spotName.trim().length > 0)
+			.map(c => ({ hex: c.hex.toUpperCase(), spotName: (c.spotName ?? "").trim() }));
+		if (nextSpots.length > 0) {
+			setExp(ex => ({ ...ex, spotColors: nextSpots }));
+		}
+		setInfo(t.paletteAppliedMsg);
+	};
+
+	const removeSelectedSavedPalette = async () => {
+		if (!selectedSavedPaletteId) return;
+		try {
+			const next = await deleteSavedPalette(selectedSavedPaletteId);
+			setSavedPalettes(next);
+			setSelectedSavedPaletteId("");
+			setInfo(t.paletteDeletedMsg);
+		} catch (e) {
+			setError(errText(e));
+		}
+	};
+
+	const baseSvg = liveSvg ?? result?.svg ?? "";
 	const previewSvg = useMemo(
-		() => (result ? buildPreviewSvg(result.svg, outlineView, hiddenLayers) : ""),
-		[result, outlineView, hiddenLayers],
+		() => (baseSvg ? buildPreviewSvg(baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool === "selectPath" ? selectedPathId : null) : ""),
+		[baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool, selectedPathId],
 	);
 	const svgUrl = useMemo(() => (previewSvg ? URL.createObjectURL(new Blob([previewSvg], { type: "image/svg+xml" })) : ""), [previewSvg]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);
@@ -741,6 +1228,7 @@ function TraseaApp() {
 		recordHistory(`${t.removeBtn} ${hex}`);
 		setPalette(base.filter(c => c !== hex));
 		setMergeSource(null);
+		if (inspectedColor === hex) setInspectedColor(null);
 	};
 	const othersByDistance = (hex: string): string[] => {
 		const a = rgb(hex);
@@ -772,6 +1260,13 @@ function TraseaApp() {
 		recordHistory(`${t.toolPipet} ${hex}`);
 		setPalette([...base, hex]);
 		setInfo(`${t.colorExistsPrefix} ${hex} ${t.colorAddedSuffix}`);
+	};
+
+	const onInteractiveSvgClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+		if (tool !== "selectPath") return;
+		const el = (e.target as Element | null)?.closest("[data-trasea-id]");
+		const id = el?.getAttribute("data-trasea-id") ?? null;
+		setSelectedPathId(id);
 	};
 
 	const toImage = (e: ReactPointerEvent<SVGSVGElement>): [number, number] => {
@@ -813,17 +1308,25 @@ function TraseaApp() {
 		}
 	};
 
-	const hasPreprocess = opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05;
-	const hasRegLayer = result !== null && result.svg.includes('id="Registrasi"');
+	const hasPreprocess = opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05 || opts.preprocess.removeBackground;
+	const hasRegLayer = baseSvg.includes('id="Registrasi"');
+	const hasCutLayer = baseSvg.includes('id="CutContour"');
 	const dirty = result !== null && appliedSig !== "" && signature !== appliedSig;
 	const paletteDirty = result !== null && palette !== null && JSON.stringify(palette) !== JSON.stringify(result.palette);
 	const painting = tool === "detail" || tool === "smooth";
 	const shown = live ? [...strokes, live] : strokes;
 	const maxColors = opts.productionMode === "screenPrint" ? 8 : opts.productionMode === "shading" ? 32 : 16;
 	const minColors = opts.productionMode === "shading" ? 12 : 2;
-	const undoTip = history.past.length > 0 ? `${t.undoTipPrefix}: ${history.past[history.past.length - 1]?.label ?? ""}` : t.undoTipPrefix;
-	const redoTip = history.future.length > 0 ? `${t.redoTipPrefix}: ${history.future[0]?.label ?? ""}` : t.redoTipPrefix;
+	const undoTip =
+		history.past.length > 0
+			? `${t.undoTipPrefix} (${activeShortcuts.undo}): ${history.past[history.past.length - 1]?.label ?? ""}`
+			: `${t.undoTipPrefix} (${activeShortcuts.undo})`;
+	const redoTip =
+		history.future.length > 0
+			? `${t.redoTipPrefix} (${activeShortcuts.redo}): ${history.future[0]?.label ?? ""}`
+			: `${t.redoTipPrefix} (${activeShortcuts.redo})`;
 	const locale = lang === "en" ? "en-US" : "id-ID";
+	const canvasBgClass = checker ? `checker bg-${appSettings.canvasBg}` : "";
 
 	return (
 		<div className={`app ${over ? "dragging" : ""}`} data-signature={signature.length}>
@@ -843,15 +1346,22 @@ function TraseaApp() {
 						<button aria-pressed={lang === "id"} onClick={() => setLang("id")}>ID</button>
 						<button aria-pressed={lang === "en"} onClick={() => setLang("en")}>EN</button>
 					</div>
-					<button className="ghost" onClick={() => void doPasteClipboard()} disabled={busy} title={t.pasteImageTip}>{t.pasteImage}</button>
+					<button className="ghost" onClick={() => void doPasteClipboard()} disabled={busy} title={`${t.pasteImageTip} (${activeShortcuts.paste})`}>{t.pasteImage}</button>
 					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>
 						{t.batchFolder}
 					</button>
 					{view === "editor" && path && (
-						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title={t.saveProjectTip}>{t.saveProject}</button>
+						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title={`${t.saveProjectTip} (${activeShortcuts.saveProject})`}>{t.saveProject}</button>
 					)}
-					<button className="ghost" onClick={() => void openPrivacyModal("license")}>{t.privacyLicense}</button>
-					<button onClick={() => void choose()} disabled={busy} title={t.openImageProjectTip}>{t.openImageProject}</button>
+					<button onClick={() => void choose()} disabled={busy} title={`${t.openImageProjectTip} (${activeShortcuts.openFile})`}>{t.openImageProject}</button>
+					<button
+						className="ghost settings-gear-btn"
+						onClick={() => setSettingsModal({ tab: "general" })}
+						title={`${t.settingsBtnTip} (${activeShortcuts.openSettings})`}
+						aria-label={t.settingsBtn}
+					>
+						<IconGear />
+					</button>
 				</div>
 			</header>
 
@@ -903,58 +1413,232 @@ function TraseaApp() {
 						{result && !busy && (
 							<div className="stagebox">
 								<div className="toolbar" role="toolbar" aria-label={t.toolbarAria}>
-									<div className="group" role="group" aria-label={t.modeGroupAria}>
-										<button aria-pressed={tool === "pan"} onClick={() => setTool("pan")}>{t.toolPan}</button>
-										<button aria-pressed={tool === "detail"} onClick={() => setTool("detail")} className="tool-detail">{t.toolDetail}</button>
-										<button aria-pressed={tool === "smooth"} onClick={() => setTool("smooth")} className="tool-smooth">{t.toolSmooth}</button>
-										<button aria-pressed={tool === "pipet"} onClick={() => setTool("pipet")}>{t.toolPipet}</button>
+									<div className="tb-group" role="group" aria-label={t.modeGroupAria}>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={tool === "pan"}
+											onClick={() => setTool("pan")}
+											title={t.toolPan}
+											aria-label={t.toolPan}
+										>
+											<IconHand />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={tool === "selectPath"}
+											onClick={() => setTool(tl => (tl === "selectPath" ? "pan" : "selectPath"))}
+											title={`${t.toolSelectPath} (${activeShortcuts.togglePathSelect}) — ${t.toolSelectPathTip}`}
+											aria-label={`${t.toolSelectPath} (${activeShortcuts.togglePathSelect})`}
+										>
+											<IconPointer />
+										</button>
+										<button
+											className="tb-icon-btn tool-detail"
+											aria-pressed={tool === "detail"}
+											onClick={() => setTool("detail")}
+											title={t.toolDetail}
+											aria-label={t.toolDetail}
+										>
+											<IconDetailBrush />
+										</button>
+										<button
+											className="tb-icon-btn tool-smooth"
+											aria-pressed={tool === "smooth"}
+											onClick={() => setTool("smooth")}
+											title={t.toolSmooth}
+											aria-label={t.toolSmooth}
+										>
+											<IconSmoothBrush />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={tool === "pipet"}
+											onClick={() => setTool("pipet")}
+											title={t.toolPipet}
+											aria-label={t.toolPipet}
+										>
+											<IconEyedropper />
+										</button>
 									</div>
-									<div className="group" role="group" aria-label={t.historyGroupAria}>
-										<button onClick={doUndo} disabled={history.past.length === 0} title={undoTip}>{t.undo}</button>
-										<button onClick={doRedo} disabled={history.future.length === 0} title={redoTip}>{t.redo}</button>
+
+									<span className="tb-sep" aria-hidden="true" />
+
+									<div className="tb-group" role="group" aria-label={t.historyGroupAria}>
+										<button
+											className="tb-icon-btn"
+											onClick={doUndo}
+											disabled={history.past.length === 0}
+											title={undoTip}
+											aria-label={undoTip}
+										>
+											<IconUndo />
+										</button>
+										<button
+											className="tb-icon-btn"
+											onClick={doRedo}
+											disabled={history.future.length === 0}
+											title={redoTip}
+											aria-label={redoTip}
+										>
+											<IconRedo />
+										</button>
 									</div>
+
 									{painting && (
-										<div className="group">
-											<label className="brushsize" htmlFor="brush">{t.brushSize} <b>{brushSize}</b> px</label>
-											<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
-											<button onClick={() => { recordHistory(t.clearStrokes); setStrokes([]); }} disabled={strokes.length === 0}>{t.clearStrokes}</button>
-										</div>
+										<>
+											<span className="tb-sep" aria-hidden="true" />
+											<div className="group">
+												<label className="brushsize" htmlFor="brush">{t.brushSize} <b>{brushSize}</b> px</label>
+												<input id="brush" type="range" min={10} max={120} value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} />
+												<button className="small" onClick={() => { recordHistory(t.clearStrokes); setStrokes([]); }} disabled={strokes.length === 0}>{t.clearStrokes}</button>
+											</div>
+										</>
 									)}
-									<div className="group" role="group" aria-label={t.overlayGroupAria}>
-										<button aria-pressed={outlineView} onClick={() => setOutlineView(v => !v)} title={t.outlineTip}>{t.outlineView}</button>
-										<button aria-pressed={hasPreprocess} onClick={() => setCropOpen(true)} title={t.cropRotateTip}>{t.cropRotate}</button>
-										<button aria-pressed={showHeat} onClick={() => setShowHeat(h => !h)}>{t.heatmapNode}</button>
-										<button aria-pressed={checker} onClick={() => setChecker(c => !c)}>{t.checkerBg}</button>
+
+									<span className="tb-sep tb-views-sep" aria-hidden="true" />
+
+									<div className="tb-group tb-views" role="group" aria-label={t.overlayGroupAria}>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={outlineView}
+											onClick={() => setOutlineView(v => !v)}
+											title={`${t.outlineView} (${activeShortcuts.toggleOutline}) — ${t.outlineTip}`}
+											aria-label={`${t.outlineView} (${activeShortcuts.toggleOutline})`}
+										>
+											<IconOutline />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={softProof}
+											onClick={() => setSoftProof(v => !v)}
+											title={`${t.softProofBtn} (${activeShortcuts.toggleSoftProof}) — ${t.softProofTip}`}
+											aria-label={`${t.softProofBtn} (${activeShortcuts.toggleSoftProof})`}
+										>
+											<IconSoftProof />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={hasPreprocess}
+											onClick={() => setCropOpen(true)}
+											title={`${t.cropRotate} — ${t.cropRotateTip}`}
+											aria-label={t.cropRotate}
+										>
+											<IconCrop />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={showHeat}
+											onClick={() => setShowHeat(h => !h)}
+											title={t.heatmapNode}
+											aria-label={t.heatmapNode}
+										>
+											<IconHeatmap />
+										</button>
+										<button
+											className="tb-icon-btn"
+											aria-pressed={checker}
+											onClick={() => setChecker(c => !c)}
+											title={t.checkerBg}
+											aria-label={t.checkerBg}
+										>
+											<IconChecker />
+										</button>
 									</div>
 								</div>
+
 								{tool === "pipet" && <div className="hint">{t.pipetHint}</div>}
+								{tool === "selectPath" && !selectedPathId && (
+									<div className="row between">
+										<span className="hint">{t.pathSelectHint}</span>
+										{pathEdits.length > 0 && (
+											<button className="small" onClick={resetAllPathEdits}>
+												{t.pathResetEdits} ({pathEdits.length})
+											</button>
+										)}
+									</div>
+								)}
+								{tool === "selectPath" && selectedPathId && (
+									<div className="path-bar" role="region" aria-label={t.pathSelectedLabel}>
+										<span>{t.pathSelectedLabel}: <code>{selectedPathId}</code></span>
+										<button className="small danger" onClick={deleteSelectedPath}>{t.pathDeleteBtn}</button>
+										<span className="muted">{t.pathRecolorLabel}</span>
+										<div className="recolor-row">
+											{currentPalette().map(hex => (
+												<button
+													key={hex}
+													className="recolor-chip"
+													style={{ background: hex }}
+													title={`${t.pathRecolorLabel} ${hex}`}
+													aria-label={`${t.pathRecolorLabel} ${hex}`}
+													onClick={() => recolorSelectedPath(hex)}
+												/>
+											))}
+										</div>
+										{pathEdits.length > 0 && (
+											<button className="small" onClick={resetAllPathEdits}>
+												{t.pathResetEdits} ({pathEdits.length})
+											</button>
+										)}
+									</div>
+								)}
 								{painting && (
 									<div className="hint">
 										{t.brushHintPrefix} {tool === "detail" ? t.brushHintDetail : t.brushHintSmooth}. {t.brushHintSuffix}
 									</div>
 								)}
-								<div className={`compare ${checker ? "checker" : ""}`} style={{ aspectRatio: `${result.width} / ${result.height}` }}>
-									<img className="layer" src={result.original} alt={t.tagOriginal} draggable={false} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
-									<img className="layer vec" src={svgUrl} alt={t.tagVector} draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
-									<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
-									{showText && result.textRegions.map((r, i) => (
-										<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
-									))}
-									<svg ref={overlayRef} className="overlay" viewBox={`0 0 ${result.width} ${result.height}`} preserveAspectRatio="none" aria-hidden="true" data-testid="overlay"
-										style={{ pointerEvents: tool === "pan" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
-										onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-										{showHeat && (() => {
-											const hm = result.heatmap;
-											const cell = Math.max(result.width, result.height) / 32;
-											return hm.cells.map((v, i) => v > 0 ? <rect key={i} className="heatcell" x={(i % hm.cols) * cell} y={Math.floor(i / hm.cols) * cell} width={cell} height={cell} fill={heatColor(v / Math.max(1, hm.maxCell))} fillOpacity={0.25 + 0.35 * (v / Math.max(1, hm.maxCell))} /> : null);
-										})()}
-										{shown.map((s, i) => !s.points[0] ? null : s.points.length === 1
-											? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
-											: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
-									</svg>
-									<span className="tag left">{t.tagOriginal}</span>
-									<span className="tag right">{outlineView ? t.tagOutline : t.tagVector}</span>
-									<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label={t.compareSliderAria} style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
+
+								<div className="compare-wrap">
+									<div
+										className={`compare ${canvasBgClass}`}
+										style={{
+											aspectRatio: `${result.width} / ${result.height}`,
+											width: `min(100%, calc((100vh - 156px) * ${(result.width / Math.max(1, result.height)).toFixed(4)}))`,
+										}}
+									>
+										{tool === "selectPath" ? (
+											<div
+												className="layer vec interactive-svg"
+												onClick={onInteractiveSvgClick}
+												dangerouslySetInnerHTML={{ __html: previewSvg }}
+											/>
+										) : (
+											<>
+												<img className="layer" src={result.original} alt={t.tagOriginal} draggable={false} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
+												<img className="layer vec" src={svgUrl} alt={t.tagVector} draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
+												<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
+											</>
+										)}
+										{showText && result.textRegions.map((r, i) => (
+											<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
+										))}
+										<svg
+											ref={overlayRef}
+											className="overlay"
+											viewBox={`0 0 ${result.width} ${result.height}`}
+											preserveAspectRatio="none"
+											aria-hidden="true"
+											data-testid="overlay"
+											style={{ pointerEvents: tool === "pan" || tool === "selectPath" ? "none" : "auto", cursor: tool === "pipet" ? "crosshair" : painting ? "cell" : "default" }}
+											onPointerDown={onDown}
+											onPointerMove={onMove}
+											onPointerUp={onUp}
+											onPointerCancel={onUp}
+										>
+											{showHeat && (() => {
+												const hm = result.heatmap;
+												const cell = Math.max(result.width, result.height) / 32;
+												return hm.cells.map((v, i) => v > 0 ? <rect key={i} className="heatcell" x={(i % hm.cols) * cell} y={Math.floor(i / hm.cols) * cell} width={cell} height={cell} fill={heatColor(v / Math.max(1, hm.maxCell))} fillOpacity={0.25 + 0.35 * (v / Math.max(1, hm.maxCell))} /> : null);
+											})()}
+											{shown.map((s, i) => !s.points[0] ? null : s.points.length === 1
+												? <circle key={i} cx={s.points[0][0]} cy={s.points[0][1]} r={s.radius} fill={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} fillOpacity={0.4} />
+												: <polyline key={i} points={s.points.map(p => `${p[0]},${p[1]}`).join(" ")} fill="none" stroke={s.kind === "detail" ? "#3b82f6" : "#f59e0b"} strokeOpacity={0.4} strokeWidth={s.radius * 2} strokeLinecap="round" strokeLinejoin="round" />)}
+										</svg>
+										{tool !== "selectPath" && <span className="tag left">{t.tagOriginal}</span>}
+										<span className="tag right">{outlineView ? t.tagOutline : softProof ? t.tagSoftProof : t.tagVector}</span>
+										{tool !== "selectPath" && (
+											<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label={t.compareSliderAria} style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
+										)}
+									</div>
 								</div>
 								{showHeat && (
 									<div className="legend" aria-label={t.heatmapLegendAria}>
@@ -1002,11 +1686,12 @@ function TraseaApp() {
 						)}
 
 						<h2>{t.productionModeTitle}</h2>
-						<div className="seg seg4-grid" role="group" aria-label={t.productionModeAria}>
+						<div className="seg seg5-grid" role="group" aria-label={t.productionModeAria}>
 							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>{t.modeStandard}</button>
 							<button aria-pressed={opts.productionMode === "screenPrint"} onClick={() => switchProductionMode("screenPrint")}>{t.modeScreenPrint}</button>
 							<button aria-pressed={opts.productionMode === "cutEmbroidery"} onClick={() => switchProductionMode("cutEmbroidery")}>{t.modeCutEmbroidery}</button>
 							<button aria-pressed={opts.productionMode === "shading"} onClick={() => switchProductionMode("shading")}>{t.modeShading}</button>
+							<button aria-pressed={opts.productionMode === "centerline"} onClick={() => switchProductionMode("centerline")}>{t.modeCenterline}</button>
 						</div>
 
 						{opts.productionMode === "screenPrint" && (
@@ -1039,7 +1724,66 @@ function TraseaApp() {
 							</div>
 						)}
 
-						{hasPreprocess && (
+						{opts.productionMode === "centerline" && (
+							<div className="mode-box">
+								<label className="check">
+									<input type="checkbox" checked={opts.centerlineInvert} onChange={e => set({ centerlineInvert: e.target.checked }, t.centerlineInvertLabel)} />
+									{t.centerlineInvertLabel}
+								</label>
+								<label htmlFor="centerlineStroke">{t.centerlineStrokeLabel} <b>{opts.centerlineStrokePt.toFixed(2)} pt</b></label>
+								<input
+									id="centerlineStroke"
+									type="range"
+									min={0.25}
+									max={8}
+									step={0.25}
+									value={opts.centerlineStrokePt}
+									onChange={e => set({ centerlineStrokePt: Number(e.target.value) }, t.centerlineStrokeLabel)}
+								/>
+								<div className="hint">{t.centerlineHint}</div>
+							</div>
+						)}
+
+						{/* F3: 1-Click Auto Remove Background */}
+						<div className="mode-box" style={{ marginTop: 8 }}>
+							<label className="check" style={{ marginTop: 0 }}>
+								<input
+									type="checkbox"
+									checked={opts.preprocess.removeBackground}
+									onChange={e => {
+										const checked = e.target.checked;
+										set({ preprocess: { ...opts.preprocess, removeBackground: checked } }, t.removeBgToggle);
+										if (checked) setChecker(true);
+									}}
+								/>
+								<span><b>{t.removeBgToggle}</b></span>
+							</label>
+							{opts.preprocess.removeBackground && (
+								<>
+									<label htmlFor="bgTol">{t.bgToleranceLabel} <b>{opts.preprocess.bgTolerance}</b></label>
+									<input
+										id="bgTol"
+										type="range"
+										min={0}
+										max={100}
+										value={opts.preprocess.bgTolerance}
+										onChange={e => set({ preprocess: { ...opts.preprocess, bgTolerance: Number(e.target.value) } }, t.bgToleranceLabel)}
+									/>
+									<label htmlFor="bgDefringe">{t.defringeLabel} <b>{opts.preprocess.defringePx} px</b></label>
+									<input
+										id="bgDefringe"
+										type="range"
+										min={0}
+										max={3}
+										value={opts.preprocess.defringePx}
+										onChange={e => set({ preprocess: { ...opts.preprocess, defringePx: Number(e.target.value) } }, t.defringeLabel)}
+									/>
+									<div className="hint">{t.removeBgHint}</div>
+								</>
+							)}
+						</div>
+
+						{(opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05) && (
 							<div className="mode-box row between" style={{ marginTop: 8 }}>
 								<span className="hint" style={{ color: "var(--ink)" }}>
 									{t.preprocessActive}
@@ -1051,8 +1795,12 @@ function TraseaApp() {
 						)}
 
 						<h2>{t.settingsTitle}</h2>
-						<label htmlFor="colors">{t.colorCount} <b>{Math.min(maxColors, Math.max(minColors, opts.colors))}</b></label>
-						<input id="colors" type="range" min={minColors} max={maxColors} value={Math.min(maxColors, Math.max(minColors, opts.colors))} onChange={e => set({ colors: Number(e.target.value) }, t.colorCount)} />
+						{opts.productionMode !== "centerline" && (
+							<>
+								<label htmlFor="colors">{t.colorCount} <b>{Math.min(maxColors, Math.max(minColors, opts.colors))}</b></label>
+								<input id="colors" type="range" min={minColors} max={maxColors} value={Math.min(maxColors, Math.max(minColors, opts.colors))} onChange={e => set({ colors: Number(e.target.value) }, t.colorCount)} />
+							</>
+						)}
 						<label htmlFor="smooth">{t.smoothness} <b>{opts.smooth < 34 ? t.smoothDetail : opts.smooth > 66 ? t.smoothSmooth : t.smoothMedium}</b></label>
 						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, t.smoothness)} />
 						<div className="hint">{t.smoothHint}</div>
@@ -1066,26 +1814,40 @@ function TraseaApp() {
 						</select>
 						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label={t.targetNodesLabel} />}
 						<div className="hint">{t.targetHint}</div>
-						<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, t.keepLines)} /> {t.keepLines}</label>
-						<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} /> {t.detectPrimitives}</label>
-						<div className="hint">{t.primitivesHint}</div>
-						<label htmlFor="symmetry">{t.symmetryLabel}</label>
-						<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, t.symmetryLabel)}>
-							<option value="off">{t.symOff}</option>
-							<option value="auto">{t.symAuto}</option>
-							<option value="vertical">{t.symVert}</option>
-							<option value="horizontal">{t.symHoriz}</option>
-						</select>
-						<div className="hint">{t.symmetryHint}</div>
-						<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} /> {t.aiCleanLabel}</label>
-						<div className="hint">{t.aiCleanHint}</div>
-						{opts.aiClean && !hasSidecar && <div className="warn">{t.noSidecarWarn}</div>}
+						{opts.productionMode !== "centerline" && (
+							<>
+								<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, t.keepLines)} /> {t.keepLines}</label>
+								<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} /> {t.detectPrimitives}</label>
+								<div className="hint">{t.primitivesHint}</div>
+								<label htmlFor="symmetry">{t.symmetryLabel}</label>
+								<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, t.symmetryLabel)}>
+									<option value="off">{t.symOff}</option>
+									<option value="auto">{t.symAuto}</option>
+									<option value="vertical">{t.symVert}</option>
+									<option value="horizontal">{t.symHoriz}</option>
+								</select>
+								<div className="hint">{t.symmetryHint}</div>
+							</>
+						)}
+						<label className="check">
+							<input type="checkbox" checked={!appSettings.preferMedianOnly && opts.aiClean} disabled={appSettings.preferMedianOnly} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} />
+							{t.aiCleanLabel}
+						</label>
+						<div className="hint">{appSettings.preferMedianOnly ? t.medianOnlyHint : t.aiCleanHint}</div>
+						{opts.aiClean && !hasSidecar && !appSettings.preferMedianOnly && <div className="warn">{t.noSidecarWarn}</div>}
 						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? t.applyAgain : t.vectorizeBtn}</button>
 						{dirty && (
 							<div className="pending" role="status">
 								{t.pendingChanges}
-								{palette !== null || strokes.length > 0 || hasPreprocess
-									? ` (${[palette !== null ? t.pendingPalette : "", strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "", hasPreprocess ? t.pendingPreprocess : ""].filter(Boolean).join(", ")})`
+								{palette !== null || strokes.length > 0 || hasPreprocess || pathEdits.length > 0
+									? ` (${[
+											palette !== null ? t.pendingPalette : "",
+											strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "",
+											hasPreprocess ? t.pendingPreprocess : "",
+											pathEdits.length > 0 ? `${pathEdits.length} ${t.pendingPathEdits}` : "",
+										]
+											.filter(Boolean)
+											.join(", ")})`
 									: ""}.
 							</div>
 						)}
@@ -1104,7 +1866,12 @@ function TraseaApp() {
 								</div>
 								<ul className="palette" aria-label={t.paletteAria}>
 									{currentPalette().map(c => {
+										const upper = c.toUpperCase();
 										const isHidden = hiddenLayers.has(c);
+										const isOut = outOfGamutSet.has(upper);
+										const spot = spotMap.get(upper) ?? "";
+										const isInspected = inspectedColor === c;
+										const codes = isInspected ? formatColorCodes(c) : null;
 										return (
 											<li key={c} className={`swatch-item ${isHidden ? "layer-hidden" : ""}`}>
 												<div className="swatch">
@@ -1117,11 +1884,71 @@ function TraseaApp() {
 													>
 														<EyeIcon hidden={isHidden} />
 													</button>
-													<span className="chip" style={{ background: c }} aria-hidden="true" />
+													<button
+														className={`chip-btn ${isInspected ? "active" : ""}`}
+														style={{ background: softProof ? (proofMap.get(upper) ?? c) : c }}
+														onClick={() => {
+															setMergeSource(null);
+															setInspectedColor(cur => (cur === c ? null : c));
+														}}
+														title={t.inspectColorTip}
+														aria-label={`${t.inspectColorTip} ${c}`}
+														aria-expanded={isInspected}
+													/>
 													<code>{c}</code>
-													<button className="small" aria-expanded={mergeSource === c} onClick={() => setMergeSource(s => (s === c ? null : c))} disabled={currentPalette().length <= 2} aria-label={`${t.mergeBtn} ${c}`}>{t.mergeBtn}</button>
+													{isOut && <span className="gamut-warn" title={t.outOfGamutTip} aria-label={t.outOfGamutTip}>⚠</span>}
+													{spot && <span className="spot-pill" title={`${t.spotBadgePrefix} ${spot}`}>{spot}</span>}
+													<button
+														className="small"
+														aria-expanded={mergeSource === c}
+														onClick={() => {
+															setInspectedColor(null);
+															setMergeSource(s => (s === c ? null : c));
+														}}
+														disabled={currentPalette().length <= 2}
+														aria-label={`${t.mergeBtn} ${c}`}
+													>
+														{t.mergeBtn}
+													</button>
 													<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`${t.removeBtn} ${c}`}>{t.removeBtn}</button>
 												</div>
+
+												{isInspected && codes && (
+													<div className="color-inspector" role="region" aria-label={`Color Inspector ${c}`}>
+														<div className="ci-grid">
+															{(["hex", "rgb", "cmyk", "hsl"] as const).map(fmt => {
+																const k = `${c}-${fmt}`;
+																const val = codes[fmt];
+																return (
+																	<div key={fmt} style={{ display: "contents" }}>
+																		<span className="ci-label">{fmt.toUpperCase()}</span>
+																		<span className="ci-val" title={val}>{val}</span>
+																		<button className="small" onClick={() => void copyCodeValue(k, val)}>
+																			{copiedKey === k ? t.copiedTag : t.copyBtn}
+																		</button>
+																	</div>
+																);
+															})}
+														</div>
+														<div className="ci-spot">
+															<span className="ci-label">{t.spotInkLabel}</span>
+															<div className="ci-spot-row">
+																<input
+																	className="num"
+																	type="text"
+																	value={spot}
+																	placeholder={t.spotInkPlaceholder}
+																	aria-label={t.spotInkLabel}
+																	onChange={e => setSpotName(c, e.target.value)}
+																/>
+																{spot && (
+																	<button className="small" onClick={() => setSpotName(c, "")}>{t.spotInkClear}</button>
+																)}
+															</div>
+														</div>
+													</div>
+												)}
+
 												{mergeSource === c && (
 													<div className="merge-pop" role="region" aria-label={`${t.mergeToLabel} ${c}`}>
 														<div className="hint">{t.mergeToLabel} <code>{c}</code></div>
@@ -1153,6 +1980,23 @@ function TraseaApp() {
 											<span className="layer-label">{t.layerThinLines}</span>
 										</div>
 									</li>
+									{hasCutLayer && (
+										<li className={`swatch-item ${hiddenLayers.has(CUT_LAYER) ? "layer-hidden" : ""}`}>
+											<div className="swatch">
+												<button
+													className="small icon-btn"
+													aria-pressed={hiddenLayers.has(CUT_LAYER)}
+													onClick={() => toggleLayer(CUT_LAYER)}
+													title={hiddenLayers.has(CUT_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+													aria-label={t.layerCutContour}
+												>
+													<EyeIcon hidden={hiddenLayers.has(CUT_LAYER)} />
+												</button>
+												<span className="chip chip-cut" aria-hidden="true" />
+												<span className="layer-label">{t.layerCutContour} ({exp.dieCutSpotName || "CutContour"})</span>
+											</div>
+										</li>
+									)}
 									{hasRegLayer && (
 										<li className={`swatch-item ${hiddenLayers.has(REG_LAYER) ? "layer-hidden" : ""}`}>
 											<div className="swatch">
@@ -1171,7 +2015,55 @@ function TraseaApp() {
 										</li>
 									)}
 								</ul>
-								<div className="hint">{t.layerPreviewOnlyHint}</div>
+
+								{/* F8: Saved Palette Library + .gpl/.json/.css export */}
+								<div className="mode-box" style={{ marginTop: 8 }}>
+									<div className="row between">
+										<strong style={{ fontSize: 12 }}>{t.paletteLibTitle}</strong>
+										<button className="small" onClick={() => setAddingSavedPalette(v => !v)}>
+											{addingSavedPalette ? t.close : t.savePaletteBtn}
+										</button>
+									</div>
+									{addingSavedPalette && (
+										<div className="preset-add">
+											<input
+												className="num"
+												type="text"
+												placeholder={t.paletteNamePlaceholder}
+												value={savedPaletteName}
+												onChange={e => setSavedPaletteName(e.target.value)}
+												onKeyDown={e => { if (e.key === "Enter") void saveCurrentToPaletteLibrary(); }}
+											/>
+											<button className="small" onClick={() => void saveCurrentToPaletteLibrary()} disabled={!savedPaletteName.trim()}>{t.save}</button>
+										</div>
+									)}
+									{savedPalettes.length > 0 && (
+										<div className="preset-row">
+											<select
+												aria-label={t.paletteLibTitle}
+												value={selectedSavedPaletteId}
+												onChange={e => {
+													const sp = savedPalettes.find(x => x.id === e.target.value);
+													if (sp) applySavedPalette(sp);
+												}}
+											>
+												<option value="">{t.chooseSavedPalette}</option>
+												{savedPalettes.map(sp => (
+													<option key={sp.id} value={sp.id}>{sp.name} ({sp.colors.length})</option>
+												))}
+											</select>
+											<button className="small" onClick={() => void removeSelectedSavedPalette()} disabled={!selectedSavedPaletteId}>{t.delete}</button>
+										</div>
+									)}
+									<div className="row" style={{ marginTop: 6 }}>
+										<button className="small" onClick={() => void exportAs("ase")}>.ase</button>
+										<button className="small" onClick={() => void exportPaletteText("gpl")}>{t.exportGpl}</button>
+										<button className="small" onClick={() => void exportPaletteText("json")}>{t.exportJsonPal}</button>
+										<button className="small" onClick={() => void exportPaletteText("css")}>{t.exportCssPal}</button>
+									</div>
+								</div>
+
+								<div className="hint" style={{ marginTop: 6 }}>{t.layerPreviewOnlyHint}</div>
 								<div className="hint">{t.paletteHintBase} {paletteDirty ? t.paletteDirtyHint : palette !== null ? t.paletteManualHint : t.paletteAutoHint}</div>
 
 								<h2>{t.statsTitle}</h2>
@@ -1188,6 +2080,51 @@ function TraseaApp() {
 								</dl>
 
 								<h2>{t.exportTitle}</h2>
+
+								{/* F1: Die-Cut / Kiss-Cut Contour */}
+								<div className="mode-box" style={{ marginTop: 4, marginBottom: 8 }}>
+									<label className="check" style={{ marginTop: 0 }}>
+										<input
+											type="checkbox"
+											checked={exp.dieCutContour}
+											onChange={e => setExp(ex => ({ ...ex, dieCutContour: e.target.checked }))}
+										/>
+										<span><b>{t.dieCutEnable}</b></span>
+									</label>
+									{exp.dieCutContour && (
+										<>
+											<label htmlFor="dieCutOffset">{t.dieCutOffsetLabel} <b>{exp.dieCutOffsetMm.toFixed(1)} mm</b></label>
+											<input
+												id="dieCutOffset"
+												type="range"
+												min={0.5}
+												max={10}
+												step={0.5}
+												value={exp.dieCutOffsetMm}
+												onChange={e => setExp(ex => ({ ...ex, dieCutOffsetMm: Number(e.target.value) }))}
+											/>
+											<label htmlFor="dieCutSpot">{t.dieCutSpotNameLabel}</label>
+											<input
+												id="dieCutSpot"
+												className="num"
+												type="text"
+												value={exp.dieCutSpotName}
+												placeholder="CutContour"
+												onChange={e => setExp(ex => ({ ...ex, dieCutSpotName: e.target.value }))}
+											/>
+											<label className="check">
+												<input
+													type="checkbox"
+													checked={exp.dieCutBridgeIslands}
+													onChange={e => setExp(ex => ({ ...ex, dieCutBridgeIslands: e.target.checked }))}
+												/>
+												{t.dieCutBridgeLabel}
+											</label>
+											<div className="hint">{t.dieCutHint}</div>
+										</>
+									)}
+								</div>
+
 								<label>{t.colorSpaceLabel}</label>
 								<div className="seg seg2" role="group" aria-label={t.colorSpaceLabel} style={{ marginTop: 4 }}>
 									<button aria-pressed={exp.colorSpace === "rgb"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "rgb" as ColorSpace }))}>RGB</button>
@@ -1196,12 +2133,12 @@ function TraseaApp() {
 								{exp.colorSpace === "cmyk" && <div className="hint">{t.colorSpaceHintCmyk}</div>}
 
 								<label htmlFor="linesAs">{t.linesAsLabel}</label>
-								<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
+								<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : opts.productionMode === "centerline" ? "stroke" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
 									<option value="stroke">{t.linesStroke}</option>
 									<option value="shape">{t.linesShape}</option>
 								</select>
 								<label htmlFor="trap">{t.trapLabel}</label>
-								<select id="trap" value={opts.productionMode === "cutEmbroidery" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
+								<select id="trap" value={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
 									<option value={0}>{t.trapNone}</option>
 									<option value={0.25}>0,25 pt</option>
 									<option value={0.5}>0,5 pt</option>
@@ -1213,7 +2150,7 @@ function TraseaApp() {
 
 								<label htmlFor="dxfUnit">{t.dxfUnitLabel}</label>
 								<select id="dxfUnit" value={exp.dxfUnit} onChange={e => setExp({ ...exp, dxfUnit: e.target.value as DxfUnit })}>
-									<option value="mm">{t.dxfUnitMm}</option>
+									<option value="mm">{t.dxfUnitMm} ({appSettings.defaultDpi} DPI)</option>
 									<option value="px">{t.dxfUnitPx}</option>
 								</select>
 								{exp.dxfUnit === "mm" && (
@@ -1225,7 +2162,7 @@ function TraseaApp() {
 											type="number"
 											min={1}
 											step={1}
-											placeholder={t.dxfTargetWidthPlaceholder}
+											placeholder={`${t.dxfTargetWidthPlaceholder} (${appSettings.defaultDpi})`}
 											value={dxfWidthInput}
 											onChange={e => setDxfWidthInput(e.target.value)}
 										/>
@@ -1234,7 +2171,7 @@ function TraseaApp() {
 
 								<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> {t.includeAse}</label>
 								<div className="row" style={{ marginTop: 8 }}>
-									<button onClick={() => void doCopySvg()} title={t.copySvgTip}>{t.copySvgBtn}</button>
+									<button onClick={() => void doCopySvg()} title={`${t.copySvgTip} (${activeShortcuts.copySvg})`}>{t.copySvgBtn}</button>
 									<button onClick={() => void exportAs("svg")}>{t.exportSvg}</button>
 									<button onClick={() => void exportAs("pdf")}>{t.exportPdf}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 									<button onClick={() => void exportAs("dxf")}>{t.exportDxf}</button>
@@ -1273,46 +2210,80 @@ function TraseaApp() {
 				/>
 			)}
 
-			{modalOpen !== null && (
-				<div className="modal" role="dialog" aria-modal="true" aria-label={t.privacyLicense} onClick={() => setModalOpen(null)}>
-					<div className="modal-box" onClick={e => e.stopPropagation()}>
-						<div className="row between">
-							<h2>{t.privacyLicense}</h2>
-							<button className="ghost" onClick={() => setModalOpen(null)}>{t.close}</button>
-						</div>
-						<Licenses
-							markdown={modalOpen.markdown}
-							license={license}
-							initialTab={modalOpen.tab}
-							promptHint={modalOpen.hint}
-							onLicenseChanged={setLicense}
-						/>
-					</div>
-				</div>
+			{settingsModal !== null && (
+				<SettingsModal
+					settings={appSettings}
+					initialTab={settingsModal.tab}
+					license={license}
+					licenseSubTab={settingsModal.licenseSubTab}
+					licenseHint={settingsModal.licenseHint}
+					onLicenseChanged={setLicense}
+					onUpdate={onUpdateSettings}
+					onApplyExportDefaultsNow={next => {
+						setExp(ex => ({
+							...ex,
+							colorSpace: next.defaultColorSpace,
+							dxfUnit: next.defaultDxfUnit,
+							dieCutOffsetMm: next.defaultDieCutOffsetMm,
+							dieCutSpotName: next.defaultDieCutSpotName,
+							dieCutBridgeIslands: next.defaultDieCutBridge,
+						}));
+					}}
+					onClose={() => setSettingsModal(null)}
+				/>
 			)}
 		</div>
 	);
 }
 
 export default function App() {
-	const [lang, setLangState] = useState<Lang>("id");
+	const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
 
 	useEffect(() => {
 		void getAppSettings()
 			.then(s => {
-				if (s.language === "en" || s.language === "id") setLangState(s.language);
+				setSettings({ ...DEFAULT_APP_SETTINGS, ...s });
 			})
 			.catch(() => {});
 	}, []);
 
-	const setLang = useCallback((next: Lang) => {
-		setLangState(next);
-		void saveAppSettings({ language: next }).catch(() => {});
+	// Apply light/dark/system theme to <html data-theme="...">
+	useEffect(() => {
+		const applyTheme = () => {
+			let resolved: "dark" | "light" = "dark";
+			if (settings.theme === "light") resolved = "light";
+			else if (settings.theme === "dark") resolved = "dark";
+			else resolved = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+			document.documentElement.setAttribute("data-theme", resolved);
+		};
+		applyTheme();
+		if (settings.theme !== "system") return;
+		const mq = window.matchMedia("(prefers-color-scheme: light)");
+		mq.addEventListener("change", applyTheme);
+		return () => mq.removeEventListener("change", applyTheme);
+	}, [settings.theme]);
+
+	const updateSettings = useCallback((next: AppSettings) => {
+		setSettings(next);
+		void saveAppSettings(next)
+			.then(saved => setSettings({ ...DEFAULT_APP_SETTINGS, ...saved }))
+			.catch(() => {});
 	}, []);
 
+	const setLang = useCallback(
+		(nextLang: Lang) => {
+			setSettings(prev => {
+				const updated: AppSettings = { ...prev, language: nextLang };
+				void saveAppSettings(updated).catch(() => {});
+				return updated;
+			});
+		},
+		[],
+	);
+
 	return (
-		<I18nProvider lang={lang} setLang={setLang}>
-			<TraseaApp />
+		<I18nProvider lang={settings.language} setLang={setLang}>
+			<TraseaApp appSettings={settings} onUpdateSettings={updateSettings} />
 		</I18nProvider>
 	);
 }

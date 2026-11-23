@@ -1,9 +1,9 @@
 {
   "name": "trasea",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
-  "description": "Trasea: offline raster to clean vector (SVG/PDF/EPS/DXF) converter",
+  "description": "Trasea: local-first & private raster to clean vector (SVG/PDF/EPS/DXF) converter",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
