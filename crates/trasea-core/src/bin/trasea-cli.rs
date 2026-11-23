@@ -1,12 +1,18 @@
-//! Trasea CLI: single-file conversion, `--batch <in-dir> <out-dir>`, and `--render` helper.
+//! Trasea CLI: single-file conversion, `--batch <in-dir> <out-dir>`, `--watch <in-dir> --out <out-dir>`, and `--render` helper.
 
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use trasea_core::batch::{run_batch, scan_image_files, BatchConfig, BatchStatus};
-use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_eps, to_separation_svgs, to_svg, LinesAs};
-use trasea_core::{export, load, vectorize, Params, ProductionMode, ProductionOptions, SymmetryMode};
+use trasea_core::color::ColorSpace;
+use trasea_core::dxf::DxfUnit;
+use trasea_core::export::{
+    export_options_for_production, palette_of, to_ase_with_color_space, to_dxf, to_eps, to_pdf,
+    to_separation_eps, to_separation_pdfs, to_separation_svgs, to_svg, LinesAs,
+};
+use trasea_core::watch::{watch_folder, WatchConfig};
+use trasea_core::{load, vectorize, Params, ProductionMode, ProductionOptions, SymmetryMode};
 
 /// `#RRGGBB` (or `RRGGBB`) to a colour.
 fn parse_hex(s: &str) -> Option<[u8; 3]> {
@@ -18,9 +24,19 @@ fn parse_hex(s: &str) -> Option<[u8; 3]> {
     Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
+/// `x,y,w,h` to `[u32; 4]`.
+fn parse_crop(s: &str) -> Option<[u32; 4]> {
+    let parts: Vec<u32> = s.split(',').filter_map(|p| p.trim().parse::<u32>().ok()).collect();
+    if parts.len() == 4 && parts[2] > 0 && parts[3] > 0 {
+        Some([parts[0], parts[1], parts[2], parts[3]])
+    } else {
+        None
+    }
+}
+
 fn usage() {
     eprintln!(
-        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting] [--pdf out.pdf] [--eps out.eps] [--ase out.ase] [--separations DIR] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting] [--subfolders] [--pdf] [--eps] [--ase] [--separations] [--no-report] [options...]"
+        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading] [--sablon-knockout] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading] [--sablon-knockout] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
     );
 }
 
@@ -35,13 +51,29 @@ fn main() {
     }
 
     let is_batch = args.first().map(String::as_str) == Some("--batch");
-    if (is_batch && args.len() < 3) || (!is_batch && args.len() < 2) {
+    let is_watch = args.first().map(String::as_str) == Some("--watch");
+    let is_folder_mode = is_batch || is_watch;
+
+    if (is_batch && args.len() < 3) || (is_watch && args.len() < 2) || (!is_folder_mode && args.len() < 2) {
         usage();
         std::process::exit(2);
     }
 
-    let (input, output, start_i) = if is_batch {
+    let (input, mut output, start_i) = if is_batch {
         (PathBuf::from(&args[1]), PathBuf::from(&args[2]), 3usize)
+    } else if is_watch {
+        // Accept both `--watch <in_dir> --out <out_dir>` and `--watch <in_dir> <out_dir>`
+        if args.get(2).map(String::as_str) == Some("--out") {
+            if args.len() < 4 {
+                usage();
+                std::process::exit(2);
+            }
+            (PathBuf::from(&args[1]), PathBuf::from(&args[3]), 4usize)
+        } else if args.len() >= 3 && !args[2].starts_with("--") {
+            (PathBuf::from(&args[1]), PathBuf::from(&args[2]), 3usize)
+        } else {
+            (PathBuf::from(&args[1]), PathBuf::new(), 2usize)
+        }
     } else {
         (PathBuf::from(&args[0]), PathBuf::from(&args[1]), 2usize)
     };
@@ -50,17 +82,23 @@ fn main() {
     p.ai_clean = false;
     let mut pdf_path: Option<PathBuf> = None;
     let mut eps_path: Option<PathBuf> = None;
+    let mut dxf_path: Option<PathBuf> = None;
     let mut ase_path: Option<PathBuf> = None;
     let mut png_path: Option<PathBuf> = None;
     let mut sep_dir: Option<PathBuf> = None;
     let mut batch_pdf = false;
     let mut batch_eps = false;
+    let mut batch_dxf = false;
     let mut batch_ase = false;
     let mut batch_separations = false;
     let mut batch_subfolders = false;
     let mut batch_report = true;
+    let mut poll_ms: u64 = 1000;
+    let mut debounce_ms: u64 = 500;
+    let mut watch_timeout_ms: Option<u64> = None;
 
     let mut mode: Option<ProductionMode> = None;
+    let mut sablon_knockout = false;
     let mut colors_set = false;
     let mut smooth_set = false;
     let mut lines_override: Option<LinesAs> = None;
@@ -68,20 +106,30 @@ fn main() {
     let mut min_stroke_override: Option<f64> = None;
     let mut reg_marks_override: Option<bool> = None;
     let mut strip_bg_override: Option<bool> = None;
+    let mut color_space = ColorSpace::Rgb;
+    let mut dxf_unit = DxfUnit::Mm;
+    let mut dxf_width_mm: Option<f32> = None;
 
     let mut i = start_i;
     while i < args.len() {
         match args[i].as_str() {
+            "--out" => {
+                i += 1;
+                if let Some(v) = args.get(i) {
+                    output = PathBuf::from(v);
+                }
+            }
             "--mode" => {
                 i += 1;
                 match args.get(i).and_then(|v| ProductionMode::parse(v)) {
                     Some(m) => mode = Some(m),
                     None => {
-                        eprintln!("--mode needs one of: standard, sablon, cutting");
+                        eprintln!("--mode needs one of: standard, sablon, cutting, shading");
                         std::process::exit(2);
                     }
                 }
             }
+            "--sablon-knockout" => sablon_knockout = true,
             "--colors" => {
                 i += 1;
                 p.colors = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(10);
@@ -92,8 +140,58 @@ fn main() {
                 p.smooth = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(0.5);
                 smooth_set = true;
             }
+            "--color-space" => {
+                i += 1;
+                match args.get(i).and_then(|v| ColorSpace::parse(v)) {
+                    Some(cs) => color_space = cs,
+                    None => {
+                        eprintln!("--color-space needs one of: rgb, cmyk");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--dxf-unit" => {
+                i += 1;
+                match args.get(i).and_then(|v| DxfUnit::parse(v)) {
+                    Some(u) => dxf_unit = u,
+                    None => {
+                        eprintln!("--dxf-unit needs one of: mm, px");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--dxf-width-mm" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<f32>().ok()).filter(|&v| v.is_finite() && v > 0.0) {
+                    Some(w) => dxf_width_mm = Some(w),
+                    None => {
+                        eprintln!("--dxf-width-mm needs a positive number (e.g. 100)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--crop" => {
+                i += 1;
+                match args.get(i).and_then(|v| parse_crop(v)) {
+                    Some(rect) => p.preprocess.crop = Some(rect),
+                    None => {
+                        eprintln!("--crop needs x,y,w,h (positive w and h)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--rotate" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<f32>().ok()).filter(|v| v.is_finite()) {
+                    Some(deg) => p.preprocess.rotate_deg = deg,
+                    None => {
+                        eprintln!("--rotate needs a finite angle in degrees");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "--pdf" => {
-                if is_batch {
+                if is_folder_mode {
                     batch_pdf = true;
                 } else {
                     i += 1;
@@ -101,15 +199,23 @@ fn main() {
                 }
             }
             "--eps" => {
-                if is_batch {
+                if is_folder_mode {
                     batch_eps = true;
                 } else {
                     i += 1;
                     eps_path = args.get(i).map(PathBuf::from);
                 }
             }
+            "--dxf" => {
+                if is_folder_mode {
+                    batch_dxf = true;
+                } else {
+                    i += 1;
+                    dxf_path = args.get(i).map(PathBuf::from);
+                }
+            }
             "--ase" => {
-                if is_batch {
+                if is_folder_mode {
                     batch_ase = true;
                 } else {
                     i += 1;
@@ -117,7 +223,7 @@ fn main() {
                 }
             }
             "--separations" => {
-                if is_batch {
+                if is_folder_mode {
                     batch_separations = true;
                 } else {
                     i += 1;
@@ -126,9 +232,24 @@ fn main() {
             }
             "--subfolders" => batch_subfolders = true,
             "--no-report" => batch_report = false,
+            "--poll-ms" => {
+                i += 1;
+                poll_ms = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(1000);
+            }
+            "--debounce-ms" => {
+                i += 1;
+                debounce_ms = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(500);
+            }
+            "--watch-timeout-ms" => {
+                i += 1;
+                watch_timeout_ms = args.get(i).and_then(|v| v.parse().ok());
+            }
             "--lines" => {
                 i += 1;
-                lines_override = Some(if args.get(i).map(String::as_str) == Some("shape") { LinesAs::Shape } else { LinesAs::Stroke });
+                lines_override = match args.get(i).map(String::as_str) {
+                    Some("shape") => Some(LinesAs::Shape),
+                    _ => Some(LinesAs::Stroke),
+                };
             }
             "--trap" => {
                 i += 1;
@@ -136,72 +257,66 @@ fn main() {
             }
             "--min-stroke" => {
                 i += 1;
-                match args.get(i).and_then(|v| v.parse::<f64>().ok()).filter(|v| *v >= 0.0) {
-                    Some(v) => min_stroke_override = Some(v),
-                    None => {
-                        eprintln!("--min-stroke needs a number >= 0 (points)");
-                        std::process::exit(2);
-                    }
-                }
+                min_stroke_override = args.get(i).and_then(|v| v.parse().ok());
             }
             "--reg-marks" => reg_marks_override = Some(true),
             "--no-reg-marks" => reg_marks_override = Some(false),
             "--strip-bg" => strip_bg_override = Some(true),
             "--keep-bg" => strip_bg_override = Some(false),
-            "--ai" => p.ai_clean = true,
-            "--sidecar" => {
-                i += 1;
-                p.sidecar_dir = args.get(i).map(PathBuf::from);
-            }
             "--no-lines" => p.keep_lines = false,
+            "--ai" => p.ai_clean = true,
             "--no-ai" => p.ai_clean = false,
             "--no-primitives" => p.detect_primitives = false,
             "--no-text-detect" => p.detect_text = false,
-            "--target-nodes" => {
-                i += 1;
-                match args.get(i).and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 0) {
-                    Some(n) => p.target_nodes = Some(n),
-                    None => {
-                        eprintln!("--target-nodes needs a whole number above 0");
-                        std::process::exit(2);
-                    }
-                }
-            }
-            "--palette" => {
-                i += 1;
-                let parsed: Option<Vec<[u8; 3]>> = args.get(i).and_then(|v| v.split(',').map(|c| parse_hex(c.trim())).collect());
-                match parsed.filter(|c| c.len() >= 2) {
-                    Some(c) => p.custom_palette = Some(c),
-                    None => {
-                        eprintln!("--palette needs at least 2 colours like \"#0F3973,#EBD9C1\"");
-                        std::process::exit(2);
-                    }
-                }
-            }
             "--symmetry" => {
                 i += 1;
                 match args.get(i).and_then(|v| SymmetryMode::parse(v)) {
-                    Some(m) => p.symmetry = m,
+                    Some(s) => p.symmetry = s,
                     None => {
                         eprintln!("--symmetry needs one of: off, auto, vertical, horizontal");
                         std::process::exit(2);
                     }
                 }
             }
+            "--target-nodes" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0) {
+                    Some(n) => p.target_nodes = Some(n),
+                    None => {
+                        eprintln!("--target-nodes needs a positive integer");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--palette" => {
+                i += 1;
+                let list: Vec<[u8; 3]> = args.get(i).map(|s| s.split(',').filter_map(parse_hex).collect()).unwrap_or_default();
+                if list.len() < 2 {
+                    eprintln!("--palette needs at least 2 hex colours separated by commas, e.g. \"#FFFFFF,#000000\"");
+                    std::process::exit(2);
+                }
+                p.custom_palette = Some(list);
+            }
             "--png" => {
                 i += 1;
                 png_path = args.get(i).map(PathBuf::from);
             }
+            "--sidecar" => {
+                i += 1;
+                p.sidecar_dir = args.get(i).map(PathBuf::from);
+            }
             other => {
-                eprintln!("unknown option {other}");
+                eprintln!("unknown option: {other}");
+                usage();
                 std::process::exit(2);
             }
         }
         i += 1;
     }
 
-    // Apply production mode defaults, then explicit CLI overrides.
-    p.production = match mode.unwrap_or(ProductionMode::Standard) {
+    // Apply production mode defaults before explicit overrides.
+    let active_mode = mode.unwrap_or(ProductionMode::Standard);
+    let mut prod = match active_mode {
         ProductionMode::Standard => ProductionOptions::standard(),
         ProductionMode::ScreenPrint => {
             if !colors_set {
@@ -215,27 +330,102 @@ fn main() {
             }
             ProductionOptions::cut_embroidery()
         }
+        ProductionMode::Shading => {
+            if !colors_set {
+                p.colors = 18;
+            }
+            ProductionOptions::shading()
+        }
     };
+    prod.sablon_knockout = sablon_knockout;
     if let Some(ms) = min_stroke_override {
-        p.production.min_stroke_pt = ms;
+        prod.min_stroke_pt = ms.max(0.0);
     }
     if let Some(rm) = reg_marks_override {
-        p.production.registration_marks = rm;
+        prod.registration_marks = rm;
     }
     if let Some(sb) = strip_bg_override {
-        p.production.strip_background = sb;
+        prod.strip_background = sb;
     }
+    p.production = prod;
 
     let mut eo = export_options_for_production(&p.production);
-    if let Some(l) = lines_override {
+    eo.color_space = color_space;
+    eo.dxf_unit = dxf_unit;
+    eo.dxf_target_width_mm = dxf_width_mm;
+    if let Some(la) = lines_override {
         if p.production.mode != ProductionMode::CutEmbroidery {
-            eo.lines_as = l;
+            eo.lines_as = la;
         }
     }
-    if let Some(t) = trap_override {
+    if let Some(tp) = trap_override {
         if p.production.mode != ProductionMode::CutEmbroidery {
-            eo.trap_pt = t;
+            eo.trap_pt = tp.max(0.0);
         }
+    }
+    if let Some(rm) = reg_marks_override {
+        eo.registration_marks = rm;
+    }
+    if let Some(sb) = strip_bg_override {
+        eo.strip_background = sb;
+    }
+
+    if is_watch {
+        if output.as_os_str().is_empty() {
+            eprintln!("--watch requires --out <output-dir>");
+            usage();
+            std::process::exit(2);
+        }
+        let batch_cfg = BatchConfig {
+            inputs: Vec::new(),
+            output_dir: output.clone(),
+            params: p,
+            export: eo,
+            write_pdf: batch_pdf,
+            write_eps: batch_eps,
+            write_dxf: batch_dxf,
+            write_ase: batch_ase,
+            write_separations: batch_separations,
+            write_report_csv: batch_report,
+            write_report_md: batch_report,
+            color_space,
+            dxf_unit,
+            dxf_target_width_mm: dxf_width_mm,
+            max_workers: None,
+        };
+        let mut wcfg = WatchConfig::new(input.clone(), output.clone(), batch_cfg);
+        wcfg.poll_ms = poll_ms;
+        wcfg.debounce_ms = debounce_ms;
+        wcfg.include_subfolders = batch_subfolders;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        if let Some(ms) = watch_timeout_ms {
+            let s2 = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(ms));
+                s2.store(true, Ordering::Relaxed);
+            });
+        }
+        eprintln!("watching {} -> {} (poll {}ms, debounce {}ms)", input.display(), output.display(), poll_ms, debounce_ms);
+        match watch_folder(&wcfg, stop, |ev| {
+            eprintln!(
+                "[watch] {} -> {} (node {}, {}ms){}",
+                ev.file_name,
+                ev.status.label(),
+                ev.nodes,
+                ev.elapsed_ms,
+                ev.error.as_deref().map(|e| format!(" | err: {e}")).unwrap_or_default()
+            );
+        }) {
+            Ok(events) => {
+                println!("watch selesai: {} event diproses -> {}", events.len(), output.display());
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
     }
 
     if is_batch {
@@ -247,7 +437,7 @@ fn main() {
             }
         };
         if files.is_empty() {
-            eprintln!("Tidak ada file gambar yang didukung di {}", input.display());
+            eprintln!("Tidak ada file gambar didukung (.png/.jpg/.webp/.bmp) di {}", input.display());
             std::process::exit(1);
         }
         let cfg = BatchConfig {
@@ -257,10 +447,14 @@ fn main() {
             export: eo,
             write_pdf: batch_pdf,
             write_eps: batch_eps,
+            write_dxf: batch_dxf,
             write_ase: batch_ase,
             write_separations: batch_separations,
             write_report_csv: batch_report,
             write_report_md: batch_report,
+            color_space,
+            dxf_unit,
+            dxf_target_width_mm: dxf_width_mm,
             max_workers: None,
         };
         let cancel = Arc::new(AtomicBool::new(false));
@@ -316,14 +510,17 @@ fn main() {
     };
     let svg = to_svg(&out.doc, &eo);
     std::fs::write(&output, &svg).expect("cannot write the SVG");
-    if let Some(eps) = eps_path {
-        std::fs::write(&eps, to_eps(&out.doc, &eo)).expect("cannot write the EPS");
+    if let Some(eps) = &eps_path {
+        std::fs::write(eps, to_eps(&out.doc, &eo)).expect("cannot write the EPS");
     }
-    if let Some(ase) = ase_path {
-        std::fs::write(&ase, to_ase(&palette_of(&out.doc))).expect("cannot write the ASE");
+    if let Some(dxf) = &dxf_path {
+        std::fs::write(dxf, to_dxf(&out.doc, &eo)).expect("cannot write the DXF");
+    }
+    if let Some(ase) = &ase_path {
+        std::fs::write(ase, to_ase_with_color_space(&palette_of(&out.doc), eo.color_space)).expect("cannot write the ASE");
     }
     if let Some(pdf) = &pdf_path {
-        match export::svg_to_pdf(&svg) {
+        match to_pdf(&out.doc, &eo) {
             Ok(bytes) => std::fs::write(pdf, bytes).expect("cannot write the PDF"),
             Err(e) => eprintln!("PDF: {e}"),
         }
@@ -335,17 +532,25 @@ fn main() {
         for film in &films {
             let f_svg = sdir.join(format!("{stem}_{}.svg", film.suffix));
             std::fs::write(&f_svg, &film.svg).expect("cannot write separation SVG");
-            if pdf_path.is_some() {
-                if let Ok(bytes) = export::svg_to_pdf(&film.svg) {
+        }
+        if pdf_path.is_some() {
+            if let Ok(pdfs) = to_separation_pdfs(&out.doc, &eo) {
+                for (film, bytes) in pdfs {
                     let f_pdf = sdir.join(format!("{stem}_{}.pdf", film.suffix));
                     let _ = std::fs::write(&f_pdf, bytes);
                 }
             }
         }
+        if eps_path.is_some() {
+            for (film, eps_text) in to_separation_eps(&out.doc, &eo) {
+                let f_eps = sdir.join(format!("{stem}_{}.eps", film.suffix));
+                let _ = std::fs::write(&f_eps, eps_text);
+            }
+        }
         eprintln!("separations: {} films written to {}", films.len(), sdir.display());
     }
     if let Some(png) = png_path {
-        match trasea_core::stats::render_svg(&svg, img.width(), img.height()) {
+        match trasea_core::stats::render_svg(&svg, out.doc.width, out.doc.height) {
             Ok(r) => r.save(&png).expect("cannot write the PNG"),
             Err(e) => eprintln!("PNG: {e}"),
         }

@@ -322,6 +322,7 @@ fn t07_batch_handles_valid_corrupt_and_ignored_files_and_writes_reports() {
         write_report_csv: true,
         write_report_md: true,
         max_workers: None,
+        ..BatchConfig::default()
     };
     let summary = run_batch(&cfg, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
     assert_eq!(summary.total, 4);
@@ -371,6 +372,7 @@ fn t08_batch_cancellation_stops_cleanly_after_first_file() {
         write_report_csv: true,
         write_report_md: true,
         max_workers: Some(1),
+        ..BatchConfig::default()
     };
     let summary = run_batch(&cfg, cancel, move |prog| {
         if let Some(ref rep) = prog.item_report {
@@ -422,6 +424,7 @@ fn t09_batch_duplicate_filenames_across_subfolders_do_not_overwrite() {
         write_report_csv: false,
         write_report_md: false,
         max_workers: None,
+        ..BatchConfig::default()
     };
     let summary = run_batch(&cfg, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
     assert_eq!(summary.succeeded, 2);

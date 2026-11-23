@@ -215,6 +215,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         ProductionMode::Standard => ProductionOptions::standard(),
         ProductionMode::ScreenPrint => ProductionOptions::screen_print(),
         ProductionMode::CutEmbroidery => ProductionOptions::cut_embroidery(),
+        ProductionMode::Shading => ProductionOptions::shading(),
     };
     if let Some(ms) = params.min_stroke_pt {
         prod.min_stroke_pt = ms.max(0.0);
@@ -250,6 +251,7 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         trap_pt: options.trap_pt.clamp(0.0, 1.0),
         registration_marks: options.registration_marks,
         strip_background: options.strip_background,
+        ..ExportOptions::default()
     }
 }
 
@@ -555,6 +557,7 @@ async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: 
             write_report_csv: true,
             write_report_md: true,
             max_workers: None,
+            ..BatchConfig::default()
         };
         core_run_batch(&cfg, cancel, |prog| {
             let _ = handle.emit("batch-progress", prog);

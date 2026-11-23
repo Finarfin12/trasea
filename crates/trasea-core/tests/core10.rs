@@ -144,6 +144,7 @@ fn e03_batch_with_write_eps_produces_valid_eps_alongside_svg() {
         write_report_csv: false,
         write_report_md: false,
         max_workers: None,
+        ..BatchConfig::default()
     };
     let summary = run_batch(&cfg, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
     assert_eq!(summary.succeeded, 2);
@@ -251,12 +252,17 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             min_stroke_pt: 1.0,
             strip_background: false,
             registration_marks: true,
+            sablon_knockout: false,
+            preprocess: Default::default(),
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),
             trap_pt: 0.5,
             registration_marks: true,
             strip_background: false,
+            color_space: Default::default(),
+            dxf_unit: Default::default(),
+            dxf_target_width_mm: None,
         },
     };
     let p_path = root.join("demo.trasea");
@@ -298,12 +304,17 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             min_stroke_pt: 1.5,
             strip_background: true,
             registration_marks: false,
+            sablon_knockout: false,
+            preprocess: Default::default(),
         },
         export_options: ProjectExportOptions {
             lines_as: "shape".into(),
             trap_pt: 0.0,
             registration_marks: false,
             strip_background: true,
+            color_space: Default::default(),
+            dxf_unit: Default::default(),
+            dxf_target_width_mm: None,
         },
     };
     let p_path = root.join("moved.trasea");

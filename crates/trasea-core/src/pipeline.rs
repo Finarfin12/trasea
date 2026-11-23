@@ -9,7 +9,8 @@ use crate::clean::clean;
 use crate::export::{export_options_for_production, to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::heatmap::{node_heatmap, NodeHeatmap};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
-use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex};
+use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex, rgb_to_lab};
+use crate::preprocess::{apply_preprocess_rgb, PreprocessOptions};
 use crate::primitives;
 use crate::production::{cut_min_area_px, enforce_min_stroke, filter_micro_regions, screen_print_min_spot_px, ProductionMode, ProductionOptions};
 use crate::stats::{compare, count_primitives, count_svg, render_svg, Stats};
@@ -52,8 +53,10 @@ pub struct Params {
     pub target_nodes: Option<usize>,
     /// Correction brush strokes, in source pixels (later strokes paint over earlier ones).
     pub brush_strokes: Vec<BrushStroke>,
-    /// Production profile (`Standard`, `ScreenPrint`, `CutEmbroidery`).
+    /// Production profile (`Standard`, `ScreenPrint`, `CutEmbroidery`, `Shading`).
     pub production: ProductionOptions,
+    /// Optional non-destructive pre-processing (rotation & crop) applied before tracing.
+    pub preprocess: PreprocessOptions,
 }
 
 impl Default for Params {
@@ -74,6 +77,7 @@ impl Default for Params {
             target_nodes: None,
             brush_strokes: Vec::new(),
             production: ProductionOptions::default(),
+            preprocess: PreprocessOptions::default(),
         }
     }
 }
@@ -114,6 +118,8 @@ pub struct PreparedImage {
     pub notes: Vec<String>,
     /// Working resolution factor the clean step used.
     pub up: u32,
+    /// Fingerprint of pre-processing applied when building this cache entry.
+    pub preprocess: PreprocessOptions,
 }
 
 pub type Progress<'a> = &'a dyn Fn(&str, f32);
@@ -185,9 +191,66 @@ fn nearest_in_palette(c: Rgb, palette: &[Rgb]) -> Rgb {
         .unwrap_or(c)
 }
 
-/// Run the first half once: thin-line guard (from the ORIGINAL) and clean.
+/// Edge-preserving bilateral smooth in Lab space (used exclusively by `ProductionMode::Shading`
+/// to reduce gradient noise into clean tonal bands without blurring crisp edges).
+fn edge_preserving_smooth(img: &RgbImage, radius: i32, delta_e: f32) -> RgbImage {
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    if w == 0 || h == 0 || radius <= 0 {
+        return img.clone();
+    }
+    let labs: Vec<[f32; 3]> = img.pixels().map(|p| rgb_to_lab(p.0)).collect();
+    let sigma_c2 = 2.0 * delta_e * delta_e;
+    let sigma_s2 = 2.0 * (radius as f32 * 0.75).powi(2).max(0.5);
+    let mut out = RgbImage::new(w as u32, h as u32);
+    for y in 0..h as i32 {
+        let y0 = (y - radius).max(0);
+        let y1 = (y + radius).min(h as i32 - 1);
+        for x in 0..w as i32 {
+            let x0 = (x - radius).max(0);
+            let x1 = (x + radius).min(w as i32 - 1);
+            let c_lab = labs[y as usize * w + x as usize];
+            let (mut sr, mut sg, mut sb, mut wsum) = (0f32, 0f32, 0f32, 0f32);
+            for yy in y0..=y1 {
+                let dy2 = ((yy - y) * (yy - y)) as f32;
+                let row = yy as usize * w;
+                for xx in x0..=x1 {
+                    let dx2 = ((xx - x) * (xx - x)) as f32;
+                    let nl = labs[row + xx as usize];
+                    let de2 = (nl[0] - c_lab[0]).powi(2) + (nl[1] - c_lab[1]).powi(2) + (nl[2] - c_lab[2]).powi(2);
+                    let wgt = (-(dx2 + dy2) / sigma_s2 - de2 / sigma_c2).exp();
+                    let px = img.get_pixel(xx as u32, yy as u32).0;
+                    sr += px[0] as f32 * wgt;
+                    sg += px[1] as f32 * wgt;
+                    sb += px[2] as f32 * wgt;
+                    wsum += wgt;
+                }
+            }
+            if wsum > 0.0 {
+                out.put_pixel(
+                    x as u32,
+                    y as u32,
+                    image::Rgb([
+                        (sr / wsum).round().clamp(0.0, 255.0) as u8,
+                        (sg / wsum).round().clamp(0.0, 255.0) as u8,
+                        (sb / wsum).round().clamp(0.0, 255.0) as u8,
+                    ]),
+                );
+            } else {
+                out.put_pixel(x as u32, y as u32, *img.get_pixel(x as u32, y as u32));
+            }
+        }
+    }
+    out
+}
+
+/// Run the first half once: optional non-destructive preprocess, thin-line guard (from the ORIGINAL), and clean.
 pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<PreparedImage> {
     let up = params.up.max(1);
+    let src = if params.preprocess.is_identity() {
+        src
+    } else {
+        apply_preprocess_rgb(&src, &params.preprocess)
+    };
     progress("Looking for thin lines", 0.05);
     let thin = thin_mask(&src, &ThinParams::for_size(src.width(), src.height()));
     progress(if params.ai_clean { "Cleaning with Real-ESRGAN" } else { "Cleaning" }, 0.15);
@@ -196,7 +259,15 @@ pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<Pre
     if let Some(n) = cleaned.note {
         notes.push(n);
     }
-    Ok(PreparedImage { src, cleaned: cleaned.image, thin, used_ai: cleaned.used_ai, notes, up })
+    Ok(PreparedImage {
+        src,
+        cleaned: cleaned.image,
+        thin,
+        used_ai: cleaned.used_ai,
+        notes,
+        up,
+        preprocess: params.preprocess.clone(),
+    })
 }
 
 /// Both halves in one call (what the CLI and the tests use).
@@ -233,7 +304,13 @@ fn dedupe(p: &[Rgb]) -> Vec<Rgb> {
 fn base<'a>(prep: &'a PreparedImage, params: &Params, notes: &mut Vec<String>) -> Base<'a> {
     let (w, h) = (prep.src.width() as usize, prep.src.height() as usize);
     let up = prep.up.max(1);
-    let work = &prep.cleaned;
+    let is_shading = params.production.mode == ProductionMode::Shading;
+    let shading_buf: Option<RgbImage> = if is_shading {
+        Some(edge_preserving_smooth(&prep.cleaned, 2, 14.0))
+    } else {
+        None
+    };
+    let work: &RgbImage = shading_buf.as_ref().unwrap_or(&prep.cleaned);
     let (ww, wh) = (work.width() as usize, work.height() as usize);
     let s = (ww.max(wh) as f64) / REF_LONG_SIDE;
     let scale = ww as f64 / w as f64;
@@ -267,6 +344,8 @@ fn base<'a>(prep: &'a PreparedImage, params: &Params, notes: &mut Vec<String>) -
                     notes.push("Mode Sablon membatasi warna spot maksimal 8 warna.".to_string());
                 }
                 params.colors.clamp(2, 8)
+            } else if is_shading {
+                params.colors.clamp(12, 32)
             } else {
                 params.colors.clamp(2, 16)
             };
@@ -367,7 +446,7 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
 
     // Production micro-region cleanup (Standard keeps 0.4.0 behaviour unchanged).
     let micro_removed = match params.production.mode {
-        ProductionMode::Standard => 0,
+        ProductionMode::Standard | ProductionMode::Shading => 0,
         ProductionMode::ScreenPrint => filter_micro_regions(&mut labels, ww as u32, wh as u32, screen_print_min_spot_px(ww as u32, wh as u32)),
         ProductionMode::CutEmbroidery => filter_micro_regions(&mut labels, ww as u32, wh as u32, cut_min_area_px(ww as u32, wh as u32)),
     };
@@ -385,7 +464,9 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
     let tp = TraceParams { corner_deg: lerp(50.0, 80.0, t) + (k.extra - 1.0) * 14.0, sigma: lerp(0.9, 1.8, t) * s, tol: lerp(0.8, 4.0, t) * s * k.extra, min_area };
     let ctx = TraceCtx { prim_scale: params.detect_primitives.then_some(scale), zones: b.brush.as_ref(), protect: Some(&b.protect) };
 
-    let (mut fields, primitives_count) = if params.production.mode == ProductionMode::CutEmbroidery {
+    let use_knockout = params.production.mode == ProductionMode::CutEmbroidery
+        || (params.production.mode == ProductionMode::ScreenPrint && params.production.sablon_knockout);
+    let (mut fields, primitives_count) = if use_knockout {
         let mut f = trace_layers_knockout(&labels, ww, wh, &b.palette, &tp, &ctx, params.production.strip_background);
         if let Some(pl) = &sym_plan {
             symmetry::mirror_layers(&mut f, pl, (ww as f64, wh as f64));

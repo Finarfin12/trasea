@@ -1,12 +1,15 @@
-//! Trasea core: raster illustration / logo -> clean SVG / PDF. No UI, no network.
+//! Trasea core: raster illustration / logo -> clean SVG / PDF / EPS / DXF. No UI, no network.
 //!
-//! Pipeline (see `pipeline::vectorize`): load -> thin-line guard (from the ORIGINAL image) -> AI clean
-//! (Real-ESRGAN sidecar, median fallback) -> palette lock -> layer tracing (visioncortex, the VTracer engine)
-//! -> thin lines stacked on top -> tidy + export.
+//! Pipeline (see `pipeline::vectorize`): load -> optional non-destructive preprocess (crop/rotate)
+//! -> thin-line guard (from the ORIGINAL image) -> AI clean (Real-ESRGAN sidecar, median fallback)
+//! -> palette lock (or Shading 12-32 Lab bands) -> layer tracing (visioncortex, the VTracer engine)
+//! -> thin lines stacked on top -> tidy + export (SVG, PDF, EPS, DXF, ASE; RGB or CMYK).
 pub mod batch;
 pub mod brush;
 pub mod centerline;
 pub mod clean;
+pub mod color;
+pub mod dxf;
 pub mod export;
 pub mod fit;
 pub mod heatmap;
@@ -15,6 +18,7 @@ pub mod lines;
 pub mod load;
 pub mod palette;
 pub mod pipeline;
+pub mod preprocess;
 pub mod primitives;
 pub mod production;
 pub mod project;
@@ -22,15 +26,21 @@ pub mod stats;
 pub mod symmetry;
 pub mod text_detect;
 pub mod trace;
+pub mod watch;
 
 pub use brush::{BrushKind, BrushStroke};
+pub use color::{rgb_to_cmyk, ColorSpace};
+pub use dxf::{to_dxf, DxfUnit};
+pub use export::to_pdf;
 pub use heatmap::NodeHeatmap;
-pub use pipeline::{prepare, vectorize, vectorize_prepared, Output, Params, PreparedImage, Progress};
 pub use license::{LicenseError, LicenseInfo};
+pub use pipeline::{prepare, vectorize, vectorize_prepared, Output, Params, PreparedImage, Progress};
+pub use preprocess::{apply_preprocess, apply_preprocess_rgb, PreprocessOptions};
 pub use production::{ProductionMode, ProductionOptions};
 pub use project::{LoadedProject, ProjectFile};
 pub use symmetry::SymmetryMode;
 pub use text_detect::TextRegion;
+pub use watch::{watch_folder, WatchConfig, WatchEvent};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
