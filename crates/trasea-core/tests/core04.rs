@@ -340,3 +340,34 @@ fn d6_the_cli_takes_a_node_budget_and_a_palette() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Informational: on a real picture, how long the first run takes and how long a re-run with the prepared picture takes.
+/// Skipped when the benchmark picture is not on this computer.
+#[test]
+fn d5b_a_rerun_with_the_prepared_picture_is_much_faster() {
+    let path = std::path::Path::new("C:/Users/atrione/OpenBot/Agents/agent-770c1b2c-74f1-4ef1-99c2-3f9a8f833d93/vectorize-bench/out/Drifting Leaf.src.png");
+    let Ok(img) = trasea_core::load::load_path(path, 0) else {
+        eprintln!("D5b skipped: no benchmark picture");
+        return;
+    };
+    // TRASEA_D5B_AI=1 measures the real use case: with Real-ESRGAN the first half is what the cache saves
+    let ai = std::env::var("TRASEA_D5B_AI").is_ok();
+    let p = Params { measure: false, detect_text: false, ai_clean: ai, sidecar_dir: ai.then(|| std::path::PathBuf::from("C:/Users/atrione/OpenBot/Agents/agent-770c1b2c-74f1-4ef1-99c2-3f9a8f833d93/tools/realesrgan")), ..Params::default() };
+    let t0 = std::time::Instant::now();
+    let prep = prepare(img, &p, &|_, _| {}).unwrap();
+    let t_prepare = t0.elapsed();
+    let time = |params: &Params| {
+        let t = std::time::Instant::now();
+        let o = vectorize_prepared(&prep, params, &|_, _| {}).unwrap();
+        (t.elapsed(), o.stats.nodes)
+    };
+    let (t_plain, n_plain) = time(&p);
+    let (t_pal, _) = time(&Params { custom_palette: Some(vec![[31, 79, 99], [32, 49, 112], [53, 78, 160], [133, 152, 67], [240, 172, 175], [246, 247, 247], [247, 237, 57], [133, 22, 20]]), ..p.clone() });
+    let brush = BrushStroke { kind: BrushKind::Smooth, radius: 60.0, points: vec![(600.0, 150.0), (800.0, 250.0)] };
+    let (t_brush, _) = time(&Params { brush_strokes: vec![brush], ..p.clone() });
+    let (t_target, n_target) = time(&Params { target_nodes: Some(1500), ..p.clone() });
+    eprintln!("D5b Drifting Leaf: prepare {:?}; re-run plain {:?} ({n_plain} nodes), palette {:?}, brush {:?}, node target 1500 {:?} ({n_target} nodes)", t_prepare, t_plain, t_pal, t_brush, t_target);
+    assert!(t_plain < t_prepare + t_plain, "the re-run must not cost more than the first run");
+    assert!(n_target <= 1500, "the real target of the test plan: {n_target} nodes");
+    assert!(t_pal.as_secs_f64() < 6.0 && t_brush.as_secs_f64() < 6.0, "polishing iterations must stay fast");
+}

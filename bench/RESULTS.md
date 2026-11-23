@@ -7,13 +7,13 @@ Counting: nodes = every M, L and C segment (the same counter as the baseline ben
 | file | variant | paths | nodes | KB | MAE | thin-line recall | time s |
 |---|---|---:|---:|---:|---:|---:|---:|
 | Orang (6 people) | baseline: VTracer on ESRGAN 2x | 61 | 1903 | 68 | 9.03 | 32% | - |
-| Orang (6 people) | Trasea (median, no AI) | 106 | 1621 | 62 | 8.01 | 86% | 0.5 |
+| Orang (6 people) | Trasea (median, no AI) | 106 | 1621 | 62 | 8.01 | 86% | 0.6 |
 | Coastal Drift | baseline: VTracer on ESRGAN 2x | 67 | 2208 | 82 | 3.64 | 93% | - |
-| Coastal Drift | Trasea (median, no AI) | 95 | 1346 | 52 | 4.59 | 87% | 1.2 |
+| Coastal Drift | Trasea (median, no AI) | 95 | 1346 | 52 | 4.59 | 87% | 1.3 |
 | Wartec | baseline: VTracer on ESRGAN 2x | 133 | 4337 | 149 | 5.83 | 64% | - |
-| Wartec | Trasea (median, no AI) | 254 | 3033 | 113 | 7.29 | 77% | 1.2 |
+| Wartec | Trasea (median, no AI) | 254 | 3033 | 113 | 7.29 | 77% | 1.4 |
 | Drifting Leaf | baseline: VTracer on ESRGAN 2x | 144 | 6159 | 231 | 5.77 | 73% | - |
-| Drifting Leaf | Trasea (median, no AI) | 158 | 2427 | 88 | 6.85 | 87% | 2.0 |
+| Drifting Leaf | Trasea (median, no AI) | 158 | 2427 | 88 | 6.85 | 87% | 2.1 |
 
 ## Logos (B3)
 
@@ -22,11 +22,11 @@ Counting: nodes = every M, L and C segment (the same counter as the baseline ben
 | Logo taekwondo | hand-made vector (owner) | 7 | 113 | 3 | 0.00 | 0% | - |
 | Logo taekwondo | Trasea (median, no AI) | 2 | 94 | 2 | 0.38 | 0% | 1.1 |
 | Logo golf | hand-made vector (owner) | 22 | 413 | 12 | 4.58 | 0% | - |
-| Logo golf | Trasea (median, no AI) | 20 | 558 | 15 | 2.26 | 64% | 1.9 |
+| Logo golf | Trasea (median, no AI) | 20 | 558 | 15 | 2.26 | 64% | 1.8 |
 | Logo Bangga | hand-made vector (owner) | 31 | 645 | 25 | 0.00 | 0% | - |
-| Logo Bangga | Trasea (median, no AI) | 3 | 429 | 15 | 1.22 | 0% | 0.8 |
+| Logo Bangga | Trasea (median, no AI) | 3 | 429 | 15 | 1.22 | 0% | 1.0 |
 | Logo Ari Reliyanto | hand-made vector (owner) | 0 | 0* | 172 | 0.00 | 100% | - |
-| Logo Ari Reliyanto | Trasea (median, no AI) | 12 | 163 | 6 | 0.69 | 83% | 1.1 |
+| Logo Ari Reliyanto | Trasea (median, no AI) | 12 | 163 | 6 | 0.69 | 83% | 1.0 |
 | Logo kos kausar | hand-made vector (owner) | 243 | 6119* | 128 | 1.02 | 81% | - |
 | Logo kos kausar | Trasea (median, no AI) | 394 | 2254 | 97 | 5.02 | 79% | 1.1 |
 | Logo atrione taekwondo | hand-made vector (owner) | 7 | 117* | 2 | 0.00 | 0% | - |
@@ -47,7 +47,7 @@ Counting: nodes = every M, L and C segment (the same counter as the baseline ben
 | Logo kos kausar | 390 | 390 | 2349 | 2254 | 2 | 2 | - |
 | Logo atrione taekwondo | 0 | 0 | 96 | 96 | 2 | 0 | - |
 
-Waktu total seluruh gambar benchmark (semua varian yang dijalankan): 11.7 detik.
+Waktu total seluruh gambar benchmark (semua varian yang dijalankan): 12.1 detik.
 
 ## Garis tipis sebagai stroke vs bentuk (0.3.0, tanpa AI)
 
