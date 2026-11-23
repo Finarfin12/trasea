@@ -11,10 +11,15 @@ pub mod lines;
 pub mod load;
 pub mod palette;
 pub mod pipeline;
+pub mod primitives;
 pub mod stats;
+pub mod symmetry;
+pub mod text_detect;
 pub mod trace;
 
 pub use pipeline::{vectorize, Output, Params, Progress};
+pub use symmetry::SymmetryMode;
+pub use text_detect::TextRegion;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

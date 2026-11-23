@@ -377,6 +377,10 @@ fn components(mask: &[bool], w: usize, h: usize) -> (Vec<u32>, usize) {
 /// Extract strokes from a thin-line mask at working resolution.
 /// `tol` = curve-fit tolerance in working pixels. `uneven` = relative width spread above which a component stays a shape.
 pub fn centerline(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64) -> CenterlineResult {
+    centerline_opts(mask, w, h, tol, uneven, &CenterOpts::default())
+}
+
+pub fn centerline_opts(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64, opts: &CenterOpts) -> CenterlineResult {
     let dt = distance_inside(mask, w, h);
     let (labels, ncomp) = components(mask, w, h);
     let mut shape_mask = vec![false; w * h];
@@ -446,19 +450,29 @@ pub fn centerline(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64) -> C
             }
             continue;
         }
+        // each edge as a global polyline with its measured width (raw, before rounding)
+        let mut segs: Vec<Seg> = Vec::new();
         for e in edges {
             let poly: Vec<P> = e.pix.iter().map(|&i| { let q = pt(i, cw); (q.0 + x0 as f64 - 1.0, q.1 + y0 as f64 - 1.0) }).collect();
             if poly.len() < 2 {
                 continue;
             }
-            let sm = smooth_open(&poly, 2.0);
-            // width of this edge from its own pixels
             let mut sum = 0.0;
             for &i in &e.pix {
                 let gi = (i / cw + y0 - 1) * w + (i % cw + x0 - 1);
                 sum += (2.0 * dt[gi] as f64 - 1.0).max(1.0);
             }
-            let width = ((sum / e.pix.len() as f64) * area_fit / WIDTH_STEP).round() * WIDTH_STEP;
+            let wraw = (sum / e.pix.len() as f64) * area_fit;
+            segs.push(Seg { a: e.a, b: e.b, poly, wraw });
+        }
+        // tiny fragments that hang on a junction (shorter than 1.5 px) are noise, not strokes
+        segs.retain(|s| poly_len(&s.poly) >= MICRO_FRAGMENT || s.a == s.b);
+        if opts.merge {
+            merge_through_junctions(&mut segs, opts.width_tol);
+        }
+        for s in segs {
+            let sm = smooth_open(&s.poly, 2.0);
+            let width = (s.wraw / WIDTH_STEP).round() * WIDTH_STEP;
             let curves = fit_polyline(&sm, tol);
             if !curves.is_empty() {
                 strokes.push(Stroke { curves, width: width.max(WIDTH_STEP * 2.0) });
@@ -466,4 +480,117 @@ pub fn centerline(mask: &[bool], w: usize, h: usize, tol: f64, uneven: f64) -> C
         }
     }
     CenterlineResult { strokes, shape_mask }
+}
+
+/// Fragments shorter than this (working px) that hang on a junction are dropped.
+const MICRO_FRAGMENT: f64 = 1.5;
+/// Two strokes meeting at a junction continue each other when their directions differ by less than this.
+const MERGE_ANGLE_DEG: f64 = 35.0;
+
+/// One skeleton edge as a polyline from node `a` to node `b`.
+struct Seg {
+    a: usize,
+    b: usize,
+    poly: Vec<P>,
+    wraw: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CenterOpts {
+    /// Join strokes that continue each other through a junction.
+    pub merge: bool,
+    /// Largest width difference (working px) between two strokes that may be joined.
+    pub width_tol: f64,
+}
+
+impl Default for CenterOpts {
+    fn default() -> Self {
+        CenterOpts { merge: true, width_tol: 0.75 }
+    }
+}
+
+fn poly_len(p: &[P]) -> f64 {
+    p.windows(2).map(|s| ((s[1].0 - s[0].0).powi(2) + (s[1].1 - s[0].1).powi(2)).sqrt()).sum()
+}
+
+/// Unit direction leaving the end of `poly` (its start when `at_start`) into the polyline, over about `k` points.
+fn leaving_dir(poly: &[P], at_start: bool, k: usize) -> P {
+    let n = poly.len();
+    let k = k.min(n - 1).max(1);
+    let (from, to) = if at_start { (poly[0], poly[k]) } else { (poly[n - 1], poly[n - 1 - k]) };
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let l = (dx * dx + dy * dy).sqrt().max(1e-9);
+    (dx / l, dy / l)
+}
+
+/// At every junction (3 or more strokes), pair strokes that go on in nearly the same direction and have about the same
+/// width, and join each pair into one polyline. Greedy, best (straightest) pair first.
+fn merge_through_junctions(segs: &mut Vec<Seg>, width_tol: f64) {
+    loop {
+        let mut best: Option<(f64, usize, bool, usize, bool)> = None; // deviation, edge i, i-at-start, edge j, j-at-start
+        let max_node = segs.iter().map(|s| s.a.max(s.b)).max().unwrap_or(0);
+        for nd in 0..=max_node {
+            // ends of non-loop edges at this node
+            let mut ends: Vec<(usize, bool)> = Vec::new();
+            let mut total = 0;
+            for (k, s) in segs.iter().enumerate() {
+                if s.a == nd {
+                    total += 1;
+                    if s.a != s.b {
+                        ends.push((k, true));
+                    }
+                }
+                if s.b == nd {
+                    total += 1;
+                    if s.a != s.b {
+                        ends.push((k, false));
+                    }
+                }
+            }
+            if total < 3 {
+                continue;
+            }
+            for x in 0..ends.len() {
+                for y in x + 1..ends.len() {
+                    let ((i, si), (j, sj)) = (ends[x], ends[y]);
+                    if i == j || (segs[i].wraw - segs[j].wraw).abs() > width_tol {
+                        continue;
+                    }
+                    let (di, dj) = (leaving_dir(&segs[i].poly, si, 8), leaving_dir(&segs[j].poly, sj, 8));
+                    // straight continuation: di is opposite to dj
+                    let cosv = (-(di.0 * dj.0 + di.1 * dj.1)).clamp(-1.0, 1.0);
+                    let dev = cosv.acos().to_degrees();
+                    if dev < MERGE_ANGLE_DEG && best.map_or(true, |b| dev < b.0) {
+                        best = Some((dev, i, si, j, sj));
+                    }
+                }
+            }
+        }
+        let Some((_, i, si, j, sj)) = best else { break };
+        // orient: first ends at the junction, second starts at it
+        let mut first = std::mem::replace(&mut segs[i], Seg { a: 0, b: 0, poly: vec![], wraw: 0.0 });
+        let mut second = std::mem::replace(&mut segs[j], Seg { a: 0, b: 0, poly: vec![], wraw: 0.0 });
+        if si {
+            first.poly.reverse();
+            std::mem::swap(&mut first.a, &mut first.b);
+        }
+        if !sj {
+            second.poly.reverse();
+            std::mem::swap(&mut second.a, &mut second.b);
+        }
+        let (l1, l2) = (poly_len(&first.poly).max(1.0), poly_len(&second.poly).max(1.0));
+        let wraw = (first.wraw * l1 + second.wraw * l2) / (l1 + l2);
+        // both ends sit in the junction cluster: meet in the middle
+        let (e1, s2) = (*first.poly.last().unwrap(), second.poly[0]);
+        let mid = ((e1.0 + s2.0) / 2.0, (e1.1 + s2.1) / 2.0);
+        let mut poly = first.poly;
+        poly.pop();
+        poly.push(mid);
+        poly.extend(second.poly.into_iter().skip(1));
+        let merged = Seg { a: first.a, b: second.b, poly, wraw };
+        let (hi, lo) = (i.max(j), i.min(j));
+        segs.remove(hi);
+        segs.remove(lo);
+        segs.push(merged);
+    }
 }

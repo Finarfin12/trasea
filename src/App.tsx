@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Licenses from "./Licenses";
 import { IMAGE_EXTENSIONS, licenses, onDrop, onProgress, pickImage, pickSavePath, processImage, saveFile, sidecarAvailable, type ExportKind, type ExportOptions, type Options, type Processed } from "./api";
 
-const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false };
+const DEFAULTS: Options = { colors: 10, smooth: 50, keepLines: true, aiClean: false, detectPrimitives: true, symmetry: "off", detectText: true };
 
 const baseName = (p: string): string => (p.split(/[\\/]/).pop() ?? "gambar").replace(/\.[^.]+$/, "");
 const isImage = (p: string): boolean => IMAGE_EXTENSIONS.includes((p.split(".").pop() ?? "").toLowerCase());
@@ -23,6 +23,8 @@ export default function App() {
 	const [exp, setExp] = useState<ExportOptions>({ linesAs: "stroke", trapPt: 0 });
 	const [withAse, setWithAse] = useState(true);
 	const [checker, setChecker] = useState(false);
+	/** Show boxes around suspected text areas in the preview (off by default; never exported). */
+	const [showText, setShowText] = useState(false);
 	const [hasSidecar, setHasSidecar] = useState(true);
 	const [showLicenses, setShowLicenses] = useState<string | null>(null);
 	const busyRef = useRef(false);
@@ -87,7 +89,7 @@ export default function App() {
 	return (
 		<div className={`app ${over ? "dragging" : ""}`}>
 			<header className="top">
-				<div className="brand"><span className="logo" aria-hidden="true">V</span> Vektora <small>0.2.0 · offline</small></div>
+				<div className="brand"><span className="logo" aria-hidden="true">V</span> Vektora <small>0.3.0 · offline</small></div>
 				<div className="row">
 					<button className="ghost" onClick={() => void licenses().then(setShowLicenses)}>Lisensi</button>
 					<button onClick={() => void choose()} disabled={busy}>Buka gambar…</button>
@@ -115,6 +117,9 @@ export default function App() {
 							<img className="layer" src={result.original} alt="Gambar asli" draggable={false} />
 							<img className="layer vec" src={svgUrl} alt="Hasil vektor" draggable={false} style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
 							<div className="divider" style={{ left: `${split}%` }} aria-hidden="true" />
+							{showText && result.textRegions.map((r, i) => (
+								<div key={i} className="textbox" aria-hidden="true" style={{ left: `${(r.x / result.width) * 100}%`, top: `${(r.y / result.height) * 100}%`, width: `${(r.w / result.width) * 100}%`, height: `${(r.h / result.height) * 100}%` }} />
+							))}
 							<span className="tag left">Asli</span>
 							<span className="tag right">Vektor</span>
 							<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Geser untuk membandingkan asli dan vektor" />
@@ -130,6 +135,16 @@ export default function App() {
 					<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) })} />
 					<div className="hint">Kiri: lebih banyak detail dan node. Kanan: lebih sedikit node.</div>
 					<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked })} /> Jaga garis tipis</label>
+					<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked })} /> Kenali bentuk dasar</label>
+					<div className="hint">Lingkaran, elips, dan persegi yang pas ditulis sebagai bentuk murni, bukan kurva perkiraan.</div>
+					<label htmlFor="symmetry">Tegas simetri</label>
+					<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] })}>
+						<option value="off">Mati</option>
+						<option value="auto">Otomatis</option>
+						<option value="vertical">Vertikal (kiri = kanan)</option>
+						<option value="horizontal">Horizontal (atas = bawah)</option>
+					</select>
+					<div className="hint">Untuk logo yang seharusnya simetris. Satu sisi disalin ke sisi lain.</div>
 					<label className="check"><input type="checkbox" checked={opts.aiClean} onChange={e => set({ aiClean: e.target.checked })} /> Bersihkan dengan AI</label>
 					<div className="hint">Nyalakan untuk gambar buram atau JPEG rusak. Mati: lebih cepat dan biasanya sama bagus.</div>
 					{opts.aiClean && !hasSidecar && <div className="warn">Komponen AI (Real-ESRGAN) tidak ditemukan; akan dipakai filter median.</div>}
@@ -143,6 +158,8 @@ export default function App() {
 								<dt>Path</dt><dd>{result.paths}</dd>
 								<dt>Node</dt><dd>{result.nodes.toLocaleString("id-ID")}</dd>
 								<dt>Ukuran SVG</dt><dd>{fmtKb(result.bytes)}</dd>
+								<dt>Bentuk dasar</dt><dd>{result.primitives}</dd>
+								{result.symmetryApplied && <><dt>Simetri</dt><dd>{result.symmetryApplied === "vertical" ? "kiri = kanan" : "atas = bawah"}</dd></>}
 								<dt>Selisih warna (MAE)</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
 								<dt>Waktu</dt><dd>{result.secs.toFixed(1)} dtk</dd>
 								<dt>Pembersih</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
@@ -168,6 +185,14 @@ export default function App() {
 								<button onClick={() => void exportAs("ase")}>Palet .ase</button>
 							</div>
 						</>
+					)}
+					{result && result.textRegions.length > 0 && (
+						<div className="warn" role="status" id="text-warning">
+							Terdeteksi kemungkinan teks ({result.textRegions.length} area). Teks hasil vektorisasi hampir selalu kalah rapi dibanding mengetik ulang dengan font aslinya.
+							<div className="row" style={{ marginTop: 8 }}>
+								<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? "Sembunyikan area teks" : "Sorot area teks"}</button>
+							</div>
+						</div>
 					)}
 					{result?.notes.map(n => <div className="warn" key={n}>{n}</div>)}
 					{error && <div className="error" role="alert">{error}</div>}

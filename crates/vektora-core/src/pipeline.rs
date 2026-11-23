@@ -1,12 +1,15 @@
 //! The whole pipeline: (a) thin-line guard -> (b) AI clean -> (c) palette lock + layer tracing -> (d) lines on top.
 
 use crate::clean::clean;
-use crate::centerline::centerline;
+use crate::centerline::{centerline_opts, CenterOpts};
 use crate::export::{to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
 use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions};
 use crate::stats::{stats_for, Stats};
-use crate::trace::{trace_layers, trace_mask, Layer, TraceParams};
+use crate::symmetry::{self, SymmetryMode};
+use crate::text_detect::{self, TextRegion};
+use crate::primitives;
+use crate::trace::{trace_layers_ex, trace_mask, Layer, TraceParams};
 use crate::Result;
 use image::{imageops::FilterType, GrayImage, RgbImage};
 use std::path::PathBuf;
@@ -28,11 +31,28 @@ pub struct Params {
     pub up: u32,
     /// Compute the render-vs-original error (slower; for the benchmark and the UI statistics).
     pub measure: bool,
+    /// Write circles, ellipses and rectangles that match closely as pure `<circle>`, `<ellipse>`, `<rect>`.
+    pub detect_primitives: bool,
+    /// Mirror one half of the picture onto the other before tracing (`Off` by default).
+    pub symmetry: SymmetryMode,
+    /// Look for areas that probably hold text and report them (the drawing is not changed).
+    pub detect_text: bool,
 }
 
 impl Default for Params {
     fn default() -> Self {
-        Params { colors: 10, smooth: 0.5, keep_lines: true, ai_clean: false, sidecar_dir: None, up: 2, measure: true }
+        Params {
+            colors: 10,
+            smooth: 0.5,
+            keep_lines: true,
+            ai_clean: false,
+            sidecar_dir: None,
+            up: 2,
+            measure: true,
+            detect_primitives: true,
+            symmetry: SymmetryMode::Off,
+            detect_text: true,
+        }
     }
 }
 
@@ -47,6 +67,12 @@ pub struct Output {
     pub notes: Vec<String>,
     pub used_ai: bool,
     pub thin_pixels: usize,
+    /// Circles, ellipses and rectangles recognised (also in `stats.primitives`).
+    pub primitives_count: usize,
+    /// "vertical" or "horizontal" when the symmetry enforcer changed the picture, else `None`.
+    pub symmetry_applied: Option<String>,
+    /// Areas that probably hold text, in source pixels. They are never written to the SVG/PDF.
+    pub text_regions: Vec<TextRegion>,
 }
 
 pub type Progress<'a> = &'a dyn Fn(&str, f32);
@@ -131,17 +157,33 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
     refine_thin_regions(&mut labels, &work, &palette, ww, wh, (REF_THIN_AREA * s * s) as usize);
     let min_area = ((40.0 + 200.0 * t) * s * s).round().max(8.0) as usize;
     remove_small_regions(&mut labels, ww, wh, min_area, palette.len(), &palette, SPECK_BOOST);
+    let scale = ww as f64 / w as f64;
+
+    // symmetry: one side is copied onto the other on the label picture, so both sides trace to the same geometry
+    let mut symmetry_applied = None;
+    let sym_plan = symmetry::plan(&labels, ww, wh, params.symmetry);
+    if let Some(pl) = &sym_plan {
+        symmetry::apply(&mut labels, ww, wh, pl);
+        symmetry_applied = Some(pl.name().to_string());
+    }
+
+    // text areas (a heads-up for the user; the drawing is not touched)
+    let text_regions = if params.detect_text { text_detect::detect(&labels, ww, wh, up as usize, &palette) } else { Vec::new() };
 
     progress("Tracing colour fields", 0.7);
     let tp = TraceParams { corner_deg: lerp(50.0, 80.0, t), sigma: lerp(0.9, 1.8, t) * s, tol: lerp(0.8, 4.0, t) * s, min_area };
-    let fields = trace_layers(&labels, ww, wh, &palette, &tp);
+    let mut fields = trace_layers_ex(&labels, ww, wh, &palette, &tp, params.detect_primitives.then_some(scale));
+    if let Some(pl) = &sym_plan {
+        symmetry::mirror_layers(&mut fields, pl, (ww as f64, wh as f64));
+    }
+    let primitives_count = if params.detect_primitives { primitives::extract(&mut fields, scale, (ww as f64, wh as f64)) } else { 0 };
 
     // (d) thin lines on top: as strokes (centerline + measured width) and, for the "shapes" export, as outlines
     progress("Tracing thin lines", 0.88);
     let mut line_shapes: Vec<Layer> = Vec::new();
     let mut line_fallback: Vec<Layer> = Vec::new();
     let mut strokes: Vec<StrokeLayer> = Vec::new();
-    let scale = ww as f64 / w as f64;
+    let copts = CenterOpts { merge: true, width_tol: 0.75 * scale };
     if let Some(tm) = &thin {
         let (assign_c, colors) = line_colors(tm, 3);
         let min_line = ((tm.comps.iter().map(|c| c.area).min().unwrap_or(8) as f64) * (up * up) as f64 * 0.5) as usize;
@@ -154,16 +196,19 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
                     group[i] = true;
                 }
             }
-            let big = upscale_bool_mask(&group, w, h, ww as u32, wh as u32);
+            let mut big = upscale_bool_mask(&group, w, h, ww as u32, wh as u32);
+            if let Some(pl) = &sym_plan {
+                symmetry::apply(&mut big, ww, wh, pl);
+            }
             let contours = trace_mask(&to_binary(&big, ww, wh), &lp);
             if !contours.is_empty() {
-                line_shapes.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false });
+                line_shapes.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false, prims: vec![] });
             }
-            let cl = centerline(&big, ww, wh, stroke_tol, 0.5);
+            let cl = centerline_opts(&big, ww, wh, stroke_tol, 0.5, &copts);
             if cl.shape_mask.iter().any(|&b| b) {
                 let contours = trace_mask(&to_binary(&cl.shape_mask, ww, wh), &lp);
                 if !contours.is_empty() {
-                    line_fallback.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false });
+                    line_fallback.push(Layer { id: crate::hex(*color), color: *color, contours, canvas: false, prims: vec![] });
                 }
             }
             let min_len = MIN_STROKE_LEN * ww as f64 / w as f64;
@@ -179,5 +224,5 @@ pub fn vectorize(img: &RgbImage, params: &Params, progress: Progress) -> Result<
     let svg = to_svg(&doc, &ExportOptions::default());
     let stats = stats_for(&svg, params.measure.then_some(img));
     progress("Done", 1.0);
-    Ok(Output { svg, doc, stats, palette, notes, used_ai: cleaned.used_ai, thin_pixels })
+    Ok(Output { svg, doc, stats, palette, notes, used_ai: cleaned.used_ai, thin_pixels, primitives_count, symmetry_applied, text_regions })
 }

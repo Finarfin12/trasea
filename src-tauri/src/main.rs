@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use vektora_core::export::{palette_of, to_ase, to_svg, Doc, ExportOptions, LinesAs};
-use vektora_core::{export, hex, load, vectorize, Params};
+use vektora_core::{export, hex, load, vectorize, Params, SymmetryMode, TextRegion};
 
 #[derive(Default)]
 struct Last {
@@ -23,6 +23,12 @@ struct UiParams {
     smooth: f32,
     keep_lines: bool,
     ai_clean: bool,
+    /// Write circles, ellipses and rectangles as pure shapes.
+    detect_primitives: bool,
+    /// "off", "auto", "vertical" or "horizontal"
+    symmetry: String,
+    /// Warn when the picture seems to hold text.
+    detect_text: bool,
 }
 
 #[derive(Serialize)]
@@ -42,6 +48,12 @@ struct Processed {
     used_ai: bool,
     secs: f64,
     thin_pixels: usize,
+    /// Circles, ellipses and rectangles written as pure shapes.
+    primitives: usize,
+    /// "vertical" / "horizontal" when the symmetry enforcer changed the picture.
+    symmetry_applied: Option<String>,
+    /// Suspected text areas in source pixels. Only for the preview; never exported.
+    text_regions: Vec<TextRegion>,
 }
 
 #[derive(Serialize, Clone)]
@@ -83,6 +95,9 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             sidecar_dir: sidecar,
             up: 2,
             measure: true,
+            detect_primitives: params.detect_primitives,
+            symmetry: SymmetryMode::parse(&params.symmetry).unwrap_or_default(),
+            detect_text: params.detect_text,
         };
         let out = vectorize(&img, &p, &|stage, fraction| {
             let _ = handle.emit("progress", ProgressEvent { stage: stage.to_string(), fraction });
@@ -102,6 +117,9 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             used_ai: out.used_ai,
             secs: t0.elapsed().as_secs_f64(),
             thin_pixels: out.thin_pixels,
+            primitives: out.stats.primitives,
+            symmetry_applied: out.symmetry_applied.clone(),
+            text_regions: out.text_regions.clone(),
         };
         Ok((processed, out.doc))
     })

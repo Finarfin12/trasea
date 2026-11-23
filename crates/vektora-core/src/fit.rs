@@ -89,6 +89,160 @@ pub fn find_corners(pts: &[P], arm: usize, deg: f64) -> Vec<usize> {
     out
 }
 
+/// Turning angle (degrees) at point `i` between the chords of length `arm` points on each side.
+fn turn_at(pts: &[P], i: usize, arm: usize) -> f64 {
+    let n = pts.len();
+    let a = sub(pts[i], pts[(i + n - arm) % n]);
+    let b = sub(pts[(i + arm) % n], pts[i]);
+    let (la, lb) = (len(a), len(b));
+    if la < 1e-9 || lb < 1e-9 {
+        0.0
+    } else {
+        (dot(a, b) / (la * lb)).clamp(-1.0, 1.0).acos().to_degrees()
+    }
+}
+
+/// Straightness (chord / path length, 1.0 = ruler straight) of the arm of `arm` points that ends (`forward` = false) or
+/// starts (`forward` = true) at point `i`.
+fn arm_straightness(pts: &[P], i: usize, arm: usize, forward: bool) -> f64 {
+    let n = pts.len();
+    let idx = |k: usize| if forward { (i + k) % n } else { (i + n - k) % n };
+    let mut path = 0.0;
+    for k in 0..arm {
+        path += len(sub(pts[idx(k + 1)], pts[idx(k)]));
+    }
+    if path < 1e-9 {
+        1.0
+    } else {
+        (len(sub(pts[idx(arm)], pts[i])) / path).min(1.0)
+    }
+}
+
+/// Turning angle (degrees) between the two straight arms of a corner, measured on lines fitted to the points beyond the
+/// rounding that smoothing leaves at the corner. `None` when an arm is not straight (an organic bend).
+fn geometric_turn(pts: &[P], i: usize, arm: usize) -> Option<f64> {
+    let n = pts.len();
+    let (kn, kf) = (arm, (arm * 3).min(n / 4));
+    if kf < kn + 3 {
+        return None;
+    }
+    let side = |forward: bool| -> Vec<P> { (kn..=kf).map(|k| if forward { pts[(i + k) % n] } else { pts[(i + n - k) % n] }).collect() };
+    let ((_, dl, el), (_, dr, er)) = (line_through(&side(false)), line_through(&side(true)));
+    if el > 0.8 || er > 0.8 {
+        return None;
+    }
+    // the arm directions must point away from the corner: orient them along the walk
+    let away_l = sub(pts[(i + n - kn) % n], pts[(i + n - kf) % n]);
+    let away_r = sub(pts[(i + kf) % n], pts[(i + kn) % n]);
+    let dl = if dot(dl, away_l) >= 0.0 { dl } else { mul(dl, -1.0) };
+    let dr = if dot(dr, away_r) >= 0.0 { dr } else { mul(dr, -1.0) };
+    Some(dot(dl, dr).clamp(-1.0, 1.0).acos().to_degrees())
+}
+
+/// Corner or smooth curve, decided locally for every candidate. A real corner keeps its turning angle when it is measured
+/// over a longer stretch and has straight arms; a tight but organic bend (a leaf tip, the end of a stroke) keeps turning
+/// further away from the point and its arms are curved, so it stays a smooth Bezier.
+pub fn find_corners_adaptive(pts: &[P], arm: usize, deg: f64) -> Vec<usize> {
+    let n = pts.len();
+    if n < 2 * arm + 3 {
+        return vec![];
+    }
+    let arm_mid = (arm * 2).min(n / 4).max(arm);
+    let mut out = Vec::new();
+    for i in find_corners(pts, arm, deg * 0.55) {
+        let a_s = turn_at(pts, i, arm);
+        let a_m = turn_at(pts, i, arm_mid);
+        let (sl, sr) = (arm_straightness(pts, i, arm_mid, false), arm_straightness(pts, i, arm_mid, true));
+        let ratio = a_m / a_s.max(1e-6);
+        let straight_arms = sl >= 0.985 && sr >= 0.985;
+        let keep = if a_s >= deg {
+            ratio <= 1.6 || straight_arms
+        } else {
+            // a shallower bend is still a corner when it is geometric: straight arms, no further turning
+            (ratio <= 1.2 && sl >= 0.99 && sr >= 0.99) || geometric_turn(pts, i, arm).map_or(false, |t| t >= deg * 0.85)
+        };
+        if keep {
+            out.push(i);
+        }
+    }
+    out
+}
+
+/// Principal line through points: (centroid, unit direction, largest distance of a point from the line).
+fn line_through(pts: &[P]) -> (P, P, f64) {
+    let n = pts.len() as f64;
+    let c = (pts.iter().map(|p| p.0).sum::<f64>() / n, pts.iter().map(|p| p.1).sum::<f64>() / n);
+    let (mut sxx, mut syy, mut sxy) = (0.0, 0.0, 0.0);
+    for p in pts {
+        let d = sub(*p, c);
+        sxx += d.0 * d.0;
+        syy += d.1 * d.1;
+        sxy += d.0 * d.1;
+    }
+    let theta = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+    let dir = (theta.cos(), theta.sin());
+    let dev = pts.iter().map(|p| { let d = sub(*p, c); (d.0 * dir.1 - d.1 * dir.0).abs() }).fold(0.0, f64::max);
+    (c, dir, dev)
+}
+
+/// Smoothing rounds a corner and moves its point inwards. When both arms are straight, the corner is the crossing of the
+/// two arm lines (a star tip or a letter corner stays sharp and keeps its size).
+fn refine_corner(sm: &[P], i: usize, arm: usize) -> P {
+    let n = sm.len();
+    let (kn, kf) = (arm, (arm * 3).min(n / 4));
+    if kf < kn + 3 {
+        return sm[i];
+    }
+    let side = |forward: bool| -> Vec<P> { (kn..=kf).map(|k| if forward { sm[(i + k) % n] } else { sm[(i + n - k) % n] }).collect() };
+    let ((cl, dl, el), (cr, dr, er)) = (line_through(&side(false)), line_through(&side(true)));
+    if el > 0.8 || er > 0.8 {
+        return sm[i];
+    }
+    let det = dl.0 * dr.1 - dl.1 * dr.0;
+    if det.abs() < 0.2 {
+        return sm[i];
+    }
+    let (dx, dy) = (cr.0 - cl.0, cr.1 - cl.1);
+    let t = (dx * dr.1 - dy * dr.0) / det;
+    let q = (cl.0 + dl.0 * t, cl.1 + dl.1 * t);
+    if len(sub(q, sm[i])) > 2.5 * arm as f64 {
+        sm[i]
+    } else {
+        q
+    }
+}
+
+/// Largest distance of the points of `run` from the straight line through its ends.
+fn max_dev_from_chord(run: &[P]) -> f64 {
+    let (a, b) = (run[0], run[run.len() - 1]);
+    let ab = sub(b, a);
+    let l = len(ab);
+    if l < 1e-9 {
+        return f64::MAX;
+    }
+    run.iter().map(|&p| (ab.0 * (p.1 - a.1) - ab.1 * (p.0 - a.0)).abs() / l).fold(0.0, f64::max)
+}
+
+/// Like `max_dev_from_chord`, but ignores `skip` points at each end: smoothing rounds a corner, so the points right next to
+/// a corner leave the (refined) edge line even when the edge itself is ruler straight.
+fn max_dev_inner(run: &[P], skip: usize) -> f64 {
+    if run.len() < 2 * skip + 3 {
+        return max_dev_from_chord(run);
+    }
+    let (a, b) = (run[0], run[run.len() - 1]);
+    let ab = sub(b, a);
+    let l = len(ab);
+    if l < 1e-9 {
+        return f64::MAX;
+    }
+    run[skip..run.len() - skip].iter().map(|&p| (ab.0 * (p.1 - a.1) - ab.1 * (p.0 - a.0)).abs() / l).fold(0.0, f64::max)
+}
+
+/// A straight segment written as a cubic whose handles lie exactly on the chord (the exporter writes it as `L`).
+fn straight_segment(a: P, b: P) -> Bezier {
+    [a, add(a, mul(sub(b, a), 1.0 / 3.0)), add(a, mul(sub(b, a), 2.0 / 3.0)), b]
+}
+
 // ---------- Schneider ----------
 
 fn bezier_at(b: &Bezier, t: f64) -> P {
@@ -249,6 +403,18 @@ pub fn resample_ring(pts: &[P], step: f64) -> Vec<P> {
     out
 }
 
+/// The smoothed outline a ring is fitted to (1 px spacing): used to judge basic shapes independently of the fit tolerance.
+pub fn ring_points(raw: &[P], sigma: f64) -> Vec<P> {
+    let mut pts = raw.to_vec();
+    if pts.len() > 1 && len(sub(pts[0], pts[pts.len() - 1])) < 1e-9 {
+        pts.pop();
+    }
+    if pts.len() < 3 {
+        return pts;
+    }
+    smooth_ring(&resample_ring(&pts, 1.0), sigma)
+}
+
 /// Fit a closed ring. Corners (turning angle above `corner_deg`) stay sharp; everything else becomes smooth curves
 /// with the fewest segments that stay within `tol` pixels of the smoothed outline.
 pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier> {
@@ -264,7 +430,7 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
     let n = pts.len();
     let sm = smooth_ring(&pts, sigma);
     let arm = ((sigma * 2.0).ceil() as usize + 2).min(n / 4).max(1);
-    let mut corners = find_corners(&sm, arm, corner_deg);
+    let mut corners = find_corners_adaptive(&sm, arm, corner_deg);
 
     if corners.is_empty() {
         // smooth closed curve: start anywhere, tangents from the ring neighbours so the join is smooth
@@ -275,6 +441,7 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
         return fit_open(&run, t, mul(t, -1.0), tol);
     }
     corners.sort_unstable();
+    let corner_pos: Vec<P> = corners.iter().map(|&c| refine_corner(&sm, c, arm)).collect();
     let mut curves = Vec::new();
     let k = corners.len();
     for ci in 0..k {
@@ -296,6 +463,15 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
         if run.len() < 2 {
             continue;
         }
+        // the run starts and ends on a corner: use the refined corner positions
+        let last = run.len() - 1;
+        run[0] = corner_pos[ci];
+        run[last] = corner_pos[(ci + 1) % k];
+        // between two corners a run that stays within the tolerance of its chord is a straight edge
+        if k > 1 && run.len() >= 3 && max_dev_inner(&run, arm) <= tol * 0.7 {
+            curves.push(straight_segment(run[0], run[run.len() - 1]));
+            continue;
+        }
         let m = arm.min(run.len() - 1).max(1);
         let t1 = norm(sub(run[m], run[0]));
         let t2 = norm(sub(run[run.len() - 1 - m], run[run.len() - 1]));
@@ -313,6 +489,9 @@ pub fn fit_polyline(pts: &[P], tol: f64) -> Vec<Bezier> {
         let d = len(sub(pts[1], pts[0])) / 3.0;
         let t = norm(sub(pts[1], pts[0]));
         return vec![[pts[0], add(pts[0], mul(t, d)), sub(pts[1], mul(t, d)), pts[1]]];
+    }
+    if pts.len() >= 3 && max_dev_from_chord(pts) <= tol * 0.5 {
+        return vec![straight_segment(pts[0], pts[pts.len() - 1])];
     }
     let m = 4.min(pts.len() - 1);
     let t1 = norm(sub(pts[m], pts[0]));

@@ -1,6 +1,6 @@
 [package]
 name = "vektora-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Vektora core: raster illustration/logo to clean SVG/PDF (no UI)."

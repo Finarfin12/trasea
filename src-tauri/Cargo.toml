@@ -1,6 +1,6 @@
 [package]
 name = "vektora"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Vektora: offline raster to clean vector (SVG/PDF) converter"
 license = "MIT"

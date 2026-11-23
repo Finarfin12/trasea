@@ -8,6 +8,11 @@
 use crate::Rgb;
 use image::RgbImage;
 
+/// Largest RGB distance between a faded line pixel and the mean colour of the strong pixels of its line.
+const WEAK_COLOR_DIST: f32 = 65.0;
+/// A break is bridged only when the line goes on in a straight row of at least this many pixels on both sides.
+const BRIDGE_RUN: i64 = 4;
+
 #[derive(Debug, Clone)]
 pub struct ThinParams {
     /// Radius of the opening disk: strokes up to ~2r+1 px wide count as "thin".
@@ -22,6 +27,14 @@ pub struct ThinParams {
     pub valley_delta: f32,
     /// Components smaller than this (pixels) are dropped.
     pub min_area: usize,
+    /// Hysteresis: a weaker line pixel (this much darker than the local mean) is kept when it touches a strong one.
+    /// 0 switches hysteresis off.
+    pub weak_delta: f32,
+    /// ...with this valley depth, and darker than this luminance.
+    pub weak_valley: f32,
+    pub weak_max_lum: f32,
+    /// Gaps of up to this many pixels along a line (in a straight run) are bridged. 0 = off.
+    pub bridge_gap: usize,
 }
 
 impl ThinParams {
@@ -35,6 +48,10 @@ impl ThinParams {
             max_lum: 175.0,
             valley_delta: 18.0,
             min_area: ((m / 20.0) as usize).max(15),
+            weak_delta: 12.0,
+            weak_valley: 9.0,
+            weak_max_lum: 200.0,
+            bridge_gap: 2,
         }
     }
 }
@@ -218,13 +235,96 @@ fn label8(mask: &[bool], w: usize, h: usize) -> (Vec<u32>, Vec<usize>) {
     (labels, areas)
 }
 
+/// Bridge short breaks inside a line. A break of 1..=`max_gap` unset pixels along one of the four axes is filled when
+/// the line continues on both sides (two set pixels in a row each side). That joins collinear line ends and never
+/// thickens a line, and it does not fuse two parallel lines (their pixels are not in a row along the bridge axis).
+fn bridge_gaps(thin: &mut [bool], w: usize, h: usize, max_gap: usize) {
+    if max_gap == 0 {
+        return;
+    }
+    let src = thin.to_vec();
+    let at = |x: i64, y: i64| -> bool { x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h && src[y as usize * w + x as usize] };
+    let axes: [(i64, i64); 4] = [(1, 0), (0, 1), (1, 1), (1, -1)];
+    for y in 0..h as i64 {
+        for x in 0..w as i64 {
+            if !src[y as usize * w + x as usize] {
+                continue;
+            }
+            for &(dx, dy) in &axes {
+                // x,y is the last pixel of a run of at least two along the axis
+                if !(0..BRIDGE_RUN).all(|j| at(x - j * dx, y - j * dy)) || at(x + dx, y + dy) {
+                    continue;
+                }
+                for l in 1..=max_gap as i64 {
+                    let gap_clear = (1..=l).all(|k| !at(x + k * dx, y + k * dy));
+                    if !gap_clear {
+                        break;
+                    }
+                    if (1..=BRIDGE_RUN).all(|j| at(x + (l + j) * dx, y + (l + j) * dy)) {
+                        for k in 1..=l {
+                            let (gx, gy) = (x + k * dx, y + k * dy);
+                            if gx >= 0 && gy >= 0 && (gx as usize) < w && (gy as usize) < h {
+                                thin[gy as usize * w + gx as usize] = true;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Detect thin dark lines in `img`.
 pub fn thin_mask(img: &RgbImage, p: &ThinParams) -> ThinMask {
     let (w, h) = (img.width() as usize, img.height() as usize);
     let dark = dark_mask(img, p);
     let opened = dilate(&erode(&dark, w, h, p.open_radius), w, h, p.open_radius);
     let valley = valley_mask(img, p);
-    let thin: Vec<bool> = (0..w * h).map(|i| dark[i] && valley[i] && !opened[i]).collect();
+    let strong: Vec<bool> = (0..w * h).map(|i| dark[i] && valley[i] && !opened[i]).collect();
+    let mut thin = strong.clone();
+
+    // hysteresis: a thin line of medium contrast fades in and out along its length. Weak pixels that are connected to a
+    // strong pixel belong to the same line, so keep them (a guard stops a weak mass from swallowing the strong seed).
+    if p.weak_delta > 0.0 {
+        let pw = ThinParams { delta: p.weak_delta, valley_delta: p.weak_valley, max_lum: p.weak_max_lum, ..p.clone() };
+        let dark_w = dark_mask(img, &pw);
+        let opened_w = dilate(&erode(&dark_w, w, h, p.open_radius), w, h, p.open_radius);
+        let valley_w = valley_mask(img, &pw);
+        let cand: Vec<bool> = (0..w * h).map(|i| strong[i] || (dark_w[i] && valley_w[i] && !opened_w[i])).collect();
+        let (lab, areas) = label8(&cand, w, h);
+        let mut strong_n = vec![0usize; areas.len() + 1];
+        let mut strong_sum = vec![[0f32; 3]; areas.len() + 1];
+        for i in 0..w * h {
+            if strong[i] && lab[i] != 0 {
+                let l = lab[i] as usize;
+                strong_n[l] += 1;
+                let px = img.get_pixel((i % w) as u32, (i / w) as u32);
+                for c in 0..3 {
+                    strong_sum[l][c] += px[c] as f32;
+                }
+            }
+        }
+        // a faded pixel of the same line is close in colour to the strong pixels of that line (a vein fades into the leaf);
+        // a dark pixel of another colour (the red outline of a shape) is not a line and must stay a colour field
+        let max_d2 = WEAK_COLOR_DIST * WEAK_COLOR_DIST;
+        for i in 0..w * h {
+            let l = lab[i] as usize;
+            if l == 0 || !cand[i] || strong_n[l] == 0 || areas[l - 1] > 6 * strong_n[l] + 20 {
+                continue;
+            }
+            if !strong[i] {
+                let px = img.get_pixel((i % w) as u32, (i / w) as u32);
+                let n = strong_n[l] as f32;
+                let d2: f32 = (0..3).map(|c| (px[c] as f32 - strong_sum[l][c] / n).powi(2)).sum();
+                if d2 > max_d2 {
+                    continue;
+                }
+            }
+            thin[i] = true;
+        }
+    }
+    bridge_gaps(&mut thin, w, h, p.bridge_gap);
     let (labels0, areas) = label8(&thin, w, h);
 
     // keep big enough components, renumber, mean colour

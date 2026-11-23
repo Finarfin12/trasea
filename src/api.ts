@@ -9,6 +9,22 @@ export interface Options {
 	smooth: number;
 	keepLines: boolean;
 	aiClean: boolean;
+	/** circles, ellipses and rectangles as pure shapes */
+	detectPrimitives: boolean;
+	symmetry: Symmetry;
+	/** warn about suspected text areas */
+	detectText: boolean;
+}
+
+export type Symmetry = "off" | "auto" | "vertical" | "horizontal";
+
+/** A suspected text area in source pixels (preview only, never exported). */
+export interface TextRegion {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	glyphCount: number;
 }
 
 export interface Processed {
@@ -25,6 +41,9 @@ export interface Processed {
 	usedAi: boolean;
 	secs: number;
 	thinPixels: number;
+	primitives: number;
+	symmetryApplied: string | null;
+	textRegions: TextRegion[];
 }
 
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];

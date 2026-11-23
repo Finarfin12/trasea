@@ -21,6 +21,8 @@ pub struct TraceParams {
 pub struct Contour {
     pub start: (f64, f64),
     pub curves: Vec<[(f64, f64); 3]>,
+    /// Set when the outline is a circle, ellipse or rectangle within a strict tolerance (see `primitives`).
+    pub prim: Option<crate::primitives::Primitive>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,9 +32,11 @@ pub struct Layer {
     pub contours: Vec<Contour>,
     /// A plain rectangle covering the whole canvas (the lowest colour layer).
     pub canvas: bool,
+    /// Solid shapes of this layer that were recognised as a circle, ellipse or rectangle (see `primitives`).
+    pub prims: Vec<crate::primitives::Primitive>,
 }
 
-fn to_contours(cp: &CompoundPath, p: &TraceParams) -> Vec<Contour> {
+fn to_contours(cp: &CompoundPath, p: &TraceParams, prim_scale: Option<f64>) -> Vec<Contour> {
     let mut out = Vec::new();
     for el in cp.iter() {
         if let CompoundPathElement::PathI32(path) = el {
@@ -46,7 +50,9 @@ fn to_contours(cp: &CompoundPath, p: &TraceParams) -> Vec<Contour> {
             if curves.is_empty() {
                 continue;
             }
-            out.push(Contour { start: curves[0][0], curves: curves.iter().map(|c| [c[1], c[2], c[3]]).collect() });
+            // a basic shape is judged on the smoothed raster outline: it does not depend on the curve-fit tolerance
+            let prim = prim_scale.and_then(|s| crate::primitives::detect(&crate::fit::ring_points(&pts, p.sigma), s));
+            out.push(Contour { start: curves[0][0], curves: curves.iter().map(|c| [c[1], c[2], c[3]]).collect(), prim });
         }
     }
     out
@@ -54,6 +60,11 @@ fn to_contours(cp: &CompoundPath, p: &TraceParams) -> Vec<Contour> {
 
 /// Trace a binary mask into contours (outer boundaries and holes), dropping connected regions below `min_area`.
 pub fn trace_mask(mask: &BinaryImage, p: &TraceParams) -> Vec<Contour> {
+    trace_mask_ex(mask, p, None)
+}
+
+/// Like `trace_mask`; with `prim_scale` (working px per source px) every contour is also tested for a basic shape.
+pub fn trace_mask_ex(mask: &BinaryImage, p: &TraceParams, prim_scale: Option<f64>) -> Vec<Contour> {
     // pad by one empty pixel: the boundary walker does not trace along the image edge, so a region that touches the
     // edge would otherwise lose that side of its outline
     let (w, h) = (mask.width, mask.height);
@@ -65,18 +76,21 @@ pub fn trace_mask(mask: &BinaryImage, p: &TraceParams) -> Vec<Contour> {
             }
         }
     }
-    let mut out = trace_padded(&padded, p);
+    let mut out = trace_padded(&padded, p, prim_scale);
     for c in out.iter_mut() {
         let sh = |q: (f64, f64)| (q.0 - 1.0, q.1 - 1.0);
         c.start = sh(c.start);
         for cv in c.curves.iter_mut() {
             *cv = [sh(cv[0]), sh(cv[1]), sh(cv[2])];
         }
+        if let Some(pr) = c.prim.take() {
+            c.prim = Some(pr.shifted(-1.0, -1.0));
+        }
     }
     out
 }
 
-fn trace_padded(mask: &BinaryImage, p: &TraceParams) -> Vec<Contour> {
+fn trace_padded(mask: &BinaryImage, p: &TraceParams, prim_scale: Option<f64>) -> Vec<Contour> {
     let clusters = mask.to_clusters(false);
     let mut out = Vec::new();
     for i in 0..clusters.len() {
@@ -85,7 +99,7 @@ fn trace_padded(mask: &BinaryImage, p: &TraceParams) -> Vec<Contour> {
             continue;
         }
         let cp = c.to_compound_path(PathSimplifyMode::None, 0.0, 0.0, 0, 0.0);
-        out.extend(to_contours(&cp, p));
+        out.extend(to_contours(&cp, p, prim_scale));
     }
     out
 }
@@ -93,6 +107,11 @@ fn trace_padded(mask: &BinaryImage, p: &TraceParams) -> Vec<Contour> {
 /// Stacked colour layers. Colours are ranked by area (largest first); layer i covers every pixel whose colour has
 /// rank >= i, so a smaller colour always sits on top of a bigger one and there are no gaps between them.
 pub fn trace_layers(labels: &[u8], w: usize, h: usize, palette: &[Rgb], p: &TraceParams) -> Vec<Layer> {
+    trace_layers_ex(labels, w, h, palette, p, None)
+}
+
+/// Like `trace_layers`, and tests every contour for a basic shape when `prim_scale` is given.
+pub fn trace_layers_ex(labels: &[u8], w: usize, h: usize, palette: &[Rgb], p: &TraceParams, prim_scale: Option<f64>) -> Vec<Layer> {
     let mut area = vec![0usize; palette.len()];
     for &l in labels {
         area[l as usize] += 1;
@@ -111,7 +130,7 @@ pub fn trace_layers(labels: &[u8], w: usize, h: usize, palette: &[Rgb], p: &Trac
             let (wf, hf) = (w as f64, h as f64);
             let line = |a: (f64, f64), b: (f64, f64)| [(a.0 + (b.0 - a.0) / 3.0, a.1 + (b.1 - a.1) / 3.0), (a.0 + 2.0 * (b.0 - a.0) / 3.0, a.1 + 2.0 * (b.1 - a.1) / 3.0), b];
             let (p0, p1, p2, p3) = ((0.0, 0.0), (wf, 0.0), (wf, hf), (0.0, hf));
-            layers.push(Layer { id, color, canvas: true, contours: vec![Contour { start: p0, curves: vec![line(p0, p1), line(p1, p2), line(p2, p3), line(p3, p0)] }] });
+            layers.push(Layer { id, color, canvas: true, prims: vec![], contours: vec![Contour { start: p0, curves: vec![line(p0, p1), line(p1, p2), line(p2, p3), line(p3, p0)], prim: None }] });
             continue;
         }
         let mut mask = BinaryImage::new_w_h(w, h);
@@ -120,9 +139,9 @@ pub fn trace_layers(labels: &[u8], w: usize, h: usize, palette: &[Rgb], p: &Trac
                 mask.set_pixel(i % w, i / w, true);
             }
         }
-        let contours = trace_mask(&mask, p);
+        let contours = trace_mask_ex(&mask, p, prim_scale);
         if !contours.is_empty() {
-            layers.push(Layer { id, color, canvas: false, contours });
+            layers.push(Layer { id, color, canvas: false, prims: vec![], contours });
         }
     }
     layers

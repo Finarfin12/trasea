@@ -1,6 +1,7 @@
 //! Export: SVG with named layers (`Latar` > `Bidang warna` > `Garis`), PDF, and an Adobe Swatch Exchange palette (.ase).
 
 use crate::centerline::Stroke;
+use crate::primitives::Primitive;
 use crate::trace::{Contour, Layer};
 use crate::{hex, Error, Result, Rgb};
 
@@ -73,18 +74,39 @@ fn pt(p: (f64, f64), k: f64) -> String {
     format!("{},{}", num(p.0 / k), num(p.1 / k))
 }
 
+/// A cubic whose handles lie on the chord is a straight segment: write it as `L`, which is what a designer expects.
+fn is_straight(p0: (f64, f64), c1: (f64, f64), c2: (f64, f64), p3: (f64, f64), k: f64) -> bool {
+    let (dx, dy) = (p3.0 - p0.0, p3.1 - p0.1);
+    let l = (dx * dx + dy * dy).sqrt();
+    if l < 1e-9 {
+        return false;
+    }
+    let tol = 0.03 * k;
+    [c1, c2].iter().all(|c| {
+        let along = ((c.0 - p0.0) * dx + (c.1 - p0.1) * dy) / l;
+        ((dx * (c.1 - p0.1) - dy * (c.0 - p0.0)).abs() / l) <= tol && along >= -tol && along <= l + tol
+    })
+}
+
 fn path_d(contours: &[Contour], k: f64) -> String {
     let mut d = String::new();
     for c in contours {
         d.push('M');
         d.push_str(&pt(c.start, k));
+        let mut prev = c.start;
         for cv in &c.curves {
-            d.push('C');
-            d.push_str(&pt(cv[0], k));
-            d.push(' ');
-            d.push_str(&pt(cv[1], k));
-            d.push(' ');
-            d.push_str(&pt(cv[2], k));
+            if is_straight(prev, cv[0], cv[1], cv[2], k) {
+                d.push('L');
+                d.push_str(&pt(cv[2], k));
+            } else {
+                d.push('C');
+                d.push_str(&pt(cv[0], k));
+                d.push(' ');
+                d.push_str(&pt(cv[1], k));
+                d.push(' ');
+                d.push_str(&pt(cv[2], k));
+            }
+            prev = cv[2];
         }
         d.push('Z');
     }
@@ -95,14 +117,34 @@ fn stroke_d(s: &StrokeData, k: f64) -> String {
     let mut d = String::from("M");
     d.push_str(&pt(s.curves[0][0], k));
     for cv in &s.curves {
-        d.push('C');
-        d.push_str(&pt(cv[1], k));
-        d.push(' ');
-        d.push_str(&pt(cv[2], k));
-        d.push(' ');
-        d.push_str(&pt(cv[3], k));
+        if is_straight(cv[0], cv[1], cv[2], cv[3], k) {
+            d.push('L');
+            d.push_str(&pt(cv[3], k));
+        } else {
+            d.push('C');
+            d.push_str(&pt(cv[1], k));
+            d.push(' ');
+            d.push_str(&pt(cv[2], k));
+            d.push(' ');
+            d.push_str(&pt(cv[3], k));
+        }
     }
     d
+}
+
+/// SVG element of a recognised shape. `extra` carries the optional trap stroke attributes.
+fn primitive_svg(p: &Primitive, color: &str, extra: &str, k: f64) -> String {
+    let rot = |a: f64, cx: f64, cy: f64| if a.abs() > 0.5 { format!(" transform=\"rotate({} {} {})\"", num(a), num(cx / k), num(cy / k)) } else { String::new() };
+    match p {
+        Primitive::Circle { cx, cy, r } => format!("<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{color}\"{extra}/>\n", num(cx / k), num(cy / k), num(r / k)),
+        Primitive::Ellipse { cx, cy, rx, ry, angle_deg } => {
+            format!("<ellipse cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{color}\"{extra}{}/>\n", num(cx / k), num(cy / k), num(rx / k), num(ry / k), rot(*angle_deg, *cx, *cy))
+        }
+        Primitive::Rect { x, y, w, h, rx, angle_deg } => {
+            let round = if *rx > 0.0 { format!(" rx=\"{}\"", num(rx / k)) } else { String::new() };
+            format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{round} fill=\"{color}\"{extra}{}/>\n", num(x / k), num(y / k), num(w / k), num(h / k), rot(*angle_deg, x + w / 2.0, y + h / 2.0))
+        }
+    }
 }
 
 /// Colours of the drawing in stacking order (bottom first): the order of the palette numbers (01, 02, ...).
@@ -130,7 +172,15 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
         let (id, name) = group_names(index, layer.color);
         let color = hex(layer.color);
         let trap = if with_trap && trap_px > 0.0 { format!(" stroke=\"{color}\" stroke-width=\"{}\" stroke-linejoin=\"round\"", num(trap_px)) } else { String::new() };
-        out.push_str(&format!("<g id=\"{id}\" data-name=\"{name}\">\n<path fill=\"{color}\" fill-rule=\"evenodd\"{trap} d=\"{}\"/>\n</g>\n", path_d(&layer.contours, k)));
+        out.push_str(&format!("<g id=\"{id}\" data-name=\"{name}\">\n"));
+        // a layer whose every solid was recognised as a basic shape has no path left
+        if !layer.contours.is_empty() || layer.prims.is_empty() {
+            out.push_str(&format!("<path fill=\"{color}\" fill-rule=\"evenodd\"{trap} d=\"{}\"/>\n", path_d(&layer.contours, k)));
+        }
+        for p in &layer.prims {
+            out.push_str(&primitive_svg(p, &color, &trap, k));
+        }
+        out.push_str("</g>\n");
     };
 
     // 1. Latar: the background colour (a plain rectangle)

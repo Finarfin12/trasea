@@ -92,6 +92,8 @@ fn main() {
     let mut smooth = 0.5f32;
     let mut only: Option<String> = None;
     let mut ai_mode = "both".to_string();
+    // folder with the `<file>.noai.svg` outputs of the previous version (for the before/after table)
+    let mut prev_dir: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -119,6 +121,10 @@ fn main() {
                 i += 1;
                 out = PathBuf::from(&args[i]);
             }
+            "--prev" => {
+                i += 1;
+                prev_dir = Some(PathBuf::from(&args[i]));
+            }
             _ => {}
         }
         i += 1;
@@ -133,6 +139,8 @@ fn main() {
     md.push_str("Counting: nodes = every M, L and C segment (the same counter as the baseline benchmark). MAE = mean absolute RGB error of the render against the 1200 px source (0..255, white background). Thin-line recall = share of the original's thin-line pixels (dark strokes thinner than about 2r+1 px, found by the same detector the guard uses) that the render still shows within 1 px. Time = whole pipeline on this PC (integrated AMD GPU for Real-ESRGAN).\n\n");
     let mut json = Vec::new();
     let mut modes: Vec<String> = Vec::new();
+    let mut cmp: Vec<String> = Vec::new();
+    let mut total_secs = 0.0f64;
 
     for (title, kind) in [("Illustrations (B1, B2, B4)", Kind::Illustration), ("Logos (B3)", Kind::Logo)] {
         md.push_str(&format!("## {title}\n\n| file | variant | paths | nodes | KB | MAE | thin-line recall | time s |\n|---|---|---:|---:|---:|---:|---:|---:|\n"));
@@ -167,6 +175,7 @@ fn main() {
                 let t0 = Instant::now();
                 let res = vectorize(&orig, &params, &|_, _| {});
                 let secs = t0.elapsed().as_secs_f64();
+                total_secs += secs;
                 match res {
                     Ok(o) => {
                         let tag = if ai { "ai" } else { "noai" };
@@ -177,6 +186,10 @@ fn main() {
                             let (_, nk) = count_svg(&o.svg);
                             let gn = |svg: &str| svg.find("id=\"Garis\"").map_or(0, |i| count_svg(&svg[i..]).1);
                             modes.push(format!("| {} | {} | {} | {} | {} |", it.label, nk, ns, gn(&o.svg), gn(&shape)));
+                            let gp = |svg: &str| svg.find("id=\"Garis\"").map_or(0, |i| count_svg(&svg[i..]).0);
+                            let prev = prev_dir.as_ref().and_then(|d| std::fs::read_to_string(d.join(format!("{}.noai.svg", it.file))).ok());
+                            let (pp, pn) = prev.as_ref().map_or(("-".to_string(), "-".to_string()), |s| (gp(s).to_string(), count_svg(s).1.to_string()));
+                            cmp.push(format!("| {} | {} | {} | {} | {} | {} | {} | {} |", it.label, pp, gp(&o.svg), pn, nk, o.stats.primitives, o.text_regions.len(), o.symmetry_applied.as_deref().unwrap_or("-")));
                         }
                         if let Some(r) = measure_svg(&o.svg, &orig) {
                             let note = if ai && !o.used_ai { " (AI FAILED)" } else { "" };
@@ -191,7 +204,13 @@ fn main() {
         }
         md.push('\n');
     }
-    md.push_str("## Garis tipis sebagai stroke vs bentuk (0.2.0, tanpa AI)
+    md.push_str("## 0.2.0 vs 0.3.0 (tanpa AI)\n\n| file | path di layer Garis 0.2.0 | path di layer Garis 0.3.0 | node total 0.2.0 | node total 0.3.0 | bentuk dasar | area teks terdeteksi | simetri |\n|---|---:|---:|---:|---:|---:|---:|---|\n");
+    for c in &cmp {
+        md.push_str(c);
+        md.push('\n');
+    }
+    md.push_str(&format!("\nWaktu total seluruh gambar benchmark (semua varian yang dijalankan): {total_secs:.1} detik.\n\n"));
+    md.push_str("## Garis tipis sebagai stroke vs bentuk (0.3.0, tanpa AI)
 
 | file | node total (stroke) | node total (bentuk) | node grup Garis (stroke) | node grup Garis (bentuk) |
 |---|---:|---:|---:|---:|

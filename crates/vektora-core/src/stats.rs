@@ -12,6 +12,13 @@ pub struct Stats {
     pub bytes: usize,
     /// Mean absolute error of the render against the original (0..255), when computed.
     pub mae: Option<f64>,
+    /// Circles, ellipses and rectangles written as pure shapes (`<circle>`, `<ellipse>`, `<rect>`).
+    pub primitives: usize,
+}
+
+/// Number of `<circle>`, `<ellipse>` and `<rect>` elements.
+pub fn count_primitives(svg: &str) -> usize {
+    ["<circle ", "<ellipse ", "<rect "].iter().map(|t| svg.matches(t).count()).sum()
 }
 
 fn segments_per_command(cmd: char) -> Option<usize> {
@@ -45,7 +52,8 @@ pub fn count_svg(svg: &str) -> (usize, usize) {
             break;
         }
     }
-    (paths, nodes)
+    // a basic shape counts as the four anchors a designer sees in Illustrator / Affinity
+    (paths, nodes + 4 * count_primitives(svg))
 }
 
 pub fn count_d(d: &str) -> usize {
@@ -135,5 +143,5 @@ pub fn compare(a: &RgbImage, b: &RgbImage) -> (f64, f64) {
 pub fn stats_for(svg: &str, original: Option<&RgbImage>) -> Stats {
     let (paths, nodes) = count_svg(svg);
     let mae = original.and_then(|o| render_svg(svg, o.width(), o.height()).ok().map(|r| compare(o, &r).0));
-    Stats { paths, nodes, bytes: svg.len(), mae }
+    Stats { paths, nodes, bytes: svg.len(), mae, primitives: count_primitives(svg) }
 }
