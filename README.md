@@ -4,6 +4,18 @@
 
 An **offline desktop vectorization app** that turns flat illustrations, logos, and cel-shaded artwork (PNG/JPG/WEBP/BMP) into clean **SVG, PDF (RGB/CMYK), EPS (RGB/CMYK), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.1.0 ("Fast Workflow & Full Production")**. Local-first, bilingual (English & Indonesian), no account, no cloud, **no network request**.
 
+## Screenshots
+
+![Trasea desktop workspace — English UI, Split View, and Crop & Rotate](docs/screenshots/app_bilingual_crop.png)
+
+| Outline / Wireframe (Ctrl+Y) & Layer Toggles | RGB/CMYK Print, AutoCAD DXF (mm) & Copy SVG |
+| :---: | :---: |
+| ![Outline mode and layer eye toggles](docs/screenshots/app_outline_layers.png) | ![CMYK, DXF mm export, and clipboard copy](docs/screenshots/app_clipboard_dxf_cmyk.png) |
+
+| Automatic Watch Folder & Live Processing Log |
+| :---: |
+| ![Watch Folder live log](docs/screenshots/app_watch_folder.png) |
+
 ## What it does
 
 Four local stages plus non-destructive pre-processing, production profiles, designer controls, project workflow, batch folder processing, and automatic watch folders:

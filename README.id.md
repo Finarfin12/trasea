@@ -4,6 +4,18 @@
 
 **Aplikasi desktop vektorisasi offline** yang mengubah ilustrasi flat, logo, dan karya *cel-shading* (PNG/JPG/WEBP/BMP) menjadi **SVG, PDF (RGB/CMYK), EPS (RGB/CMYK), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.1.0 ("Alur Kerja Cepat & Produksi Penuh")**. Lokal, dwibahasa (Indonesia & Inggris), tanpa akun, tanpa cloud, **tanpa permintaan jaringan**.
 
+## Tangkapan Layar
+
+![Ruang kerja desktop Trasea — UI Dwibahasa, Split View, dan Potong & Putar](docs/screenshots/app_bilingual_crop.png)
+
+| Pratinjau Outline (Ctrl+Y) & Toggle Layer | Ekspor RGB/CMYK, AutoCAD DXF (mm) & Salin SVG |
+| :---: | :---: |
+| ![Mode Outline dan ikon mata layer](docs/screenshots/app_outline_layers.png) | ![Ekspor CMYK, DXF mm, dan salin clipboard](docs/screenshots/app_clipboard_dxf_cmyk.png) |
+
+| Pantau Folder Otomatis & Log Langsung |
+| :---: |
+| ![Log langsung Pantau Folder](docs/screenshots/app_watch_folder.png) |
+
 ## Cara kerja
 
 Empat tahap lokal ditambah pra-proses non-destruktif, profil produksi, kendali desainer, alur kerja proyek, batch folder, dan pemantau folder otomatis:
