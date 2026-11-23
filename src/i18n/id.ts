@@ -79,6 +79,11 @@ export const id = {
 
 	// Settings panel
 	panelAria: "Pengaturan",
+	panelTabTrace: "Pelacakan",
+	panelTabColors: "Warna",
+	panelTabExport: "Ekspor",
+	advancedSection: "Lanjutan",
+	noImageTabHint: "Buka atau tempel gambar terlebih dahulu untuk mengatur palet warna dan ekspor.",
 	customPresets: "Preset Kustom",
 	close: "Tutup",
 	addPresetBtn: "+ Simpan preset",

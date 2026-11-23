@@ -128,6 +128,15 @@ const DEFAULT_EXP: ExportOptions = {
 
 type View = "editor" | "batch";
 type Tool = "pan" | "selectPath" | "detail" | "smooth" | "pipet";
+type PanelTab = "trace" | "colors" | "export";
+
+function TipDot({ text }: { text: string }) {
+	return (
+		<span className="tip-dot" title={text} aria-label={text}>
+			?
+		</span>
+	);
+}
 
 const GARIS_LAYER = "__GARIS__";
 const REG_LAYER = "__REGISTRASI__";
@@ -252,6 +261,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const errText = useCallback((e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError), [t.unknownError]);
 
 	const [view, setView] = useState<View>("editor");
+	const [panelTab, setPanelTab] = useState<PanelTab>("trace");
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
 	const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -1650,553 +1660,684 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 					</section>
 
 					<aside className="panel" aria-label={t.panelAria}>
-						<div className="palette-head" style={{ marginTop: 0 }}>
-							<h2>{t.customPresets}</h2>
-							<button className="small" onClick={() => setAddingPreset(v => !v)}>{addingPreset ? t.close : t.addPresetBtn}</button>
-						</div>
-						{addingPreset && (
-							<div className="preset-add">
-								<input
-									className="num"
-									type="text"
-									placeholder={t.presetPlaceholder}
-									aria-label={t.presetNameAria}
-									value={presetNameInput}
-									onChange={e => setPresetNameInput(e.target.value)}
-									onKeyDown={e => { if (e.key === "Enter") void createPreset(); }}
-								/>
-								<button className="small" onClick={() => void createPreset()} disabled={!presetNameInput.trim()}>{t.save}</button>
+						<div className="panel-tabs">
+							<div className="seg" role="tablist" aria-label={t.panelAria}>
+								<button role="tab" aria-selected={panelTab === "trace"} aria-pressed={panelTab === "trace"} onClick={() => setPanelTab("trace")}>
+									{t.panelTabTrace}
+								</button>
+								<button role="tab" aria-selected={panelTab === "colors"} aria-pressed={panelTab === "colors"} onClick={() => setPanelTab("colors")}>
+									{t.panelTabColors}
+									{result ? ` (${currentPalette().length})` : ""}
+								</button>
+								<button role="tab" aria-selected={panelTab === "export"} aria-pressed={panelTab === "export"} onClick={() => setPanelTab("export")}>
+									{t.panelTabExport}
+									{exp.dieCutContour ? <span className="tab-cut-dot" aria-hidden="true" /> : null}
+								</button>
 							</div>
-						)}
-						{presets.length > 0 && (
-							<div className="preset-row">
-								<select
-									aria-label={t.selectPresetAria}
-									value={selectedPresetId}
-									onChange={e => {
-										const p = presets.find(x => x.id === e.target.value);
-										if (p) applyPreset(p);
-									}}
-								>
-									<option value="">{t.chooseSavedPreset}</option>
-									{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-								</select>
-								<button className="small" onClick={() => void removeSelectedPreset()} disabled={!selectedPresetId} aria-label={t.deletePresetAria}>{t.delete}</button>
-							</div>
-						)}
-
-						<h2>{t.productionModeTitle}</h2>
-						<div className="seg seg5-grid" role="group" aria-label={t.productionModeAria}>
-							<button aria-pressed={opts.productionMode === "standard"} onClick={() => switchProductionMode("standard")}>{t.modeStandard}</button>
-							<button aria-pressed={opts.productionMode === "screenPrint"} onClick={() => switchProductionMode("screenPrint")}>{t.modeScreenPrint}</button>
-							<button aria-pressed={opts.productionMode === "cutEmbroidery"} onClick={() => switchProductionMode("cutEmbroidery")}>{t.modeCutEmbroidery}</button>
-							<button aria-pressed={opts.productionMode === "shading"} onClick={() => switchProductionMode("shading")}>{t.modeShading}</button>
-							<button aria-pressed={opts.productionMode === "centerline"} onClick={() => switchProductionMode("centerline")}>{t.modeCenterline}</button>
 						</div>
 
-						{opts.productionMode === "screenPrint" && (
-							<div className="mode-box">
-								<label>{t.sablonMethodLabel}</label>
-								<div className="seg seg2" role="group" aria-label={t.sablonMethodLabel} style={{ marginTop: 4 }}>
-									<button aria-pressed={!opts.sablonKnockout} onClick={() => set({ sablonKnockout: false }, t.sablonStacking)}>{t.sablonStacking}</button>
-									<button aria-pressed={opts.sablonKnockout} onClick={() => set({ sablonKnockout: true }, t.sablonKnockout)}>{t.sablonKnockout}</button>
-								</div>
-								<label htmlFor="minStroke">{t.minStrokeLabel}</label>
-								<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
-								<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }, t.regMarksLabel); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> {t.regMarksLabel}</label>
-								{opts.colors > 6 && <div className="warn">{t.sablonOver6Warn}</div>}
-								<div className="hint">{opts.sablonKnockout ? t.sablonKnockoutHint : t.sablonHint}</div>
-							</div>
-						)}
-
-						{opts.productionMode === "cutEmbroidery" && (
-							<div className="mode-box">
-								<label className="check"><input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }, t.stripBgLabel); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} /> {t.stripBgLabel}</label>
-								<label htmlFor="minStrokeCut">{t.minStrokeLabel}</label>
-								<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
-								<div className="hint">{t.cutHint}</div>
-							</div>
-						)}
-
-						{opts.productionMode === "shading" && (
-							<div className="mode-box">
-								<div className="hint">{t.shadingHint}</div>
-							</div>
-						)}
-
-						{opts.productionMode === "centerline" && (
-							<div className="mode-box">
-								<label className="check">
-									<input type="checkbox" checked={opts.centerlineInvert} onChange={e => set({ centerlineInvert: e.target.checked }, t.centerlineInvertLabel)} />
-									{t.centerlineInvertLabel}
-								</label>
-								<label htmlFor="centerlineStroke">{t.centerlineStrokeLabel} <b>{opts.centerlineStrokePt.toFixed(2)} pt</b></label>
-								<input
-									id="centerlineStroke"
-									type="range"
-									min={0.25}
-									max={8}
-									step={0.25}
-									value={opts.centerlineStrokePt}
-									onChange={e => set({ centerlineStrokePt: Number(e.target.value) }, t.centerlineStrokeLabel)}
-								/>
-								<div className="hint">{t.centerlineHint}</div>
-							</div>
-						)}
-
-						{/* F3: 1-Click Auto Remove Background */}
-						<div className="mode-box" style={{ marginTop: 8 }}>
-							<label className="check" style={{ marginTop: 0 }}>
-								<input
-									type="checkbox"
-									checked={opts.preprocess.removeBackground}
-									onChange={e => {
-										const checked = e.target.checked;
-										set({ preprocess: { ...opts.preprocess, removeBackground: checked } }, t.removeBgToggle);
-										if (checked) setChecker(true);
-									}}
-								/>
-								<span><b>{t.removeBgToggle}</b></span>
-							</label>
-							{opts.preprocess.removeBackground && (
-								<>
-									<label htmlFor="bgTol">{t.bgToleranceLabel} <b>{opts.preprocess.bgTolerance}</b></label>
-									<input
-										id="bgTol"
-										type="range"
-										min={0}
-										max={100}
-										value={opts.preprocess.bgTolerance}
-										onChange={e => set({ preprocess: { ...opts.preprocess, bgTolerance: Number(e.target.value) } }, t.bgToleranceLabel)}
-									/>
-									<label htmlFor="bgDefringe">{t.defringeLabel} <b>{opts.preprocess.defringePx} px</b></label>
-									<input
-										id="bgDefringe"
-										type="range"
-										min={0}
-										max={3}
-										value={opts.preprocess.defringePx}
-										onChange={e => set({ preprocess: { ...opts.preprocess, defringePx: Number(e.target.value) } }, t.defringeLabel)}
-									/>
-									<div className="hint">{t.removeBgHint}</div>
-								</>
-							)}
-						</div>
-
-						{(opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05) && (
-							<div className="mode-box row between" style={{ marginTop: 8 }}>
-								<span className="hint" style={{ color: "var(--ink)" }}>
-									{t.preprocessActive}
-									{Math.abs(opts.preprocess.rotateDeg) > 0.05 ? ` (${opts.preprocess.rotateDeg}°)` : ""}
-									{opts.preprocess.crop ? ` · ${opts.preprocess.crop[2]}×${opts.preprocess.crop[3]}` : ""}
-								</span>
-								<button className="small" onClick={resetPreprocess}>{t.preprocessReset}</button>
-							</div>
-						)}
-
-						<h2>{t.settingsTitle}</h2>
-						{opts.productionMode !== "centerline" && (
-							<>
-								<label htmlFor="colors">{t.colorCount} <b>{Math.min(maxColors, Math.max(minColors, opts.colors))}</b></label>
-								<input id="colors" type="range" min={minColors} max={maxColors} value={Math.min(maxColors, Math.max(minColors, opts.colors))} onChange={e => set({ colors: Number(e.target.value) }, t.colorCount)} />
-							</>
-						)}
-						<label htmlFor="smooth">{t.smoothness} <b>{opts.smooth < 34 ? t.smoothDetail : opts.smooth > 66 ? t.smoothSmooth : t.smoothMedium}</b></label>
-						<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, t.smoothness)} />
-						<div className="hint">{t.smoothHint}</div>
-						<label htmlFor="target">{t.targetNodesLabel}</label>
-						<select id="target" value={targetChoice} onChange={e => { recordHistory(t.targetNodesLabel); setTargetChoice(e.target.value as TargetChoice); }}>
-							<option value="auto">{t.targetAuto}</option>
-							<option value="500">500</option>
-							<option value="1000">1000</option>
-							<option value="2000">2000</option>
-							<option value="custom">{t.targetCustom}</option>
-						</select>
-						{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label={t.targetNodesLabel} />}
-						<div className="hint">{t.targetHint}</div>
-						{opts.productionMode !== "centerline" && (
-							<>
-								<label className="check"><input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, t.keepLines)} /> {t.keepLines}</label>
-								<label className="check"><input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} /> {t.detectPrimitives}</label>
-								<div className="hint">{t.primitivesHint}</div>
-								<label htmlFor="symmetry">{t.symmetryLabel}</label>
-								<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, t.symmetryLabel)}>
-									<option value="off">{t.symOff}</option>
-									<option value="auto">{t.symAuto}</option>
-									<option value="vertical">{t.symVert}</option>
-									<option value="horizontal">{t.symHoriz}</option>
-								</select>
-								<div className="hint">{t.symmetryHint}</div>
-							</>
-						)}
-						<label className="check">
-							<input type="checkbox" checked={!appSettings.preferMedianOnly && opts.aiClean} disabled={appSettings.preferMedianOnly} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} />
-							{t.aiCleanLabel}
-						</label>
-						<div className="hint">{appSettings.preferMedianOnly ? t.medianOnlyHint : t.aiCleanHint}</div>
-						{opts.aiClean && !hasSidecar && !appSettings.preferMedianOnly && <div className="warn">{t.noSidecarWarn}</div>}
-						<button className={`primary ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>{result ? t.applyAgain : t.vectorizeBtn}</button>
-						{dirty && (
-							<div className="pending" role="status">
-								{t.pendingChanges}
-								{palette !== null || strokes.length > 0 || hasPreprocess || pathEdits.length > 0
-									? ` (${[
-											palette !== null ? t.pendingPalette : "",
-											strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "",
-											hasPreprocess ? t.pendingPreprocess : "",
-											pathEdits.length > 0 ? `${pathEdits.length} ${t.pendingPathEdits}` : "",
-										]
-											.filter(Boolean)
-											.join(", ")})`
-									: ""}.
-							</div>
-						)}
-
-						{result && (
-							<>
-								<div className="palette-head">
-									<h2>{t.paletteTitle}</h2>
-									<div className="row">
-										{hiddenLayers.size > 0 && (
-											<button className="small" onClick={() => setHiddenLayers(new Set())}>{t.showAllLayers}</button>
-										)}
-										<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(tl => (tl === "pipet" ? "pan" : "pipet"))}>{t.pipetBtn}</button>
-										<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>{t.resetPalette}</button>
-									</div>
-								</div>
-								<ul className="palette" aria-label={t.paletteAria}>
-									{currentPalette().map(c => {
-										const upper = c.toUpperCase();
-										const isHidden = hiddenLayers.has(c);
-										const isOut = outOfGamutSet.has(upper);
-										const spot = spotMap.get(upper) ?? "";
-										const isInspected = inspectedColor === c;
-										const codes = isInspected ? formatColorCodes(c) : null;
-										return (
-											<li key={c} className={`swatch-item ${isHidden ? "layer-hidden" : ""}`}>
-												<div className="swatch">
-													<button
-														className="small icon-btn"
-														aria-pressed={isHidden}
-														onClick={() => toggleLayer(c)}
-														title={isHidden ? t.toggleLayerShow : t.toggleLayerHide}
-														aria-label={`${isHidden ? t.toggleLayerShow : t.toggleLayerHide} ${c}`}
-													>
-														<EyeIcon hidden={isHidden} />
-													</button>
-													<button
-														className={`chip-btn ${isInspected ? "active" : ""}`}
-														style={{ background: softProof ? (proofMap.get(upper) ?? c) : c }}
-														onClick={() => {
-															setMergeSource(null);
-															setInspectedColor(cur => (cur === c ? null : c));
-														}}
-														title={t.inspectColorTip}
-														aria-label={`${t.inspectColorTip} ${c}`}
-														aria-expanded={isInspected}
-													/>
-													<code>{c}</code>
-													{isOut && <span className="gamut-warn" title={t.outOfGamutTip} aria-label={t.outOfGamutTip}>⚠</span>}
-													{spot && <span className="spot-pill" title={`${t.spotBadgePrefix} ${spot}`}>{spot}</span>}
-													<button
-														className="small"
-														aria-expanded={mergeSource === c}
-														onClick={() => {
-															setInspectedColor(null);
-															setMergeSource(s => (s === c ? null : c));
-														}}
-														disabled={currentPalette().length <= 2}
-														aria-label={`${t.mergeBtn} ${c}`}
-													>
-														{t.mergeBtn}
-													</button>
-													<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`${t.removeBtn} ${c}`}>{t.removeBtn}</button>
-												</div>
-
-												{isInspected && codes && (
-													<div className="color-inspector" role="region" aria-label={`Color Inspector ${c}`}>
-														<div className="ci-grid">
-															{(["hex", "rgb", "cmyk", "hsl"] as const).map(fmt => {
-																const k = `${c}-${fmt}`;
-																const val = codes[fmt];
-																return (
-																	<div key={fmt} style={{ display: "contents" }}>
-																		<span className="ci-label">{fmt.toUpperCase()}</span>
-																		<span className="ci-val" title={val}>{val}</span>
-																		<button className="small" onClick={() => void copyCodeValue(k, val)}>
-																			{copiedKey === k ? t.copiedTag : t.copyBtn}
-																		</button>
-																	</div>
-																);
-															})}
-														</div>
-														<div className="ci-spot">
-															<span className="ci-label">{t.spotInkLabel}</span>
-															<div className="ci-spot-row">
-																<input
-																	className="num"
-																	type="text"
-																	value={spot}
-																	placeholder={t.spotInkPlaceholder}
-																	aria-label={t.spotInkLabel}
-																	onChange={e => setSpotName(c, e.target.value)}
-																/>
-																{spot && (
-																	<button className="small" onClick={() => setSpotName(c, "")}>{t.spotInkClear}</button>
-																)}
-															</div>
-														</div>
-													</div>
-												)}
-
-												{mergeSource === c && (
-													<div className="merge-pop" role="region" aria-label={`${t.mergeToLabel} ${c}`}>
-														<div className="hint">{t.mergeToLabel} <code>{c}</code></div>
-														<div className="merge-targets">
-															{othersByDistance(c).map((targetHex, i) => (
-																<button key={targetHex} className="small merge-opt" onClick={() => mergeColorInto(c, targetHex)} aria-label={`${t.mergeBtn} ${c} → ${targetHex}`}>
-																	<span className="chip-sm" style={{ background: targetHex }} aria-hidden="true" />
-																	<span>{targetHex}{i === 0 ? t.nearestTag : ""}</span>
-																</button>
-															))}
-														</div>
-													</div>
-												)}
-											</li>
-										);
-									})}
-									<li className={`swatch-item ${hiddenLayers.has(GARIS_LAYER) ? "layer-hidden" : ""}`}>
-										<div className="swatch">
-											<button
-												className="small icon-btn"
-												aria-pressed={hiddenLayers.has(GARIS_LAYER)}
-												onClick={() => toggleLayer(GARIS_LAYER)}
-												title={hiddenLayers.has(GARIS_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
-												aria-label={t.layerThinLines}
-											>
-												<EyeIcon hidden={hiddenLayers.has(GARIS_LAYER)} />
-											</button>
-											<span className="chip chip-line" aria-hidden="true" />
-											<span className="layer-label">{t.layerThinLines}</span>
+						<div className="panel-body">
+							{panelTab === "trace" && (
+								<div className="panel-section-stack">
+									{/* Compact 1-row Custom Presets */}
+									<div className="field-block">
+										<div className="field-head">
+											<span className="field-title">{t.customPresets}</span>
 										</div>
-									</li>
-									{hasCutLayer && (
-										<li className={`swatch-item ${hiddenLayers.has(CUT_LAYER) ? "layer-hidden" : ""}`}>
-											<div className="swatch">
-												<button
-													className="small icon-btn"
-													aria-pressed={hiddenLayers.has(CUT_LAYER)}
-													onClick={() => toggleLayer(CUT_LAYER)}
-													title={hiddenLayers.has(CUT_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
-													aria-label={t.layerCutContour}
-												>
-													<EyeIcon hidden={hiddenLayers.has(CUT_LAYER)} />
-												</button>
-												<span className="chip chip-cut" aria-hidden="true" />
-												<span className="layer-label">{t.layerCutContour} ({exp.dieCutSpotName || "CutContour"})</span>
-											</div>
-										</li>
-									)}
-									{hasRegLayer && (
-										<li className={`swatch-item ${hiddenLayers.has(REG_LAYER) ? "layer-hidden" : ""}`}>
-											<div className="swatch">
-												<button
-													className="small icon-btn"
-													aria-pressed={hiddenLayers.has(REG_LAYER)}
-													onClick={() => toggleLayer(REG_LAYER)}
-													title={hiddenLayers.has(REG_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
-													aria-label={t.layerRegistration}
-												>
-													<EyeIcon hidden={hiddenLayers.has(REG_LAYER)} />
-												</button>
-												<span className="chip chip-reg" aria-hidden="true" />
-												<span className="layer-label">{t.layerRegistration}</span>
-											</div>
-										</li>
-									)}
-								</ul>
-
-								{/* F8: Saved Palette Library + .gpl/.json/.css export */}
-								<div className="mode-box" style={{ marginTop: 8 }}>
-									<div className="row between">
-										<strong style={{ fontSize: 12 }}>{t.paletteLibTitle}</strong>
-										<button className="small" onClick={() => setAddingSavedPalette(v => !v)}>
-											{addingSavedPalette ? t.close : t.savePaletteBtn}
-										</button>
-									</div>
-									{addingSavedPalette && (
-										<div className="preset-add">
-											<input
-												className="num"
-												type="text"
-												placeholder={t.paletteNamePlaceholder}
-												value={savedPaletteName}
-												onChange={e => setSavedPaletteName(e.target.value)}
-												onKeyDown={e => { if (e.key === "Enter") void saveCurrentToPaletteLibrary(); }}
-											/>
-											<button className="small" onClick={() => void saveCurrentToPaletteLibrary()} disabled={!savedPaletteName.trim()}>{t.save}</button>
-										</div>
-									)}
-									{savedPalettes.length > 0 && (
-										<div className="preset-row">
+										<div className="preset-row" style={{ marginTop: 4 }}>
 											<select
-												aria-label={t.paletteLibTitle}
-												value={selectedSavedPaletteId}
+												aria-label={t.selectPresetAria}
+												value={selectedPresetId}
 												onChange={e => {
-													const sp = savedPalettes.find(x => x.id === e.target.value);
-													if (sp) applySavedPalette(sp);
+													const p = presets.find(x => x.id === e.target.value);
+													if (p) applyPreset(p);
 												}}
 											>
-												<option value="">{t.chooseSavedPalette}</option>
-												{savedPalettes.map(sp => (
-													<option key={sp.id} value={sp.id}>{sp.name} ({sp.colors.length})</option>
-												))}
+												<option value="">{t.chooseSavedPreset}</option>
+												{presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
 											</select>
-											<button className="small" onClick={() => void removeSelectedSavedPalette()} disabled={!selectedSavedPaletteId}>{t.delete}</button>
+											<button
+												className="small icon-btn"
+												onClick={() => setAddingPreset(v => !v)}
+												title={addingPreset ? t.close : t.addPresetBtn}
+												aria-label={addingPreset ? t.close : t.addPresetBtn}
+											>
+												{addingPreset ? "×" : "+"}
+											</button>
+											{selectedPresetId && (
+												<button className="small" onClick={() => void removeSelectedPreset()} aria-label={t.deletePresetAria}>
+													{t.delete}
+												</button>
+											)}
+										</div>
+										{addingPreset && (
+											<div className="preset-add">
+												<input
+													className="num"
+													type="text"
+													placeholder={t.presetPlaceholder}
+													aria-label={t.presetNameAria}
+													value={presetNameInput}
+													onChange={e => setPresetNameInput(e.target.value)}
+													onKeyDown={e => { if (e.key === "Enter") void createPreset(); }}
+												/>
+												<button className="small" onClick={() => void createPreset()} disabled={!presetNameInput.trim()}>{t.save}</button>
+											</div>
+										)}
+									</div>
+
+									{/* Production Mode Dropdown */}
+									<div className="field-block">
+										<label className="field-label" htmlFor="prodMode">
+											<span>{t.productionModeTitle}</span>
+										</label>
+										<select
+											id="prodMode"
+											aria-label={t.productionModeAria}
+											value={opts.productionMode}
+											onChange={e => switchProductionMode(e.target.value as ProductionMode)}
+										>
+											<option value="standard">{t.modeStandard}</option>
+											<option value="screenPrint">{t.modeScreenPrint}</option>
+											<option value="cutEmbroidery">{t.modeCutEmbroidery}</option>
+											<option value="shading">{t.modeShading}</option>
+											<option value="centerline">{t.modeCenterline}</option>
+										</select>
+
+										{opts.productionMode === "screenPrint" && (
+											<div className="mode-box">
+												<label className="field-label" style={{ marginTop: 0 }}>
+													<span>{t.sablonMethodLabel}</span>
+													<TipDot text={opts.sablonKnockout ? t.sablonKnockoutHint : t.sablonHint} />
+												</label>
+												<div className="seg seg2" role="group" aria-label={t.sablonMethodLabel} style={{ marginTop: 4 }}>
+													<button aria-pressed={!opts.sablonKnockout} onClick={() => set({ sablonKnockout: false }, t.sablonStacking)}>{t.sablonStacking}</button>
+													<button aria-pressed={opts.sablonKnockout} onClick={() => set({ sablonKnockout: true }, t.sablonKnockout)}>{t.sablonKnockout}</button>
+												</div>
+												<label className="field-label" htmlFor="minStroke">{t.minStrokeLabel}</label>
+												<input id="minStroke" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
+												<label className="check"><input type="checkbox" checked={opts.registrationMarks} onChange={e => { const v = e.target.checked; set({ registrationMarks: v }, t.regMarksLabel); setExp(ex => ({ ...ex, registrationMarks: v })); }} /> {t.regMarksLabel}</label>
+												{opts.colors > 6 && <div className="warn">{t.sablonOver6Warn}</div>}
+											</div>
+										)}
+
+										{opts.productionMode === "cutEmbroidery" && (
+											<div className="mode-box">
+												<label className="check" style={{ marginTop: 0 }}>
+													<input type="checkbox" checked={opts.stripBackground} onChange={e => { const v = e.target.checked; set({ stripBackground: v }, t.stripBgLabel); setExp(ex => ({ ...ex, stripBackground: v })); setChecker(v); }} />
+													<span>{t.stripBgLabel}</span>
+													<TipDot text={t.cutHint} />
+												</label>
+												<label className="field-label" htmlFor="minStrokeCut">{t.minStrokeLabel}</label>
+												<input id="minStrokeCut" className="num" type="number" min={0} max={6} step={0.25} value={opts.minStrokePt} onChange={e => set({ minStrokePt: Math.max(0, Number(e.target.value)) }, t.minStrokeLabel)} />
+											</div>
+										)}
+
+										{opts.productionMode === "shading" && (
+											<div className="mode-box">
+												<div className="hint">{t.shadingHint}</div>
+											</div>
+										)}
+
+										{opts.productionMode === "centerline" && (
+											<div className="mode-box">
+												<label className="check" style={{ marginTop: 0 }}>
+													<input type="checkbox" checked={opts.centerlineInvert} onChange={e => set({ centerlineInvert: e.target.checked }, t.centerlineInvertLabel)} />
+													<span>{t.centerlineInvertLabel}</span>
+													<TipDot text={t.centerlineHint} />
+												</label>
+												<label className="field-label" htmlFor="centerlineStroke">
+													<span>{t.centerlineStrokeLabel}</span>
+													<b>{opts.centerlineStrokePt.toFixed(2)} pt</b>
+												</label>
+												<input
+													id="centerlineStroke"
+													type="range"
+													min={0.25}
+													max={8}
+													step={0.25}
+													value={opts.centerlineStrokePt}
+													onChange={e => set({ centerlineStrokePt: Number(e.target.value) }, t.centerlineStrokeLabel)}
+												/>
+											</div>
+										)}
+									</div>
+
+									{/* 1-Click Auto Remove Background */}
+									<div className="mode-box" style={{ marginTop: 0 }}>
+										<label className="check" style={{ marginTop: 0 }}>
+											<input
+												type="checkbox"
+												checked={opts.preprocess.removeBackground}
+												onChange={e => {
+													const checked = e.target.checked;
+													set({ preprocess: { ...opts.preprocess, removeBackground: checked } }, t.removeBgToggle);
+													if (checked) setChecker(true);
+												}}
+											/>
+											<span style={{ flex: 1 }}><b>{t.removeBgToggle}</b></span>
+											<TipDot text={t.removeBgHint} />
+										</label>
+										{opts.preprocess.removeBackground && (
+											<>
+												<label className="field-label" htmlFor="bgTol">
+													<span>{t.bgToleranceLabel}</span>
+													<b>{opts.preprocess.bgTolerance}</b>
+												</label>
+												<input
+													id="bgTol"
+													type="range"
+													min={0}
+													max={100}
+													value={opts.preprocess.bgTolerance}
+													onChange={e => set({ preprocess: { ...opts.preprocess, bgTolerance: Number(e.target.value) } }, t.bgToleranceLabel)}
+												/>
+												<label className="field-label" htmlFor="bgDefringe">
+													<span>{t.defringeLabel}</span>
+													<b>{opts.preprocess.defringePx} px</b>
+												</label>
+												<input
+													id="bgDefringe"
+													type="range"
+													min={0}
+													max={3}
+													value={opts.preprocess.defringePx}
+													onChange={e => set({ preprocess: { ...opts.preprocess, defringePx: Number(e.target.value) } }, t.defringeLabel)}
+												/>
+											</>
+										)}
+									</div>
+
+									{(opts.preprocess.crop !== null || Math.abs(opts.preprocess.rotateDeg) > 0.05) && (
+										<div className="mode-box row between" style={{ marginTop: 0 }}>
+											<span className="hint" style={{ color: "var(--ink)" }}>
+												{t.preprocessActive}
+												{Math.abs(opts.preprocess.rotateDeg) > 0.05 ? ` (${opts.preprocess.rotateDeg}°)` : ""}
+												{opts.preprocess.crop ? ` · ${opts.preprocess.crop[2]}×${opts.preprocess.crop[3]}` : ""}
+											</span>
+											<button className="small" onClick={resetPreprocess}>{t.preprocessReset}</button>
 										</div>
 									)}
-									<div className="row" style={{ marginTop: 6 }}>
-										<button className="small" onClick={() => void exportAs("ase")}>.ase</button>
-										<button className="small" onClick={() => void exportPaletteText("gpl")}>{t.exportGpl}</button>
-										<button className="small" onClick={() => void exportPaletteText("json")}>{t.exportJsonPal}</button>
-										<button className="small" onClick={() => void exportPaletteText("css")}>{t.exportCssPal}</button>
+
+									{/* Core Trace Controls (clean tooltips, no verbose paragraphs) */}
+									<div className="field-block">
+										{opts.productionMode !== "centerline" && (
+											<>
+												<label className="field-label" htmlFor="colors">
+													<span>{t.colorCount}</span>
+													<b>{Math.min(maxColors, Math.max(minColors, opts.colors))}</b>
+												</label>
+												<input id="colors" type="range" min={minColors} max={maxColors} value={Math.min(maxColors, Math.max(minColors, opts.colors))} onChange={e => set({ colors: Number(e.target.value) }, t.colorCount)} />
+											</>
+										)}
+										<label className="field-label" htmlFor="smooth">
+											<span className="label-with-tip">{t.smoothness} <TipDot text={t.smoothHint} /></span>
+											<b>{opts.smooth < 34 ? t.smoothDetail : opts.smooth > 66 ? t.smoothSmooth : t.smoothMedium}</b>
+										</label>
+										<input id="smooth" type="range" min={0} max={100} value={opts.smooth} onChange={e => set({ smooth: Number(e.target.value) }, t.smoothness)} />
+										<label className="field-label" htmlFor="target">
+											<span className="label-with-tip">{t.targetNodesLabel} <TipDot text={t.targetHint} /></span>
+										</label>
+										<select id="target" value={targetChoice} onChange={e => { recordHistory(t.targetNodesLabel); setTargetChoice(e.target.value as TargetChoice); }}>
+											<option value="auto">{t.targetAuto}</option>
+											<option value="500">500</option>
+											<option value="1000">1000</option>
+											<option value="2000">2000</option>
+											<option value="custom">{t.targetCustom}</option>
+										</select>
+										{targetChoice === "custom" && <input className="num" type="number" min={1} step={50} value={customTarget} onChange={e => setCustomTarget(e.target.value)} aria-label={t.targetNodesLabel} />}
 									</div>
-								</div>
 
-								<div className="hint" style={{ marginTop: 6 }}>{t.layerPreviewOnlyHint}</div>
-								<div className="hint">{t.paletteHintBase} {paletteDirty ? t.paletteDirtyHint : palette !== null ? t.paletteManualHint : t.paletteAutoHint}</div>
-
-								<h2>{t.statsTitle}</h2>
-								<dl className="stats">
-									<dt>{t.statPaths}</dt><dd>{result.paths}</dd>
-									<dt>{t.statNodes}</dt><dd>{result.nodes.toLocaleString(locale)}</dd>
-									<dt>{t.statSvgSize}</dt><dd>{fmtKb(result.bytes)}</dd>
-									<dt>{t.statPrimitives}</dt><dd>{result.primitives}</dd>
-									{result.symmetryApplied && <><dt>{t.statSymmetry}</dt><dd>{result.symmetryApplied === "vertical" ? t.symVertShort : t.symHorizShort}</dd></>}
-									{result.budgetMet !== null && <><dt>{t.statTargetNode}</dt><dd>{result.budgetMet ? t.budgetMet : t.budgetMissed}</dd><dt>{t.statEffSmooth}</dt><dd>{Math.round(result.effectiveSmooth)}</dd></>}
-									<dt>{t.statMae}</dt><dd>{result.mae === null ? "-" : result.mae.toFixed(2)}</dd>
-									<dt>{t.statTime}</dt><dd>{result.secs.toFixed(1)} {t.secUnit}{result.reused ? t.reusedSuffix : ""}</dd>
-									<dt>{t.statCleaner}</dt><dd>{result.usedAi ? "Real-ESRGAN" : "median"}</dd>
-								</dl>
-
-								<h2>{t.exportTitle}</h2>
-
-								{/* F1: Die-Cut / Kiss-Cut Contour */}
-								<div className="mode-box" style={{ marginTop: 4, marginBottom: 8 }}>
-									<label className="check" style={{ marginTop: 0 }}>
-										<input
-											type="checkbox"
-											checked={exp.dieCutContour}
-											onChange={e => setExp(ex => ({ ...ex, dieCutContour: e.target.checked }))}
-										/>
-										<span><b>{t.dieCutEnable}</b></span>
-									</label>
-									{exp.dieCutContour && (
-										<>
-											<label htmlFor="dieCutOffset">{t.dieCutOffsetLabel} <b>{exp.dieCutOffsetMm.toFixed(1)} mm</b></label>
-											<input
-												id="dieCutOffset"
-												type="range"
-												min={0.5}
-												max={10}
-												step={0.5}
-												value={exp.dieCutOffsetMm}
-												onChange={e => setExp(ex => ({ ...ex, dieCutOffsetMm: Number(e.target.value) }))}
-											/>
-											<label htmlFor="dieCutSpot">{t.dieCutSpotNameLabel}</label>
-											<input
-												id="dieCutSpot"
-												className="num"
-												type="text"
-												value={exp.dieCutSpotName}
-												placeholder="CutContour"
-												onChange={e => setExp(ex => ({ ...ex, dieCutSpotName: e.target.value }))}
-											/>
+									{/* Collapsed-by-default Advanced Accordion */}
+									<details className="adv-details">
+										<summary>{t.advancedSection}</summary>
+										<div className="adv-body">
+											{opts.productionMode !== "centerline" && (
+												<>
+													<label className="check" style={{ marginTop: 0 }}>
+														<input type="checkbox" checked={opts.keepLines} onChange={e => set({ keepLines: e.target.checked }, t.keepLines)} />
+														<span>{t.keepLines}</span>
+													</label>
+													<label className="check">
+														<input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} />
+														<span style={{ flex: 1 }}>{t.detectPrimitives}</span>
+														<TipDot text={t.primitivesHint} />
+													</label>
+													<label className="field-label" htmlFor="symmetry">
+														<span className="label-with-tip">{t.symmetryLabel} <TipDot text={t.symmetryHint} /></span>
+													</label>
+													<select id="symmetry" value={opts.symmetry} onChange={e => set({ symmetry: e.target.value as Options["symmetry"] }, t.symmetryLabel)}>
+														<option value="off">{t.symOff}</option>
+														<option value="auto">{t.symAuto}</option>
+														<option value="vertical">{t.symVert}</option>
+														<option value="horizontal">{t.symHoriz}</option>
+													</select>
+												</>
+											)}
 											<label className="check">
-												<input
-													type="checkbox"
-													checked={exp.dieCutBridgeIslands}
-													onChange={e => setExp(ex => ({ ...ex, dieCutBridgeIslands: e.target.checked }))}
-												/>
-												{t.dieCutBridgeLabel}
+												<input type="checkbox" checked={!appSettings.preferMedianOnly && opts.aiClean} disabled={appSettings.preferMedianOnly} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} />
+												<span style={{ flex: 1 }}>{t.aiCleanLabel}</span>
+												<TipDot text={appSettings.preferMedianOnly ? t.medianOnlyHint : t.aiCleanHint} />
 											</label>
-											<div className="hint">{t.dieCutHint}</div>
+											{opts.aiClean && !hasSidecar && !appSettings.preferMedianOnly && <div className="warn">{t.noSidecarWarn}</div>}
+										</div>
+									</details>
+
+									{result && result.textRegions.length > 0 && (
+										<div className="warn" role="status" id="text-warning">
+											{t.textWarnPrefix}{result.textRegions.length}{t.textWarnSuffix}
+											<div className="row" style={{ marginTop: 6 }}>
+												<button className="small" aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? t.hideTextAreas : t.highlightTextAreas}</button>
+											</div>
+										</div>
+									)}
+									{result?.notes.map(n => <div className="warn" key={n}>{n}</div>)}
+								</div>
+							)}
+
+							{panelTab === "colors" && (
+								<div className="panel-section-stack">
+									{!result ? (
+										<div className="mode-box muted" style={{ textAlign: "center", padding: "20px 12px" }}>
+											{t.noImageTabHint}
+										</div>
+									) : (
+										<>
+											<div className="palette-head" style={{ marginTop: 0 }}>
+												<span className="field-title">{t.paletteTitle}</span>
+												<div className="row">
+													{hiddenLayers.size > 0 && (
+														<button className="small" onClick={() => setHiddenLayers(new Set())}>{t.showAllLayers}</button>
+													)}
+													<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(tl => (tl === "pipet" ? "pan" : "pipet"))}>{t.pipetBtn}</button>
+													<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>{t.resetPalette}</button>
+												</div>
+											</div>
+											<ul className="palette" aria-label={t.paletteAria}>
+												{currentPalette().map(c => {
+													const upper = c.toUpperCase();
+													const isHidden = hiddenLayers.has(c);
+													const isOut = outOfGamutSet.has(upper);
+													const spot = spotMap.get(upper) ?? "";
+													const isInspected = inspectedColor === c;
+													const codes = isInspected ? formatColorCodes(c) : null;
+													return (
+														<li key={c} className={`swatch-item ${isHidden ? "layer-hidden" : ""}`}>
+															<div className="swatch">
+																<button
+																	className="small icon-btn"
+																	aria-pressed={isHidden}
+																	onClick={() => toggleLayer(c)}
+																	title={isHidden ? t.toggleLayerShow : t.toggleLayerHide}
+																	aria-label={`${isHidden ? t.toggleLayerShow : t.toggleLayerHide} ${c}`}
+																>
+																	<EyeIcon hidden={isHidden} />
+																</button>
+																<button
+																	className={`chip-btn ${isInspected ? "active" : ""}`}
+																	style={{ background: softProof ? (proofMap.get(upper) ?? c) : c }}
+																	onClick={() => {
+																		setMergeSource(null);
+																		setInspectedColor(cur => (cur === c ? null : c));
+																	}}
+																	title={t.inspectColorTip}
+																	aria-label={`${t.inspectColorTip} ${c}`}
+																	aria-expanded={isInspected}
+																/>
+																<code>{c}</code>
+																{isOut && <span className="gamut-warn" title={t.outOfGamutTip} aria-label={t.outOfGamutTip}>⚠</span>}
+																{spot && <span className="spot-pill" title={`${t.spotBadgePrefix} ${spot}`}>{spot}</span>}
+																<button
+																	className="small"
+																	aria-expanded={mergeSource === c}
+																	onClick={() => {
+																		setInspectedColor(null);
+																		setMergeSource(s => (s === c ? null : c));
+																	}}
+																	disabled={currentPalette().length <= 2}
+																	aria-label={`${t.mergeBtn} ${c}`}
+																>
+																	{t.mergeBtn}
+																</button>
+																<button className="small" onClick={() => removeColor(c)} disabled={currentPalette().length <= 2} aria-label={`${t.removeBtn} ${c}`}>{t.removeBtn}</button>
+															</div>
+
+															{isInspected && codes && (
+																<div className="color-inspector" role="region" aria-label={`Color Inspector ${c}`}>
+																	<div className="ci-grid">
+																		{(["hex", "rgb", "cmyk", "hsl"] as const).map(fmt => {
+																			const k = `${c}-${fmt}`;
+																			const val = codes[fmt];
+																			return (
+																				<div key={fmt} style={{ display: "contents" }}>
+																					<span className="ci-label">{fmt.toUpperCase()}</span>
+																					<span className="ci-val" title={val}>{val}</span>
+																					<button className="small" onClick={() => void copyCodeValue(k, val)}>
+																						{copiedKey === k ? t.copiedTag : t.copyBtn}
+																					</button>
+																				</div>
+																			);
+																		})}
+																	</div>
+																	<div className="ci-spot">
+																		<span className="ci-label">{t.spotInkLabel}</span>
+																		<div className="ci-spot-row">
+																			<input
+																				className="num"
+																				type="text"
+																				value={spot}
+																				placeholder={t.spotInkPlaceholder}
+																				aria-label={t.spotInkLabel}
+																				onChange={e => setSpotName(c, e.target.value)}
+																			/>
+																			{spot && (
+																				<button className="small" onClick={() => setSpotName(c, "")}>{t.spotInkClear}</button>
+																			)}
+																		</div>
+																	</div>
+																</div>
+															)}
+
+															{mergeSource === c && (
+																<div className="merge-pop" role="region" aria-label={`${t.mergeToLabel} ${c}`}>
+																	<div className="hint">{t.mergeToLabel} <code>{c}</code></div>
+																	<div className="merge-targets">
+																		{othersByDistance(c).map((targetHex, i) => (
+																			<button key={targetHex} className="small merge-opt" onClick={() => mergeColorInto(c, targetHex)} aria-label={`${t.mergeBtn} ${c} → ${targetHex}`}>
+																				<span className="chip-sm" style={{ background: targetHex }} aria-hidden="true" />
+																				<span>{targetHex}{i === 0 ? t.nearestTag : ""}</span>
+																			</button>
+																		))}
+																	</div>
+																</div>
+															)}
+														</li>
+													);
+												})}
+												<li className={`swatch-item ${hiddenLayers.has(GARIS_LAYER) ? "layer-hidden" : ""}`}>
+													<div className="swatch">
+														<button
+															className="small icon-btn"
+															aria-pressed={hiddenLayers.has(GARIS_LAYER)}
+															onClick={() => toggleLayer(GARIS_LAYER)}
+															title={hiddenLayers.has(GARIS_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+															aria-label={t.layerThinLines}
+														>
+															<EyeIcon hidden={hiddenLayers.has(GARIS_LAYER)} />
+														</button>
+														<span className="chip chip-line" aria-hidden="true" />
+														<span className="layer-label">{t.layerThinLines}</span>
+													</div>
+												</li>
+												{hasCutLayer && (
+													<li className={`swatch-item ${hiddenLayers.has(CUT_LAYER) ? "layer-hidden" : ""}`}>
+														<div className="swatch">
+															<button
+																className="small icon-btn"
+																aria-pressed={hiddenLayers.has(CUT_LAYER)}
+																onClick={() => toggleLayer(CUT_LAYER)}
+																title={hiddenLayers.has(CUT_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+																aria-label={t.layerCutContour}
+															>
+																<EyeIcon hidden={hiddenLayers.has(CUT_LAYER)} />
+															</button>
+															<span className="chip chip-cut" aria-hidden="true" />
+															<span className="layer-label">{t.layerCutContour} ({exp.dieCutSpotName || "CutContour"})</span>
+														</div>
+													</li>
+												)}
+												{hasRegLayer && (
+													<li className={`swatch-item ${hiddenLayers.has(REG_LAYER) ? "layer-hidden" : ""}`}>
+														<div className="swatch">
+															<button
+																className="small icon-btn"
+																aria-pressed={hiddenLayers.has(REG_LAYER)}
+																onClick={() => toggleLayer(REG_LAYER)}
+																title={hiddenLayers.has(REG_LAYER) ? t.toggleLayerShow : t.toggleLayerHide}
+																aria-label={t.layerRegistration}
+															>
+																<EyeIcon hidden={hiddenLayers.has(REG_LAYER)} />
+															</button>
+															<span className="chip chip-reg" aria-hidden="true" />
+															<span className="layer-label">{t.layerRegistration}</span>
+														</div>
+													</li>
+												)}
+											</ul>
+
+											{/* Saved Palette Library + .ase/.gpl/.json/.css export */}
+											<div className="mode-box" style={{ marginTop: 4 }}>
+												<div className="row between">
+													<strong style={{ fontSize: 12 }}>{t.paletteLibTitle}</strong>
+													<button className="small" onClick={() => setAddingSavedPalette(v => !v)}>
+														{addingSavedPalette ? t.close : t.savePaletteBtn}
+													</button>
+												</div>
+												{addingSavedPalette && (
+													<div className="preset-add">
+														<input
+															className="num"
+															type="text"
+															placeholder={t.paletteNamePlaceholder}
+															value={savedPaletteName}
+															onChange={e => setSavedPaletteName(e.target.value)}
+															onKeyDown={e => { if (e.key === "Enter") void saveCurrentToPaletteLibrary(); }}
+														/>
+														<button className="small" onClick={() => void saveCurrentToPaletteLibrary()} disabled={!savedPaletteName.trim()}>{t.save}</button>
+													</div>
+												)}
+												{savedPalettes.length > 0 && (
+													<div className="preset-row">
+														<select
+															aria-label={t.paletteLibTitle}
+															value={selectedSavedPaletteId}
+															onChange={e => {
+																const sp = savedPalettes.find(x => x.id === e.target.value);
+																if (sp) applySavedPalette(sp);
+															}}
+														>
+															<option value="">{t.chooseSavedPalette}</option>
+															{savedPalettes.map(sp => (
+																<option key={sp.id} value={sp.id}>{sp.name} ({sp.colors.length})</option>
+															))}
+														</select>
+														<button className="small" onClick={() => void removeSelectedSavedPalette()} disabled={!selectedSavedPaletteId}>{t.delete}</button>
+													</div>
+												)}
+												<div className="row" style={{ marginTop: 6 }}>
+													<button className="small" onClick={() => void exportAs("ase")}>.ase</button>
+													<button className="small" onClick={() => void exportPaletteText("gpl")}>{t.exportGpl}</button>
+													<button className="small" onClick={() => void exportPaletteText("json")}>{t.exportJsonPal}</button>
+													<button className="small" onClick={() => void exportPaletteText("css")}>{t.exportCssPal}</button>
+												</div>
+											</div>
+											<div className="hint">{paletteDirty ? t.paletteDirtyHint : palette !== null ? t.paletteManualHint : t.paletteAutoHint}</div>
 										</>
 									)}
 								</div>
+							)}
 
-								<label>{t.colorSpaceLabel}</label>
-								<div className="seg seg2" role="group" aria-label={t.colorSpaceLabel} style={{ marginTop: 4 }}>
-									<button aria-pressed={exp.colorSpace === "rgb"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "rgb" as ColorSpace }))}>RGB</button>
-									<button aria-pressed={exp.colorSpace === "cmyk"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "cmyk" as ColorSpace }))}>CMYK</button>
+							{panelTab === "export" && (
+								<div className="panel-section-stack">
+									{!result ? (
+										<div className="mode-box muted" style={{ textAlign: "center", padding: "20px 12px" }}>
+											{t.noImageTabHint}
+										</div>
+									) : (
+										<>
+											<div className="field-block">
+												<label className="field-label" style={{ marginTop: 0 }}>
+													<span className="label-with-tip">{t.colorSpaceLabel} <TipDot text={t.colorSpaceHintCmyk} /></span>
+												</label>
+												<div className="seg seg2" role="group" aria-label={t.colorSpaceLabel} style={{ marginTop: 4 }}>
+													<button aria-pressed={exp.colorSpace === "rgb"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "rgb" as ColorSpace }))}>RGB</button>
+													<button aria-pressed={exp.colorSpace === "cmyk"} onClick={() => setExp(ex => ({ ...ex, colorSpace: "cmyk" as ColorSpace }))}>CMYK</button>
+												</div>
+											</div>
+
+											{/* Die-Cut / Kiss-Cut Contour */}
+											<div className="mode-box" style={{ marginTop: 0 }}>
+												<label className="check" style={{ marginTop: 0 }}>
+													<input
+														type="checkbox"
+														checked={exp.dieCutContour}
+														onChange={e => setExp(ex => ({ ...ex, dieCutContour: e.target.checked }))}
+													/>
+													<span style={{ flex: 1 }}><b>{t.dieCutEnable}</b></span>
+													<TipDot text={t.dieCutHint} />
+												</label>
+												{exp.dieCutContour && (
+													<>
+														<label className="field-label" htmlFor="dieCutOffset">
+															<span>{t.dieCutOffsetLabel}</span>
+															<b>{exp.dieCutOffsetMm.toFixed(1)} mm</b>
+														</label>
+														<input
+															id="dieCutOffset"
+															type="range"
+															min={0.5}
+															max={10}
+															step={0.5}
+															value={exp.dieCutOffsetMm}
+															onChange={e => setExp(ex => ({ ...ex, dieCutOffsetMm: Number(e.target.value) }))}
+														/>
+														<label className="field-label" htmlFor="dieCutSpot">{t.dieCutSpotNameLabel}</label>
+														<input
+															id="dieCutSpot"
+															className="num"
+															type="text"
+															value={exp.dieCutSpotName}
+															placeholder="CutContour"
+															onChange={e => setExp(ex => ({ ...ex, dieCutSpotName: e.target.value }))}
+														/>
+														<label className="check">
+															<input
+																type="checkbox"
+																checked={exp.dieCutBridgeIslands}
+																onChange={e => setExp(ex => ({ ...ex, dieCutBridgeIslands: e.target.checked }))}
+															/>
+															{t.dieCutBridgeLabel}
+														</label>
+													</>
+												)}
+											</div>
+
+											{/* Compact 2-col DXF controls */}
+											<div className="two-col">
+												<div>
+													<label className="field-label" htmlFor="dxfUnit" style={{ marginTop: 0 }}>{t.dxfUnitLabel}</label>
+													<select id="dxfUnit" value={exp.dxfUnit} onChange={e => setExp({ ...exp, dxfUnit: e.target.value as DxfUnit })}>
+														<option value="mm">mm ({appSettings.defaultDpi} DPI)</option>
+														<option value="px">px</option>
+													</select>
+												</div>
+												<div>
+													<label className="field-label" htmlFor="dxfTargetWidth" style={{ marginTop: 0 }}>{t.dxfTargetWidthLabel}</label>
+													<input
+														id="dxfTargetWidth"
+														className="num"
+														style={{ marginTop: 4 }}
+														type="number"
+														min={1}
+														step={1}
+														disabled={exp.dxfUnit !== "mm"}
+														placeholder={`${t.dxfTargetWidthPlaceholder}`}
+														value={dxfWidthInput}
+														onChange={e => setDxfWidthInput(e.target.value)}
+													/>
+												</div>
+											</div>
+
+											{/* Compact 2-col Lines & Trap controls */}
+											<div className="two-col">
+												<div>
+													<label className="field-label" htmlFor="linesAs" style={{ marginTop: 0 }}>{t.linesAsLabel}</label>
+													<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : opts.productionMode === "centerline" ? "stroke" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
+														<option value="stroke">{t.linesStroke}</option>
+														<option value="shape">{t.linesShape}</option>
+													</select>
+												</div>
+												<div>
+													<label className="field-label" htmlFor="trap" style={{ marginTop: 0 }}>{t.trapLabel}</label>
+													<select id="trap" value={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
+														<option value={0}>{t.trapNone}</option>
+														<option value={0.25}>0,25 pt</option>
+														<option value={0.5}>0,5 pt</option>
+														<option value={1}>1 pt</option>
+														<option value={1.5}>1,5 pt</option>
+														<option value={2}>2 pt</option>
+													</select>
+												</div>
+											</div>
+
+											<label className="check" style={{ marginTop: 0 }}>
+												<input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} />
+												<span>{t.includeAse}</span>
+											</label>
+
+											{/* 2-Column Export Action Grid */}
+											<div className="export-grid">
+												<button onClick={() => void doCopySvg()} title={`${t.copySvgTip} (${activeShortcuts.copySvg})`}>{t.copySvgBtn}</button>
+												<button onClick={() => void exportAs("svg")}>{t.exportSvg}</button>
+												<button onClick={() => void exportAs("pdf")}>{t.exportPdf}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
+												<button onClick={() => void exportAs("dxf")}>{t.exportDxf}</button>
+												<button onClick={() => void exportAs("eps")}>{t.exportEps}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}{!license.active ? " (Pro)" : ""}</button>
+												<button onClick={() => void exportAs("ase")}>{t.exportAse}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
+											</div>
+
+											{opts.productionMode === "screenPrint" && (
+												<div className="sep-box" style={{ marginTop: 4 }}>
+													<label className="check" style={{ marginTop: 0 }}><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> {t.includeSepPdf}</label>
+													<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>{t.exportSepBtn}{!license.active ? " (Pro)" : ""}</button>
+												</div>
+											)}
+										</>
+									)}
 								</div>
-								{exp.colorSpace === "cmyk" && <div className="hint">{t.colorSpaceHintCmyk}</div>}
+							)}
+						</div>
 
-								<label htmlFor="linesAs">{t.linesAsLabel}</label>
-								<select id="linesAs" value={opts.productionMode === "cutEmbroidery" ? "shape" : opts.productionMode === "centerline" ? "stroke" : exp.linesAs} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, linesAs: e.target.value as ExportOptions["linesAs"] })}>
-									<option value="stroke">{t.linesStroke}</option>
-									<option value="shape">{t.linesShape}</option>
-								</select>
-								<label htmlFor="trap">{t.trapLabel}</label>
-								<select id="trap" value={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline" ? 0 : exp.trapPt} disabled={opts.productionMode === "cutEmbroidery" || opts.productionMode === "centerline"} onChange={e => setExp({ ...exp, trapPt: Number(e.target.value) })}>
-									<option value={0}>{t.trapNone}</option>
-									<option value={0.25}>0,25 pt</option>
-									<option value={0.5}>0,5 pt</option>
-									<option value={1}>1 pt</option>
-									<option value={1.5}>1,5 pt</option>
-									<option value={2}>2 pt</option>
-								</select>
-								{opts.productionMode === "cutEmbroidery" && <div className="hint">{t.cutExportHint}</div>}
-
-								<label htmlFor="dxfUnit">{t.dxfUnitLabel}</label>
-								<select id="dxfUnit" value={exp.dxfUnit} onChange={e => setExp({ ...exp, dxfUnit: e.target.value as DxfUnit })}>
-									<option value="mm">{t.dxfUnitMm} ({appSettings.defaultDpi} DPI)</option>
-									<option value="px">{t.dxfUnitPx}</option>
-								</select>
-								{exp.dxfUnit === "mm" && (
-									<>
-										<label htmlFor="dxfTargetWidth">{t.dxfTargetWidthLabel}</label>
-										<input
-											id="dxfTargetWidth"
-											className="num"
-											type="number"
-											min={1}
-											step={1}
-											placeholder={`${t.dxfTargetWidthPlaceholder} (${appSettings.defaultDpi})`}
-											value={dxfWidthInput}
-											onChange={e => setDxfWidthInput(e.target.value)}
-										/>
-									</>
-								)}
-
-								<label className="check"><input type="checkbox" checked={withAse} onChange={e => setWithAse(e.target.checked)} /> {t.includeAse}</label>
-								<div className="row" style={{ marginTop: 8 }}>
-									<button onClick={() => void doCopySvg()} title={`${t.copySvgTip} (${activeShortcuts.copySvg})`}>{t.copySvgBtn}</button>
-									<button onClick={() => void exportAs("svg")}>{t.exportSvg}</button>
-									<button onClick={() => void exportAs("pdf")}>{t.exportPdf}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
-									<button onClick={() => void exportAs("dxf")}>{t.exportDxf}</button>
-									<button onClick={() => void exportAs("eps")}>{t.exportEps}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}{!license.active ? " (Pro)" : ""}</button>
-									<button onClick={() => void exportAs("ase")}>{t.exportAse}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
+						{/* Sticky Panel Footer — always visible across all 3 tabs */}
+						<div className="panel-footer">
+							{result && (
+								<div
+									className="footer-stats"
+									title={`${t.statPrimitives}: ${result.primitives} · ${t.statMae}: ${result.mae === null ? "-" : result.mae.toFixed(2)} · ${t.statTime}: ${result.secs.toFixed(1)} ${t.secUnit} (${result.usedAi ? "Real-ESRGAN" : "median"})`}
+								>
+									<span><b>{result.paths}</b> {t.statPaths.toLowerCase()}</span>
+									<span>·</span>
+									<span><b>{result.nodes.toLocaleString(locale)}</b> {t.statNodes.toLowerCase()}</span>
+									<span>·</span>
+									<span><b>{fmtKb(result.bytes)}</b></span>
+									{result.mae !== null && (
+										<>
+											<span>·</span>
+											<span>MAE <b>{result.mae.toFixed(2)}</b></span>
+										</>
+									)}
 								</div>
-								{opts.productionMode === "screenPrint" && (
-									<div className="sep-box">
-										<label className="check"><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> {t.includeSepPdf}</label>
-										<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>{t.exportSepBtn}{!license.active ? " (Pro)" : ""}</button>
-									</div>
-								)}
-							</>
-						)}
-						{result && result.textRegions.length > 0 && (
-							<div className="warn" role="status" id="text-warning">
-								{t.textWarnPrefix}{result.textRegions.length}{t.textWarnSuffix}
-								<div className="row" style={{ marginTop: 8 }}>
-									<button aria-pressed={showText} onClick={() => setShowText(s => !s)}>{showText ? t.hideTextAreas : t.highlightTextAreas}</button>
+							)}
+							{dirty && (
+								<div className="pending" role="status" style={{ marginBottom: 4 }}>
+									{t.pendingChanges}
+									{palette !== null || strokes.length > 0 || hasPreprocess || pathEdits.length > 0
+										? ` (${[
+												palette !== null ? t.pendingPalette : "",
+												strokes.length > 0 ? `${strokes.length} ${t.pendingStrokesSuffix}` : "",
+												hasPreprocess ? t.pendingPreprocess : "",
+												pathEdits.length > 0 ? `${pathEdits.length} ${t.pendingPathEdits}` : "",
+											]
+												.filter(Boolean)
+												.join(", ")})`
+										: ""}.
 								</div>
-							</div>
-						)}
-						{result?.notes.map(n => <div className="warn" key={n}>{n}</div>)}
-						{error && <div className="error" role="alert">{error}</div>}
-						{info && <div className="ok" role="status">{info}</div>}
+							)}
+							<button className={`primary footer-apply ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>
+								{result ? t.applyAgain : t.vectorizeBtn}
+							</button>
+							{error && <div className="error footer-msg" role="alert">{error}</div>}
+							{info && <div className="ok footer-msg" role="status">{info}</div>}
+						</div>
 					</aside>
 				</main>
 			)}

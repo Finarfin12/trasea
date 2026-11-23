@@ -81,6 +81,11 @@ export const en: Record<keyof Dict, string> = {
 
 	// Settings panel
 	panelAria: "Settings",
+	panelTabTrace: "Trace",
+	panelTabColors: "Colors",
+	panelTabExport: "Export",
+	advancedSection: "Advanced",
+	noImageTabHint: "Open or paste an image first to inspect colours and export vectors.",
 	customPresets: "Custom Presets",
 	close: "Close",
 	addPresetBtn: "+ Save preset",
