@@ -488,3 +488,322 @@ pub fn to_ase(palette: &[Rgb]) -> Vec<u8> {
     out.extend_from_slice(&0u32.to_be_bytes());
     out
 }
+// ---------- Encapsulated PostScript (EPSF-3.0 / Level 2) ----------
+
+fn ps_num(v: f64) -> String {
+    let safe = if v.is_finite() { v } else { 0.0 };
+    num(safe)
+}
+
+fn ps_rgb(c: Rgb) -> String {
+    format!(
+        "{:.4} {:.4} {:.4} RGB
+",
+        c[0] as f64 / 255.0,
+        c[1] as f64 / 255.0,
+        c[2] as f64 / 255.0
+    )
+}
+
+fn rotate_pt(p: (f64, f64), center: (f64, f64), angle_deg: f64) -> (f64, f64) {
+    if angle_deg.abs() <= 0.5 {
+        return p;
+    }
+    let rad = angle_deg.to_radians();
+    let (s, c) = rad.sin_cos();
+    let dx = p.0 - center.0;
+    let dy = p.1 - center.1;
+    (center.0 + dx * c - dy * s, center.1 + dx * s + dy * c)
+}
+
+/// Convert a `Primitive` into closed cubic Bézier segments (working pixels) so EPS needs no exotic operators.
+fn primitive_to_contour(p: &Primitive) -> Contour {
+    const KAPPA: f64 = 0.5522847498307936;
+    match *p {
+        Primitive::Circle { cx, cy, r } => {
+            let k = r * KAPPA;
+            let p0 = (cx + r, cy);
+            let p1 = (cx, cy + r);
+            let p2 = (cx - r, cy);
+            let p3 = (cx, cy - r);
+            Contour {
+                start: p0,
+                curves: vec![
+                    [(cx + r, cy + k), (cx + k, cy + r), p1],
+                    [(cx - k, cy + r), (cx - r, cy + k), p2],
+                    [(cx - r, cy - k), (cx - k, cy - r), p3],
+                    [(cx + k, cy - r), (cx + r, cy - k), p0],
+                ],
+                prim: None,
+            }
+        }
+        Primitive::Ellipse { cx, cy, rx, ry, angle_deg } => {
+            let (kx, ky) = (rx * KAPPA, ry * KAPPA);
+            let center = (cx, cy);
+            let r = |q: (f64, f64)| rotate_pt(q, center, angle_deg);
+            let p0 = r((cx + rx, cy));
+            let p1 = r((cx, cy + ry));
+            let p2 = r((cx - rx, cy));
+            let p3 = r((cx, cy - ry));
+            Contour {
+                start: p0,
+                curves: vec![
+                    [r((cx + rx, cy + ky)), r((cx + kx, cy + ry)), p1],
+                    [r((cx - kx, cy + ry)), r((cx - rx, cy + ky)), p2],
+                    [r((cx - rx, cy - ky)), r((cx - kx, cy - ry)), p3],
+                    [r((cx + kx, cy - ry)), r((cx + rx, cy - ky)), p0],
+                ],
+                prim: None,
+            }
+        }
+        Primitive::Rect { x, y, w, h, rx, angle_deg } => {
+            let center = (x + w / 2.0, y + h / 2.0);
+            let r = |q: (f64, f64)| rotate_pt(q, center, angle_deg);
+            let line = |a: (f64, f64), b: (f64, f64)| [
+                (a.0 + (b.0 - a.0) / 3.0, a.1 + (b.1 - a.1) / 3.0),
+                (a.0 + 2.0 * (b.0 - a.0) / 3.0, a.1 + 2.0 * (b.1 - a.1) / 3.0),
+                b,
+            ];
+            let rad = rx.clamp(0.0, (w * 0.5).min(h * 0.5));
+            if rad <= 0.01 {
+                let p0 = r((x, y));
+                let p1 = r((x + w, y));
+                let p2 = r((x + w, y + h));
+                let p3 = r((x, y + h));
+                Contour {
+                    start: p0,
+                    curves: vec![line(p0, p1), line(p1, p2), line(p2, p3), line(p3, p0)],
+                    prim: None,
+                }
+            } else {
+                let c = rad * KAPPA;
+                let a0 = r((x + rad, y));
+                let a1 = r((x + w - rad, y));
+                let b0 = r((x + w, y + rad));
+                let b1 = r((x + w, y + h - rad));
+                let c0 = r((x + w - rad, y + h));
+                let c1 = r((x + rad, y + h));
+                let d0 = r((x, y + h - rad));
+                let d1 = r((x, y + rad));
+                Contour {
+                    start: a0,
+                    curves: vec![
+                        line(a0, a1),
+                        [r((x + w - rad + c, y)), r((x + w, y + rad - c)), b0],
+                        line(b0, b1),
+                        [r((x + w, y + h - rad + c)), r((x + w - rad + c, y + h)), c0],
+                        line(c0, c1),
+                        [r((x + rad - c, y + h)), r((x, y + h - rad + c)), d0],
+                        line(d0, d1),
+                        [r((x, y + rad - c)), r((x + rad - c, y)), a0],
+                    ],
+                    prim: None,
+                }
+            }
+        }
+    }
+}
+
+/// Pure PostScript Level 2 / EPSF-3.0 export directly from `Doc` (no Ghostscript or Inkscape needed).
+/// Uses bottom-left PostScript coordinates (`y_ps = total_h - y_svg`), `eofill`, cubic Béziers,
+/// optional print trap, strokes/shapes, and optional 4-corner registration marks.
+pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
+    let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
+    let m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
+    let total_w = doc.width as f64 + 2.0 * m;
+    let total_h = doc.height as f64 + 2.0 * m;
+    let bb_w = total_w.ceil() as u32;
+    let bb_h = total_h.ceil() as u32;
+
+    let mut s = String::new();
+    s.push_str("%!PS-Adobe-3.0 EPSF-3.0
+");
+    s.push_str("%%Creator: Trasea 1.0.0
+");
+    s.push_str(&format!("%%BoundingBox: 0 0 {bb_w} {bb_h}
+"));
+    s.push_str(&format!("%%HiResBoundingBox: 0 0 {:.2} {:.2}
+", total_w, total_h));
+    s.push_str("%%LanguageLevel: 2
+");
+    s.push_str("%%Pages: 1
+");
+    s.push_str("%%EndComments
+");
+    s.push_str("%%BeginProlog
+");
+    s.push_str("/M { moveto } bind def
+");
+    s.push_str("/L { lineto } bind def
+");
+    s.push_str("/C { curveto } bind def
+");
+    s.push_str("/Z { closepath } bind def
+");
+    s.push_str("/F { eofill } bind def
+");
+    s.push_str("/S { stroke } bind def
+");
+    s.push_str("/RGB { setrgbcolor } bind def
+");
+    s.push_str("%%EndProlog
+");
+    s.push_str("%%Page: 1 1
+");
+    s.push_str("gsave
+");
+
+    let map_work = |p: (f64, f64)| -> (f64, f64) { (m + p.0 / k, total_h - (m + p.1 / k)) };
+    let map_svg = |x: f64, y: f64| -> (f64, f64) { (x, total_h - y) };
+
+    let emit_contours = |contours: &[Contour], out: &mut String| {
+        for c in contours {
+            let st = map_work(c.start);
+            out.push_str(&format!("{} {} M
+", ps_num(st.0), ps_num(st.1)));
+            let mut prev = c.start;
+            for cv in &c.curves {
+                if is_straight(prev, cv[0], cv[1], cv[2], k) {
+                    let e = map_work(cv[2]);
+                    out.push_str(&format!("{} {} L
+", ps_num(e.0), ps_num(e.1)));
+                } else {
+                    let c1 = map_work(cv[0]);
+                    let c2 = map_work(cv[1]);
+                    let e = map_work(cv[2]);
+                    out.push_str(&format!(
+                        "{} {} {} {} {} {} C
+",
+                        ps_num(c1.0), ps_num(c1.1),
+                        ps_num(c2.0), ps_num(c2.1),
+                        ps_num(e.0), ps_num(e.1)
+                    ));
+                }
+                prev = cv[2];
+            }
+            out.push_str("Z
+");
+        }
+    };
+
+    let trap_px = opts.trap_pt.max(0.0) * 96.0 / 72.0;
+    let emit_layer = |layer: &Layer, with_trap: bool, out: &mut String| {
+        let mut all_contours: Vec<Contour> = layer.contours.clone();
+        for p in &layer.prims {
+            all_contours.push(primitive_to_contour(p));
+        }
+        if all_contours.is_empty() {
+            return;
+        }
+        out.push_str(&ps_rgb(layer.color));
+        out.push_str("newpath
+");
+        emit_contours(&all_contours, out);
+        if with_trap && trap_px > 0.0 {
+            out.push_str(&format!("gsave F grestore 1 setlinejoin {} setlinewidth S
+", ps_num(trap_px)));
+        } else {
+            out.push_str("F
+");
+        }
+    };
+
+    // 1. Latar + 2. Bidang warna
+    let has_canvas_bg = doc.fields.first().map_or(false, |l| l.canvas);
+    if !opts.strip_background && has_canvas_bg {
+        emit_layer(&doc.fields[0], false, &mut s);
+    }
+    let skip_first = if has_canvas_bg { 1 } else { 0 };
+    for layer in doc.fields.iter().skip(skip_first) {
+        emit_layer(layer, true, &mut s);
+    }
+
+    // 3. Garis
+    match opts.lines_as {
+        LinesAs::Shape => {
+            for l in &doc.line_shapes {
+                emit_layer(l, false, &mut s);
+            }
+        }
+        LinesAs::Stroke => {
+            for l in &doc.line_fallback {
+                emit_layer(l, false, &mut s);
+            }
+            for sl in &doc.strokes {
+                s.push_str(&ps_rgb(sl.color));
+                for st in &sl.strokes {
+                    if st.curves.is_empty() {
+                        continue;
+                    }
+                    let w_ps = (st.width / k).max(0.1);
+                    s.push_str(&format!("1 setlinecap 1 setlinejoin {} setlinewidth newpath
+", ps_num(w_ps)));
+                    let p0 = map_work(st.curves[0][0]);
+                    s.push_str(&format!("{} {} M
+", ps_num(p0.0), ps_num(p0.1)));
+                    for cv in &st.curves {
+                        if is_straight(cv[0], cv[1], cv[2], cv[3], k) {
+                            let e = map_work(cv[3]);
+                            s.push_str(&format!("{} {} L
+", ps_num(e.0), ps_num(e.1)));
+                        } else {
+                            let c1 = map_work(cv[1]);
+                            let c2 = map_work(cv[2]);
+                            let e = map_work(cv[3]);
+                            s.push_str(&format!(
+                                "{} {} {} {} {} {} C
+",
+                                ps_num(c1.0), ps_num(c1.1),
+                                ps_num(c2.0), ps_num(c2.1),
+                                ps_num(e.0), ps_num(e.1)
+                            ));
+                        }
+                    }
+                    s.push_str("S
+");
+                }
+            }
+        }
+    }
+
+    // 4. Registration marks (4 corners in outer margin)
+    if opts.registration_marks {
+        let (w, h) = (doc.width as f64, doc.height as f64);
+        let pts = [
+            (m / 2.0, m / 2.0),
+            (w + 1.5 * m, m / 2.0),
+            (m / 2.0, h + 1.5 * m),
+            (w + 1.5 * m, h + 1.5 * m),
+        ];
+        s.push_str("0 0 0 RGB 0.75 setlinewidth
+");
+        const KAPPA: f64 = 0.5522847498307936;
+        let r = 6.0;
+        let kr = r * KAPPA;
+        for (cx, cy) in pts {
+            let (px, py) = map_svg(cx, cy);
+            s.push_str(&format!(
+                "newpath {} {} M {} {} {} {} {} {} C {} {} {} {} {} {} C {} {} {} {} {} {} C {} {} {} {} {} {} C Z S
+",
+                ps_num(px + r), ps_num(py),
+                ps_num(px + r), ps_num(py + kr), ps_num(px + kr), ps_num(py + r), ps_num(px), ps_num(py + r),
+                ps_num(px - kr), ps_num(py + r), ps_num(px - r), ps_num(py + kr), ps_num(px - r), ps_num(py),
+                ps_num(px - r), ps_num(py - kr), ps_num(px - kr), ps_num(py - r), ps_num(px), ps_num(py - r),
+                ps_num(px + kr), ps_num(py - r), ps_num(px + r), ps_num(py - kr), ps_num(px + r), ps_num(py)
+            ));
+            s.push_str(&format!(
+                "newpath {} {} M {} {} L {} {} M {} {} L S
+",
+                ps_num(px - 9.0), ps_num(py), ps_num(px + 9.0), ps_num(py),
+                ps_num(px), ps_num(py - 9.0), ps_num(px), ps_num(py + 9.0)
+            ));
+        }
+    }
+
+    s.push_str("grestore
+showpage
+%%Trailer
+%%EOF
+");
+    s
+}

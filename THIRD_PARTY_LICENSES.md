@@ -1,19 +1,71 @@
 # Third-party licenses
 
-Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT used.
+Trasea 1.0.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
 
-## Bundled programs and models
+## Bundled programs, models, and frontend libraries
 
-| Component | License | Source |
+| Component | License | Attribution / Source |
 |---|---|---|
-| Real-ESRGAN (model realesrgan-x4plus-anime) | BSD-3-Clause (check the model-file terms again before selling the app) | https://github.com/xinntao/Real-ESRGAN |
-| Real-ESRGAN-ncnn-vulkan (realesrgan-ncnn-vulkan.exe, release v0.2.5.0) | MIT | https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan |
-| ncnn (inside that executable) | BSD-3-Clause | https://github.com/Tencent/ncnn |
-| vcomp140.dll (OpenMP runtime) | Microsoft Visual C++ redistributable file, redistributable under Microsoft license terms | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
+| Real-ESRGAN (model `realesrgan-x4plus-anime`) | BSD-3-Clause | Copyright (c) 2021, Xintao Wang — https://github.com/xinntao/Real-ESRGAN |
+| Real-ESRGAN-ncnn-vulkan (`realesrgan-ncnn-vulkan.exe`, v0.2.5.0) | MIT | Copyright (c) 2021, Xintao Wang & nihui — https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan |
+| ncnn (inside `realesrgan-ncnn-vulkan.exe`) | BSD-3-Clause | Copyright (c) 2017, Tencent — https://github.com/Tencent/ncnn |
+| `vcomp140.dll` (OpenMP runtime) | Microsoft Visual C++ Redistributable | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
 | VTracer / visioncortex (tracing engine) | MIT | https://github.com/visioncortex/vtracer |
-| React, React DOM | MIT | https://react.dev |
+| ed25519-dalek (offline license verification) | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek |
+| React, React DOM | MIT | Copyright (c) Meta Platforms, Inc. — https://react.dev |
+| Tauri 2 & `@tauri-apps/*` | MIT OR Apache-2.0 | https://tauri.app |
 
-## Rust crates linked into the app (329)
+## Full BSD-3-Clause notice (Real-ESRGAN, ncnn, ed25519-dalek)
+
+```text
+Real-ESRGAN: Copyright (c) 2021, Xintao Wang. All rights reserved.
+ncnn: Copyright (c) 2017, Tencent. All rights reserved.
+ed25519-dalek: Copyright (c) 2017-2024, Isis Lovecruft & Henry de Valence. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## Full MIT notice (realesrgan-ncnn-vulkan, VTracer / visioncortex, React)
+
+```text
+realesrgan-ncnn-vulkan: Copyright (c) 2021, Xintao Wang & nihui.
+VTracer / visioncortex: Copyright (c) visioncortex contributors.
+React / React DOM: Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+## Rust crates linked into the Windows app (345)
 
 | Crate | Version | License |
 |---|---|---|
@@ -27,6 +79,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | base64 | 0.23.1 | MIT OR Apache-2.0 |
+| base64ct | 1.8.3 | Apache-2.0 OR MIT |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT |
 | bit-vec | 0.6.3 | MIT/Apache-2.0 |
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT |
@@ -52,9 +105,11 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
 | color_quant | 1.1.0 | MIT |
 | const-oid | 0.10.3 | Apache-2.0 OR MIT |
+| const-oid | 0.9.6 | Apache-2.0 OR MIT |
 | cookie | 0.18.2 | MIT OR Apache-2.0 |
 | core_detect | 1.0.0 | MIT/Apache-2.0 |
 | core_maths | 0.1.1 | MIT |
+| cpufeatures | 0.2.17 | MIT OR Apache-2.0 |
 | cpufeatures | 0.3.1 | MIT OR Apache-2.0 |
 | crc32fast | 1.5.5 | MIT OR Apache-2.0 |
 | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 |
@@ -66,10 +121,13 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | cssparser | 0.37.0 | MPL-2.0 |
 | cssparser-macros | 0.7.1 | MPL-2.0 |
 | ctor | 1.0.14 | Apache-2.0 OR MIT |
+| curve25519-dalek | 4.1.3 | BSD-3-Clause |
+| curve25519-dalek-derive | 0.1.1 | MIT/Apache-2.0 |
 | darling | 0.24.1 | MIT |
 | darling_core | 0.24.1 | MIT |
 | darling_macro | 0.24.1 | MIT |
 | data-url | 0.3.2 | MIT OR Apache-2.0 |
+| der | 0.7.10 | Apache-2.0 OR MIT |
 | deranged | 0.5.9 | MIT OR Apache-2.0 |
 | derive_more | 2.1.1 | MIT |
 | derive_more-impl | 2.1.1 | MIT |
@@ -84,6 +142,8 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | dtoa-short | 0.3.5 | MPL-2.0 |
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 |
+| ed25519 | 2.2.3 | Apache-2.0 OR MIT |
+| ed25519-dalek | 2.2.0 | BSD-3-Clause |
 | either | 1.19.0 | MIT OR Apache-2.0 |
 | embed-resource | 3.0.12 | MIT |
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
@@ -102,6 +162,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | fontdb | 0.23.0 | MIT |
 | form_urlencoded | 1.2.3 | MIT OR Apache-2.0 |
 | generic-array | 0.14.7 | MIT |
+| getrandom | 0.2.17 | MIT OR Apache-2.0 |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
 | gif | 0.13.3 | MIT OR Apache-2.0 |
@@ -181,6 +242,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | phf_shared | 0.13.1 | MIT |
 | pico-args | 0.5.0 | MIT |
 | pin-project-lite | 0.2.18 | Apache-2.0 OR MIT |
+| pkcs8 | 0.10.2 | Apache-2.0 OR MIT |
 | plist | 1.10.4 | MIT |
 | png | 0.17.16 | MIT OR Apache-2.0 |
 | png | 0.18.1 | MIT OR Apache-2.0 |
@@ -193,6 +255,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.42.0 | MIT |
 | quote | 1.0.47 | MIT OR Apache-2.0 |
+| rand_core | 0.6.4 | MIT OR Apache-2.0 |
 | rangemap | 1.8.0 | MIT/Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | rayon | 1.12.0 | MIT OR Apache-2.0 |
@@ -234,8 +297,10 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 |
+| sha2 | 0.10.9 | MIT OR Apache-2.0 |
 | sha2 | 0.11.1 | MIT OR Apache-2.0 |
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
+| signature | 2.2.0 | Apache-2.0 OR MIT |
 | simd-adler32 | 0.3.10 | MIT |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 |
 | simplecss | 0.2.2 | Apache-2.0 OR MIT |
@@ -245,6 +310,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | smallvec | 1.16.6 | MIT OR Apache-2.0 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 |
 | softbuffer | 0.4.8 | MIT OR Apache-2.0 |
+| spki | 0.7.3 | Apache-2.0 OR MIT |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
 | static_vcruntime | 3.0.0 | MIT OR Apache-2.0 OR Zlib |
 | strict-num | 0.1.1 | MIT |
@@ -252,6 +318,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | strsim | 0.11.1 | MIT |
 | subsetter | 0.2.6 | MIT OR Apache-2.0 |
+| subtle | 2.6.1 | BSD-3-Clause |
 | svg2pdf | 0.13.0 | MIT OR Apache-2.0 |
 | svgtypes | 0.15.3 | Apache-2.0 OR MIT |
 | syn | 2.0.119 | MIT OR Apache-2.0 |
@@ -337,6 +404,7 @@ Trasea is MIT licensed. It bundles or links the following. Potrace (GPL) is NOT 
 | yoke-derive | 0.8.4 | Unicode-3.0 |
 | zerofrom | 0.1.8 | Unicode-3.0 |
 | zerofrom-derive | 0.1.8 | Unicode-3.0 |
+| zeroize | 1.9.2 | Apache-2.0 OR MIT |
 | zerotrie | 0.2.5 | Unicode-3.0 |
 | zerovec | 0.11.9 | Unicode-3.0 |
 | zerovec-derive | 0.11.7 | Unicode-3.0 |

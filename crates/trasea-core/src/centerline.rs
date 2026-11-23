@@ -70,6 +70,35 @@ fn thin(mask: &[bool], w: usize, h: usize) -> Vec<bool> {
             }
         }
     }
+    // Topology-preserving L-corner cleanup: Zhang-Suen leaves 2-px diagonal staircases
+    // whose extra corner pixels create false deg>=3 junction clusters along 45-deg curves.
+    // Removing a pixel with two orthogonal neighbours (e.g. N & E) when S, W, SW are all 0
+    // is provably 8-connectivity-preserving and never deletes an endpoint.
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let i = y * w + x;
+            if img[i] == 0 {
+                continue;
+            }
+            let (n, ne, e, se, s, sw, ww, nw) = (
+                img[i - w],
+                img[i - w + 1],
+                img[i + 1],
+                img[i + w + 1],
+                img[i + w],
+                img[i + w - 1],
+                img[i - 1],
+                img[i - w - 1],
+            );
+            let redundant = (n == 1 && e == 1 && s == 0 && ww == 0 && sw == 0)
+                || (e == 1 && s == 1 && ww == 0 && n == 0 && nw == 0)
+                || (s == 1 && ww == 1 && n == 0 && e == 0 && ne == 0)
+                || (ww == 1 && n == 1 && e == 0 && s == 0 && se == 0);
+            if redundant {
+                img[i] = 0;
+            }
+        }
+    }
     img.iter().map(|&v| v == 1).collect()
 }
 
@@ -251,10 +280,12 @@ fn prune_and_merge(mut edges: Vec<Edge>, nodes: usize, min_spur: usize) -> Vec<E
             deg[e.a] += 1;
             deg[e.b] += 1;
         }
-        // shortest spur first
+        // shortest spur or tiny junction loop first
         let mut best: Option<(usize, usize)> = None;
         for (k, e) in edges.iter().enumerate() {
-            let spur = (deg[e.a] == 1 && deg[e.b] >= 3) || (deg[e.b] == 1 && deg[e.a] >= 3);
+            let spur = (deg[e.a] == 1 && deg[e.b] >= 3)
+                || (deg[e.b] == 1 && deg[e.a] >= 3)
+                || (e.a == e.b && deg[e.a] >= 4 && e.pix.len() < min_spur);
             if spur && e.pix.len() < min_spur && best.map_or(true, |(_, l)| e.pix.len() < l) {
                 best = Some((k, e.pix.len()));
             }

@@ -107,9 +107,10 @@ fn local_mean(lum: &[f32], w: usize, h: usize, r: i32) -> Vec<f32> {
     out
 }
 
-/// Row spans (dy, dx_max) of a disk of radius r.
+/// Row spans (dy, dx_max) of an isotropic disk of radius r (half-pixel outer margin so 45-deg diagonals match 0/90-deg width).
 fn disk(r: i32) -> Vec<(i32, i32)> {
-    (-r..=r).map(|dy| (dy, (((r * r - dy * dy) as f32).sqrt()).floor() as i32)).collect()
+    let rf = r as f32 + 0.5;
+    (-r..=r).map(|dy| (dy, ((rf * rf - (dy * dy) as f32).max(0.0).sqrt()).floor() as i32)).collect()
 }
 
 fn erode(src: &[bool], w: usize, h: usize, r: i32) -> Vec<bool> {
@@ -269,6 +270,37 @@ fn bridge_gaps(thin: &mut [bool], w: usize, h: usize, max_gap: usize) {
                         }
                         break;
                     }
+                }
+            }
+        }
+    }
+    // Bridge 1-px knight's-move gaps on shallow/steep thin curves (e.g. slope 1:2 or 1:3 where scanlines
+    // step by 2 px so 8-connectivity breaks). Require continuation away from the gap so parallel lines never fuse.
+    for y in 0..h as i64 {
+        for x in 0..w as i64 {
+            if !at(x, y) {
+                continue;
+            }
+            for sy in [-1i64, 1] {
+                if at(x + 2, y + sy)
+                    && !at(x + 1, y)
+                    && !at(x + 1, y + sy)
+                    && !at(x, y + sy)
+                    && !at(x + 2, y)
+                    && (at(x - 1, y) || at(x + 3, y + sy))
+                {
+                    thin[y as usize * w + (x + 1) as usize] = true;
+                }
+            }
+            for sx in [-1i64, 1] {
+                if at(x + sx, y + 2)
+                    && !at(x, y + 1)
+                    && !at(x + sx, y + 1)
+                    && !at(x + sx, y)
+                    && !at(x, y + 2)
+                    && (at(x, y - 1) || at(x + sx, y + 3))
+                {
+                    thin[(y + 1) as usize * w + x as usize] = true;
                 }
             }
         }

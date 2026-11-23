@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
 use trasea_core::batch::{run_batch, scan_image_files, BatchConfig, BatchStatus};
-use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_separation_svgs, to_svg, LinesAs};
+use trasea_core::export::{export_options_for_production, palette_of, to_ase, to_eps, to_separation_svgs, to_svg, LinesAs};
 use trasea_core::{export, load, vectorize, Params, ProductionMode, ProductionOptions, SymmetryMode};
 
 /// `#RRGGBB` (or `RRGGBB`) to a colour.
@@ -20,7 +20,7 @@ fn parse_hex(s: &str) -> Option<[u8; 3]> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting] [--pdf out.pdf] [--ase out.ase] [--separations DIR] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting] [--subfolders] [--pdf] [--ase] [--separations] [--no-report] [options...]"
+        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting] [--pdf out.pdf] [--eps out.eps] [--ase out.ase] [--separations DIR] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting] [--subfolders] [--pdf] [--eps] [--ase] [--separations] [--no-report] [options...]"
     );
 }
 
@@ -49,10 +49,12 @@ fn main() {
     let mut p = Params::default();
     p.ai_clean = false;
     let mut pdf_path: Option<PathBuf> = None;
+    let mut eps_path: Option<PathBuf> = None;
     let mut ase_path: Option<PathBuf> = None;
     let mut png_path: Option<PathBuf> = None;
     let mut sep_dir: Option<PathBuf> = None;
     let mut batch_pdf = false;
+    let mut batch_eps = false;
     let mut batch_ase = false;
     let mut batch_separations = false;
     let mut batch_subfolders = false;
@@ -96,6 +98,14 @@ fn main() {
                 } else {
                     i += 1;
                     pdf_path = args.get(i).map(PathBuf::from);
+                }
+            }
+            "--eps" => {
+                if is_batch {
+                    batch_eps = true;
+                } else {
+                    i += 1;
+                    eps_path = args.get(i).map(PathBuf::from);
                 }
             }
             "--ase" => {
@@ -246,6 +256,7 @@ fn main() {
             params: p,
             export: eo,
             write_pdf: batch_pdf,
+            write_eps: batch_eps,
             write_ase: batch_ase,
             write_separations: batch_separations,
             write_report_csv: batch_report,
@@ -305,6 +316,9 @@ fn main() {
     };
     let svg = to_svg(&out.doc, &eo);
     std::fs::write(&output, &svg).expect("cannot write the SVG");
+    if let Some(eps) = eps_path {
+        std::fs::write(&eps, to_eps(&out.doc, &eo)).expect("cannot write the EPS");
+    }
     if let Some(ase) = ase_path {
         std::fs::write(&ase, to_ase(&palette_of(&out.doc))).expect("cannot write the ASE");
     }

@@ -1,6 +1,6 @@
 //! Reusable batch folder engine and report writers (CSV + Markdown) for both CLI and Tauri UI (`#17`).
 
-use crate::export::{export_options_for_production, palette_of, svg_to_pdf, to_ase, to_separation_svgs, to_svg, ExportOptions};
+use crate::export::{export_options_for_production, palette_of, svg_to_pdf, to_ase, to_eps, to_separation_svgs, to_svg, ExportOptions};
 use crate::load;
 use crate::pipeline::{vectorize, Params};
 use crate::{Error, Result};
@@ -56,6 +56,7 @@ pub struct BatchConfig {
     pub params: Params,
     pub export: ExportOptions,
     pub write_pdf: bool,
+    pub write_eps: bool,
     pub write_ase: bool,
     pub write_separations: bool,
     pub write_report_csv: bool,
@@ -226,6 +227,13 @@ fn process_one(input: &Path, stem: &str, cfg: &BatchConfig, eff_export: &ExportO
                 }
             }
             Err(e) => warnings.push(format!("PDF dilewati: {e}")),
+        }
+    }
+
+    if cfg.write_eps {
+        let eps_path = cfg.output_dir.join(format!("{stem}.eps"));
+        if let Err(e) = std::fs::write(&eps_path, to_eps(&out.doc, eff_export)) {
+            warnings.push(format!("Gagal tulis EPS: {e}"));
         }
     }
 
