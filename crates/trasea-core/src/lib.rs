@@ -3,10 +3,12 @@
 //! Pipeline (see `pipeline::vectorize`): load -> thin-line guard (from the ORIGINAL image) -> AI clean
 //! (Real-ESRGAN sidecar, median fallback) -> palette lock -> layer tracing (visioncortex, the VTracer engine)
 //! -> thin lines stacked on top -> tidy + export.
+pub mod brush;
 pub mod centerline;
 pub mod clean;
 pub mod export;
 pub mod fit;
+pub mod heatmap;
 pub mod lines;
 pub mod load;
 pub mod palette;
@@ -17,7 +19,9 @@ pub mod symmetry;
 pub mod text_detect;
 pub mod trace;
 
-pub use pipeline::{vectorize, Output, Params, Progress};
+pub use brush::{BrushKind, BrushStroke};
+pub use heatmap::NodeHeatmap;
+pub use pipeline::{prepare, vectorize, vectorize_prepared, Output, Params, PreparedImage, Progress};
 pub use symmetry::SymmetryMode;
 pub use text_detect::TextRegion;
 

@@ -5,6 +5,16 @@ use std::time::Instant;
 use trasea_core::export::{palette_of, to_ase, to_svg, ExportOptions, LinesAs};
 use trasea_core::{export, load, vectorize, Params, SymmetryMode};
 
+/// `#RRGGBB` (or `RRGGBB`) to a colour.
+fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(h, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // dev helper: `trasea-cli --render in.svg out.png WIDTH HEIGHT` draws an SVG to a PNG (for before/after pictures)
@@ -15,7 +25,7 @@ fn main() {
         return;
     }
     if args.len() < 2 {
-        eprintln!("usage: trasea-cli <input> <output.svg> [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--png out.png] [--sidecar DIR]");
+        eprintln!("usage: trasea-cli <input> <output.svg> [--pdf out.pdf] [--colors N] [--smooth 0..1] [--no-lines] [--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--png out.png] [--sidecar DIR]");
         std::process::exit(2);
     }
     let (input, output) = (PathBuf::from(&args[0]), PathBuf::from(&args[1]));
@@ -61,6 +71,27 @@ fn main() {
             "--no-ai" => p.ai_clean = false,
             "--no-primitives" => p.detect_primitives = false,
             "--no-text-detect" => p.detect_text = false,
+            "--target-nodes" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 0) {
+                    Some(n) => p.target_nodes = Some(n),
+                    None => {
+                        eprintln!("--target-nodes needs a whole number above 0");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--palette" => {
+                i += 1;
+                let parsed: Option<Vec<[u8; 3]>> = args.get(i).and_then(|v| v.split(',').map(|c| parse_hex(c.trim())).collect());
+                match parsed.filter(|c| c.len() >= 2) {
+                    Some(c) => p.custom_palette = Some(c),
+                    None => {
+                        eprintln!("--palette needs at least 2 colours like \"#0F3973,#EBD9C1\"");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "--symmetry" => {
                 i += 1;
                 match args.get(i).and_then(|v| SymmetryMode::parse(v)) {
@@ -116,6 +147,9 @@ fn main() {
     }
     for n in &out.notes {
         eprintln!("note: {n}");
+    }
+    if let Some(met) = out.budget_met {
+        eprintln!("node budget {}: smoothness used {:.2}", if met { "met" } else { "NOT met" }, out.effective_smooth);
     }
     if std::env::var("VK_DEBUG_PRIMS").is_ok() {
         for l in &out.doc.fields {

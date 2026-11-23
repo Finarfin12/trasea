@@ -304,7 +304,7 @@ pub fn detect(poly: &[P], scale: f64) -> Option<Primitive> {
     try_rect(poly, scale)
 }
 
-fn bbox(p: &[P]) -> (f64, f64, f64, f64) {
+pub(crate) fn bbox(p: &[P]) -> (f64, f64, f64, f64) {
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
     for q in p {
         x0 = x0.min(q.0);
@@ -315,7 +315,7 @@ fn bbox(p: &[P]) -> (f64, f64, f64, f64) {
     (x0, y0, x1, y1)
 }
 
-fn point_in(pt: P, poly: &[P]) -> bool {
+pub(crate) fn point_in(pt: P, poly: &[P]) -> bool {
     let mut inside = false;
     let n = poly.len();
     let mut j = n - 1;

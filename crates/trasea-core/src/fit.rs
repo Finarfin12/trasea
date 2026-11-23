@@ -418,6 +418,15 @@ pub fn ring_points(raw: &[P], sigma: f64) -> Vec<P> {
 /// Fit a closed ring. Corners (turning angle above `corner_deg`) stay sharp; everything else becomes smooth curves
 /// with the fewest segments that stay within `tol` pixels of the smoothed outline.
 pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier> {
+    fit_ring_zoned(raw, sigma, tol, corner_deg, None)
+}
+
+/// Zone of a point for the correction brush: 0 normal, 1 detail, 2 smooth.
+pub type ZoneFn<'a> = &'a dyn Fn(P) -> u8;
+
+/// `fit_ring` with a brush zone function: inside a smooth zone the outline is smoothed more, corners need to be sharper and
+/// the curve fit is looser; inside a detail zone the opposite.
+pub fn fit_ring_zoned(raw: &[P], sigma: f64, tol: f64, corner_deg: f64, zone: Option<ZoneFn>) -> Vec<Bezier> {
     let mut pts = raw.to_vec();
     // drop a duplicated closing point
     if pts.len() > 1 && len(sub(pts[0], pts[pts.len() - 1])) < 1e-9 {
@@ -428,9 +437,19 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
     }
     let pts = resample_ring(&pts, 1.0);
     let n = pts.len();
-    let sm = smooth_ring(&pts, sigma);
+    let sm = match zone {
+        None => smooth_ring(&pts, sigma),
+        Some(z) => {
+            let (base, soft, crisp) = (smooth_ring(&pts, sigma), smooth_ring(&pts, sigma * 1.8), smooth_ring(&pts, sigma * 0.5));
+            (0..n).map(|i| match z(pts[i]) { crate::brush::ZONE_SMOOTH => soft[i], crate::brush::ZONE_DETAIL => crisp[i], _ => base[i] }).collect()
+        }
+    };
     let arm = ((sigma * 2.0).ceil() as usize + 2).min(n / 4).max(1);
     let mut corners = find_corners_adaptive(&sm, arm, corner_deg);
+    if let Some(z) = zone {
+        // in a smooth zone only a really sharp corner stays a corner
+        corners.retain(|&c| z(sm[c]) != crate::brush::ZONE_SMOOTH || turn_at(&sm, c, arm) >= corner_deg * 1.4);
+    }
 
     if corners.is_empty() {
         // smooth closed curve: start anywhere, tangents from the ring neighbours so the join is smooth
@@ -438,7 +457,7 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
         let t = norm(sub(sm[m % n], sm[(n - m) % n]));
         let mut run: Vec<P> = sm.clone();
         run.push(sm[0]);
-        return fit_open(&run, t, mul(t, -1.0), tol);
+        return fit_open_z(&run, t, mul(t, -1.0), tol, zone);
     }
     corners.sort_unstable();
     let corner_pos: Vec<P> = corners.iter().map(|&c| refine_corner(&sm, c, arm)).collect();
@@ -468,14 +487,15 @@ pub fn fit_ring(raw: &[P], sigma: f64, tol: f64, corner_deg: f64) -> Vec<Bezier>
         run[0] = corner_pos[ci];
         run[last] = corner_pos[(ci + 1) % k];
         // between two corners a run that stays within the tolerance of its chord is a straight edge
-        if k > 1 && run.len() >= 3 && max_dev_inner(&run, arm) <= tol * 0.7 {
+        let local_tol = zone.map_or(tol, |z| tol * crate::brush::tol_factor(z(run[run.len() / 2])));
+        if k > 1 && run.len() >= 3 && max_dev_inner(&run, arm) <= local_tol * 0.7 {
             curves.push(straight_segment(run[0], run[run.len() - 1]));
             continue;
         }
         let m = arm.min(run.len() - 1).max(1);
         let t1 = norm(sub(run[m], run[0]));
         let t2 = norm(sub(run[run.len() - 1 - m], run[run.len() - 1]));
-        curves.extend(fit_open(&run, t1, t2, tol));
+        curves.extend(fit_open_z(&run, t1, t2, tol, zone));
     }
     curves
 }
@@ -497,4 +517,50 @@ pub fn fit_polyline(pts: &[P], tol: f64) -> Vec<Bezier> {
     let t1 = norm(sub(pts[m], pts[0]));
     let t2 = norm(sub(pts[pts.len() - 1 - m], pts[pts.len() - 1]));
     fit_open(pts, t1, t2, tol)
+}
+
+/// `fit_open` with a brush zone function: the run is cut where the zone changes and every piece is fitted with the
+/// tolerance of its own zone. The pieces share their end points and tangents, so the curve stays closed and smooth.
+fn fit_open_z(d: &[P], t1: P, t2: P, tol: f64, zone: Option<ZoneFn>) -> Vec<Bezier> {
+    let Some(z) = zone else { return fit_open(d, t1, t2, tol) };
+    if d.len() < 2 {
+        return vec![];
+    }
+    let zs: Vec<u8> = d.iter().map(|&p| z(p)).collect();
+    // cut where the zone changes (a piece must be at least 8 points long, shorter blips are absorbed)
+    let mut cuts = vec![0usize];
+    let (mut cur, mut start) = (zs[0], 0usize);
+    for i in 1..d.len() {
+        if zs[i] != cur && i - start >= 8 {
+            cuts.push(i);
+            cur = zs[i];
+            start = i;
+        }
+    }
+    cuts.push(d.len() - 1);
+    cuts.dedup();
+    if cuts.len() < 2 {
+        return fit_open(d, t1, t2, tol);
+    }
+    let mut out = Vec::new();
+    for k in 0..cuts.len() - 1 {
+        let (a, b) = (cuts[k], cuts[k + 1]);
+        let piece = &d[a..=b];
+        if piece.len() < 2 {
+            continue;
+        }
+        // majority zone of the piece
+        let mut cnt = [0usize; 3];
+        for &zz in &zs[a..=b] {
+            cnt[(zz as usize).min(2)] += 1;
+        }
+        let zone_of_piece = (0..3).max_by_key(|&i| cnt[i]).unwrap() as u8;
+        let local = tol * crate::brush::tol_factor(zone_of_piece);
+        let wide = 5.min(a).min(d.len() - 1 - a);
+        let ta = if a == 0 { t1 } else { mul(norm(sub(d[a - wide.max(1)], d[(a + wide.max(1)).min(d.len() - 1)])), -1.0) };
+        let wide_b = 5.min(b).min(d.len() - 1 - b);
+        let tb = if b == d.len() - 1 { t2 } else { norm(sub(d[b - wide_b.max(1)], d[(b + wide_b.max(1)).min(d.len() - 1)])) };
+        fit_cubic(piece, ta, tb, local * local, &mut out, 0);
+    }
+    out
 }

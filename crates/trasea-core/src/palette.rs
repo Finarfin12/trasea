@@ -187,8 +187,15 @@ pub fn assign(img: &RgbImage, pal: &[Rgb]) -> Vec<u8> {
 /// Small regions that differ little from their surroundings (JPEG residue, watermark ghosts) are removed up to
 /// `boost` times `min_area`; clearly different ones (real details) only below `min_area`.
 pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usize, n_labels: usize, palette: &[Rgb], boost: f64) {
+    remove_small_regions_ex(labels, w, h, min_area, n_labels, palette, boost, None, &[]);
+}
+
+/// Like `remove_small_regions`, with a brush zone map (a speck is judged 2.5x larger in a smooth zone and 0.4x in a detail
+/// zone) and `protect`: palette indices the designer chose on purpose, whose regions are only dropped when tiny.
+pub fn remove_small_regions_ex(labels: &mut [u8], w: usize, h: usize, min_area: usize, n_labels: usize, palette: &[Rgb], boost: f64, zones: Option<&[u8]>, protect: &[bool]) {
     let plab: Vec<[f32; 3]> = palette.iter().map(|&c| rgb_to_lab(c)).collect();
-    let wide = ((min_area as f64) * boost.max(1.0)).ceil() as usize;
+    let max_factor = if zones.is_some() { crate::brush::SMOOTH_SPECK } else { 1.0 };
+    let wide = ((min_area as f64) * boost.max(1.0) * max_factor).ceil() as usize;
     let mut comp = vec![0u32; w * h];
     let mut stack = Vec::new();
     let mut regions: Vec<(usize, Vec<usize>)> = Vec::new(); // (label, pixels) for small ones
@@ -255,7 +262,22 @@ pub fn remove_small_regions(labels: &mut [u8], w: usize, h: usize, min_area: usi
             // the less the region differs from what surrounds it, the larger it may be and still be merged away
             let de = (d2(&plab[l], &plab[best])).sqrt() as f64;
             let t = ((30.0 - de) / 30.0).clamp(0.0, 1.0);
-            let limit = (min_area as f64) * (1.0 + (boost.max(1.0) - 1.0) * t);
+            let factor = if protect.get(l).copied().unwrap_or(false) {
+                0.1
+            } else if let Some(z) = zones {
+                let (mut nd, mut ns) = (0usize, 0usize);
+                for &i in &pix {
+                    match z[i] {
+                        crate::brush::ZONE_DETAIL => nd += 1,
+                        crate::brush::ZONE_SMOOTH => ns += 1,
+                        _ => {}
+                    }
+                }
+                if nd * 2 > pix.len() { crate::brush::DETAIL_SPECK } else if ns * 2 > pix.len() { crate::brush::SMOOTH_SPECK } else { 1.0 }
+            } else {
+                1.0
+            };
+            let limit = (min_area as f64) * factor * (1.0 + (boost.max(1.0) - 1.0) * t);
             if (pix.len() as f64) >= limit {
                 continue;
             }
