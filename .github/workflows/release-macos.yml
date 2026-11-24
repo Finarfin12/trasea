@@ -34,8 +34,10 @@ jobs:
       - name: Run trasea-core tests (release)
         run: cargo test --release -p trasea-core
 
-      - name: Prepare minimal frontend dist for tauri::generate_context!
-        run: mkdir -p dist && touch dist/index.html
+      - name: Prepare minimal frontend dist & strip Windows-only realesrgan resource for macOS tests
+        run: |
+          mkdir -p dist && touch dist/index.html
+          python3 -c 'import json; p="src-tauri/tauri.conf.json"; c=json.load(open(p)); c.get("bundle",{}).get("resources",{}).pop("resources/realesrgan/",None); json.dump(c,open(p,"w"),indent=2)'
 
       - name: Run trasea backend unit tests (release)
         run: cargo test --release -p trasea
