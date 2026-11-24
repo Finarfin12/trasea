@@ -4,7 +4,7 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.7.3 ("Native CLI Model Dropdown & Gemini CLI Detection")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.7.4 ("Studio UI, Copywriting & Artboard Polish")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -47,6 +47,12 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.7.4
+
+- **Studio Artboard & Floating Zoom Bar.** Added a subtle 20 px dot-grid backdrop and artboard elevation shadow for both dark and light themes, paired with a floating bottom-right zoom bar (`25%`–`400%`, `−` / reset `%` / `+` / `Fit`).
+- **Polished Welcome Screen & Recent Files.** Centered the dropzone with the Trasea v2 logo, higher-contrast helper text, supported format pills (`PNG`, `JPG`, `WebP`, `SVG`, `.trasea`), and a quick-reopen **Recent files** list (stored locally in browser storage, up to 4 items).
+- **Consistent Copywriting & Inspector Alignment.** Unified header and welcome action labels (`Paste image`, `Batch folder`, `Custom presets`), standardized framed header buttons, aligned every `?` tooltip directly beside its label, added subtle inspector group dividers, and enabled `tabular-nums` for slider values.
 
 ### New in 1.7.3
 

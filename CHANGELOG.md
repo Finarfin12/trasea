@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.4] "Studio UI, Copywriting & Artboard Polish"
+
+- **Consistent copywriting & Indonesian register (`src/i18n/{id,en}.ts`, `src-tauri/src/ai_engine.rs`).** Unified header and welcome action labels (`Tempel gambar` / `Paste image`, `Batch folder`, `Preset kustom` / `Custom presets`), removed all formal `"Anda"` pronouns from Indonesian strings, and ensured zero `"dipboard"` typos across the codebase.
+- **Inspector polish & uniform header actions (`src/App.tsx`, `src/styles.css`).** Standardized framed header buttons, removed uppercase styling from `.field-title` and bold weight from checkbox labels, aligned every `?` tooltip icon directly next to its label text (removing `flex: 1` spacers), added subtle section dividers between inspector groups, and enabled `tabular-nums` on numeric values.
+- **Studio artboard, floating zoom bar & welcome screen (`src/App.tsx`, `src/styles.css`).** Added a subtle 20 px dot-grid canvas backdrop and artboard elevation shadow in both dark and light themes, a floating bottom-right zoom bar (`25%`–`400%`, `−` / `%` reset / `+` / `Pas` or `Fit`), a centered welcome dropzone with the Trasea v2 logo, higher-contrast helper copy, format pills (`PNG`, `JPG`, `WebP`, `SVG`, `.trasea`), and a local `Recent files` quick-reopen list (`trasea.recentFiles.v1`, up to 4 items).
+
 ## [1.7.3] "Native CLI Model Dropdown & Gemini CLI Detection"
 
 - **Pure `<select>` CLI model dropdown (`src/AiEngineSettings.tsx`, `src/i18n/{id,en}.ts`).** Replaced `<input list>` / `<datalist>` with `<select id="ai-cli-model-select">` for `codex`, `claude`, `gemini`, and `opencode`, always listing all detected models alongside `— Follow CLI default —` (`""`) and `Custom model…` (`"__custom__"`) with a conditional custom model text input. Switching CLI presets resets custom mode/model when changing executable and refreshes detected models.

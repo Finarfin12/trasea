@@ -4,7 +4,7 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.7.3 ("Dropdown Model CLI Murni & Deteksi Gemini CLI")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.7.4 ("Polesan UI Studio, Copywriting & Artboard")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -47,6 +47,12 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.7.4
+
+- **Artboard Studio & Bilah Zoom Mengambang.** Menambahkan latar *dot-grid* 20 px halus serta bayangan elevasi *artboard* di tema gelap maupun terang, dilengkapi bilah zoom mengambang di kanan bawah kanvas (`25%`–`400%`, `−` / reset `%` / `+` / `Pas`).
+- **Layar Selamat Datang & Terakhir Dibuka.** Dropzone kini terpusat dengan logo Trasea v2, kontras teks bantu lebih jelas, *format pills* (`PNG`, `JPG`, `WebP`, `SVG`, `.trasea`), serta daftar **Terakhir dibuka** lokal (hingga 4 berkas gambar atau proyek `.trasea`).
+- **Konsistensi Copywriting & Inspektor Rapi.** Menyeragamkan label aksi header dan layar awal (`Tempel gambar`, `Batch folder`, `Preset kustom`), menghilangkan sapaan formal *"Anda"*, menyeragamkan tombol berbingkai di header, merapatkan seluruh ikon `?` tepat di sebelah labelnya, menambah pemisah grup inspektor, dan mengaktifkan `tabular-nums` pada angka slider.
 
 ### Baru di 1.7.3
 
