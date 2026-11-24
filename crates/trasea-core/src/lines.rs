@@ -54,6 +54,13 @@ impl ThinParams {
             bridge_gap: 2,
         }
     }
+
+    /// Hairline-only thin-line parameters when Real-ESRGAN GPU has already cleaned bold outlines.
+    pub fn for_ai_cleaned(w: u32, h: u32) -> Self {
+        let mut p = Self::for_size(w, h);
+        p.open_radius = 1;
+        p
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -635,5 +642,41 @@ mod tests {
             .filter(|&(x, y)| tm.mask[y as usize * w as usize + x as usize])
             .count();
         assert_eq!(block_interior_hits, 0, "large dark solid block must not be absorbed as a thin line");
+    }
+
+    #[test]
+    fn t171_for_ai_cleaned_captures_2px_hairline_and_skips_6px_bold_outline() {
+        let (w, h) = (200u32, 160u32);
+        let p = ThinParams::for_ai_cleaned(w, h);
+        assert_eq!(p.open_radius, 1);
+
+        let cream = image::Rgb([250, 245, 234]);
+        let ink = image::Rgb([25, 32, 28]);
+        let mut img = RgbImage::from_pixel(w, h, cream);
+
+        // 2-px hairline at y = 40..42, x = 20..180
+        for y in 40..42 {
+            for x in 20..180 {
+                img.put_pixel(x, y, ink);
+            }
+        }
+        // 6-px bold outline at y = 100..106, x = 20..180
+        for y in 100..106 {
+            for x in 20..180 {
+                img.put_pixel(x, y, ink);
+            }
+        }
+
+        let tm = thin_mask(&img, &p);
+        let hairline_hits = (25..175)
+            .filter(|&x| (40..42).any(|y| tm.mask[y * w as usize + x]))
+            .count();
+        assert!(hairline_hits >= 145, "2-px hairline should be captured, got {hairline_hits}/150");
+
+        let bold_hits = (101..105)
+            .flat_map(|y| (30..170).map(move |x| (x, y)))
+            .filter(|&(x, y)| tm.mask[y * w as usize + x])
+            .count();
+        assert_eq!(bold_hits, 0, "6-px bold outline interior should not be absorbed by for_ai_cleaned");
     }
 }

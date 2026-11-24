@@ -1376,8 +1376,9 @@ async fn vectorize_with_ai(
                 )
                 .map_err(|e| format!("Gagal mengodekan PNG untuk AI: {e}"))?;
 
-            let (used_provider, import) =
+            let (used_provider, mut import) =
                 ai_engine::run_external_ai_to_svg_import(&dir, provider.as_deref(), &png_bytes)?;
+            trasea_core::svg_import::coalesce_similar_colors(&mut import.doc, 8.0);
             let cached = CachedAiImport {
                 source_path,
                 used_provider: used_provider.clone(),

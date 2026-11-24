@@ -24,14 +24,14 @@ const CLI_PRESETS = {
 		executable: "claude",
 		args: [
 			"-p",
-			"Convert the image at {input} into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
+			"Convert the image at {input} into a clean standalone SVG vector graphic with flat hex fills using a clean limited flat color palette (<= 10 hex colors, no near-duplicate shades) and return only <svg>...</svg>.",
 		],
 	},
 	gemini: {
 		executable: "gemini",
 		args: [
 			"-p",
-			"Convert the image at {input} into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
+			"Convert the image at {input} into a clean standalone SVG vector graphic with flat hex fills using a clean limited flat color palette (<= 10 hex colors, no near-duplicate shades) and return only <svg>...</svg>.",
 		],
 	},
 	codex: {
@@ -46,7 +46,7 @@ const CLI_PRESETS = {
 			"{input}",
 			"-o",
 			"{output}",
-			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
+			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills using a clean limited flat color palette (<= 10 hex colors, no near-duplicate shades) and return only <svg>...</svg>.",
 		],
 	},
 	opencode: {
@@ -56,7 +56,7 @@ const CLI_PRESETS = {
 			"--auto",
 			"-f",
 			"{input}",
-			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
+			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills using a clean limited flat color palette (<= 10 hex colors, no near-duplicate shades) and return only <svg>...</svg>.",
 		],
 	},
 };

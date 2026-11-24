@@ -287,6 +287,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	traceEngineRef.current = traceEngine;
 	const activeResultSourceRef = useRef<"local" | "ai">("local");
 	const [activeRunIsAi, setActiveRunIsAi] = useState(false);
+	const [aiElapsedSec, setAiElapsedSec] = useState(0);
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
 	const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -295,6 +296,18 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [result, setResult] = useState<Processed | null>(null);
 	const [liveSvg, setLiveSvg] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+
+	useEffect(() => {
+		if (!busy || !activeRunIsAi) {
+			setAiElapsedSec(0);
+			return;
+		}
+		setAiElapsedSec(0);
+		const id = window.setInterval(() => {
+			setAiElapsedSec(s => s + 1);
+		}, 1000);
+		return () => window.clearInterval(id);
+	}, [busy, activeRunIsAi]);
 	const [stage, setStage] = useState("");
 	const [fraction, setFraction] = useState(0);
 	const [error, setError] = useState("");
@@ -1676,7 +1689,16 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 						{busy && (
 							<div className="progress" role="status" aria-live="polite">
 								{activeRunIsAi ? (
-									<div>{t.aiRunningStatus}</div>
+									<div className="ai-loading-card">
+										<img src={logoIcon} alt="" className="ai-loading-logo" aria-hidden="true" />
+										<div className="ai-progress-track" aria-hidden="true">
+											<div className="ai-progress-bar" />
+										</div>
+										<div className="ai-loading-text">{t.aiRunningStatus}</div>
+										<div className="ai-loading-timer">
+											{`${String(Math.floor(aiElapsedSec / 60)).padStart(2, "0")}:${String(aiElapsedSec % 60).padStart(2, "0")}`}
+										</div>
+									</div>
 								) : (
 									<>
 										<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
@@ -2760,6 +2782,19 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 export default function App() {
 	const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+	const [splashPhase, setSplashPhase] = useState<"show" | "leaving" | "done">(() =>
+		typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "done" : "show",
+	);
+
+	useEffect(() => {
+		if (splashPhase === "done") return;
+		const t1 = window.setTimeout(() => setSplashPhase("leaving"), 500);
+		const t2 = window.setTimeout(() => setSplashPhase("done"), 720);
+		return () => {
+			window.clearTimeout(t1);
+			window.clearTimeout(t2);
+		};
+	}, []);
 
 	useEffect(() => {
 		void getAppSettings()
@@ -2806,6 +2841,11 @@ export default function App() {
 	return (
 		<I18nProvider lang={settings.language} setLang={setLang}>
 			<TraseaApp appSettings={settings} onUpdateSettings={updateSettings} />
+			{splashPhase !== "done" && (
+				<div className={`app-splash ${splashPhase === "leaving" ? "app-splash--leaving" : ""}`} aria-hidden="true">
+					<img src={logoIcon} alt="" className="app-splash-logo" />
+				</div>
+			)}
 		</I18nProvider>
 	);
 }

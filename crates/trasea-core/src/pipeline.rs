@@ -305,8 +305,18 @@ pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<Pre
         }
         (img_pp, mask)
     };
-    progress("Looking for thin lines", 0.05);
-    let mut thin = thin_mask(&src, &ThinParams::for_size(src.width(), src.height()));
+    progress(if params.ai_clean { "Cleaning with Real-ESRGAN" } else { "Cleaning" }, 0.05);
+    let cleaned = clean(&src, params.ai_clean, params.sidecar_dir.as_deref(), up);
+    if let Some(n) = cleaned.note {
+        notes.push(n);
+    }
+    progress("Looking for thin lines", 0.25);
+    let thin_params = if cleaned.used_ai {
+        ThinParams::for_ai_cleaned(src.width(), src.height())
+    } else {
+        ThinParams::for_size(src.width(), src.height())
+    };
+    let mut thin = thin_mask(&src, &thin_params);
     if let Some(ref fg) = fg_mask {
         for (i, &keep) in fg.iter().enumerate() {
             if !keep && i < thin.mask.len() {
@@ -314,11 +324,6 @@ pub fn prepare(src: RgbImage, params: &Params, progress: Progress) -> Result<Pre
                 thin.labels[i] = 0;
             }
         }
-    }
-    progress(if params.ai_clean { "Cleaning with Real-ESRGAN" } else { "Cleaning" }, 0.15);
-    let cleaned = clean(&src, params.ai_clean, params.sidecar_dir.as_deref(), up);
-    if let Some(n) = cleaned.note {
-        notes.push(n);
     }
     Ok(PreparedImage {
         src,
@@ -933,7 +938,12 @@ pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_
     let (paths, nodes) = count_svg(&svg);
     let stats = Stats { paths, nodes, bytes: svg.len(), mae: None, primitives: count_primitives(&svg) };
     let heatmap = node_heatmap(&doc);
-    let mut palette: Vec<Rgb> = doc.fields.iter().map(|l| l.color).collect();
+    let mut palette: Vec<Rgb> = Vec::new();
+    for l in &doc.fields {
+        if !palette.contains(&l.color) {
+            palette.push(l.color);
+        }
+    }
     for sl in &doc.strokes {
         if !palette.contains(&sl.color) {
             palette.push(sl.color);
