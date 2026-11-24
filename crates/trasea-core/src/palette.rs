@@ -419,3 +419,263 @@ pub fn refine_thin_regions(labels: &mut [u8], img: &RgbImage, palette: &[Rgb], w
         }
     }
 }
+
+/// Remove 1-2 px anti-aliasing halo bands along label borders.
+///
+/// When quantising a flat illustration, anti-aliased transition pixels between a dark stroke and a
+/// light background can land on an intermediate palette colour (e.g. olive or tan). For every thin
+/// border pixel (`same_8 <= 5`) sandwiched between two distinct labels `(a, b)` where `plab[l]`
+/// lies near the Lab line segment `plab[a] -> plab[b]`, snap the pixel to whichever of `a` or `b`
+/// is closer in Lab to the original image pixel. Runs 2 fast passes.
+pub fn dehalo_label_borders(labels: &mut [u8], img: &RgbImage, palette: &[Rgb], w: usize, h: usize) {
+    if w < 3 || h < 3 || palette.len() < 3 || labels.len() != w * h {
+        return;
+    }
+    let plab: Vec<[f32; 3]> = palette.iter().map(|&c| rgb_to_lab(c)).collect();
+    let axes: [(isize, isize); 4] = [(1, 0), (0, 1), (1, 1), (1, -1)];
+    let mut next = labels.to_vec();
+
+    for _pass in 0..2 {
+        next.copy_from_slice(labels);
+        let mut changed = false;
+
+        for y in 1..(h - 1) {
+            let yi = y as isize;
+            for x in 1..(w - 1) {
+                let xi = x as isize;
+                let i = y * w + x;
+                let l = labels[i];
+                if (l as usize) >= plab.len() {
+                    continue;
+                }
+
+                // Only thin border pixels (<= 5 same-label 8-neighbours), never solid colour interiors.
+                let mut same8 = 0u8;
+                for dy in -1isize..=1 {
+                    let row = (yi + dy) as usize * w;
+                    for dx in -1isize..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        if labels[row + (xi + dx) as usize] == l {
+                            same8 += 1;
+                        }
+                    }
+                }
+                if same8 > 5 {
+                    continue;
+                }
+
+                let ll = plab[l as usize];
+                let mut snapped: Option<u8> = None;
+
+                for &(dx, dy) in &axes {
+                    let p1 = labels[(yi + dy) as usize * w + (xi + dx) as usize];
+                    let a = if p1 == l {
+                        let x2 = xi + 2 * dx;
+                        let y2 = yi + 2 * dy;
+                        if x2 >= 0 && y2 >= 0 && (x2 as usize) < w && (y2 as usize) < h {
+                            labels[y2 as usize * w + x2 as usize]
+                        } else {
+                            p1
+                        }
+                    } else {
+                        p1
+                    };
+
+                    let m1 = labels[(yi - dy) as usize * w + (xi - dx) as usize];
+                    let b = if m1 == l {
+                        let x2 = xi - 2 * dx;
+                        let y2 = yi - 2 * dy;
+                        if x2 >= 0 && y2 >= 0 && (x2 as usize) < w && (y2 as usize) < h {
+                            labels[y2 as usize * w + x2 as usize]
+                        } else {
+                            m1
+                        }
+                    } else {
+                        m1
+                    };
+
+                    if a == l || b == l || a == b {
+                        continue;
+                    }
+                    if (a as usize) >= plab.len() || (b as usize) >= plab.len() {
+                        continue;
+                    }
+
+                    let la = plab[a as usize];
+                    let lb = plab[b as usize];
+                    let ab = [lb[0] - la[0], lb[1] - la[1], lb[2] - la[2]];
+                    let ab_d2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+                    let ab_de = ab_d2.sqrt();
+                    if ab_de < 18.0 {
+                        continue;
+                    }
+                    let al = [ll[0] - la[0], ll[1] - la[1], ll[2] - la[2]];
+                    let t = (al[0] * ab[0] + al[1] * ab[1] + al[2] * ab[2]) / ab_d2;
+                    if !(0.12..=0.88).contains(&t) {
+                        continue;
+                    }
+                    let proj = [la[0] + t * ab[0], la[1] + t * ab[1], la[2] + t * ab[2]];
+                    let perp_de = d2(&ll, &proj).sqrt();
+                    if perp_de <= 24.0 && perp_de < 0.35 * ab_de {
+                        let orig = rgb_to_lab(img.get_pixel(x as u32, y as u32).0);
+                        let da = d2(&orig, &la);
+                        let db = d2(&orig, &lb);
+                        snapped = Some(if da <= db { a } else { b });
+                        break;
+                    }
+                }
+
+                if let Some(to) = snapped {
+                    next[i] = to;
+                    changed = true;
+                }
+            }
+        }
+
+        if !changed {
+            break;
+        }
+        labels.copy_from_slice(&next);
+    }
+}
+
+/// Remove 1-px staircases/protrusions along label boundaries in a single pass.
+///
+/// Only pixels with at most 1 matching 4-neighbour (`same_4 <= 1`) where a single other label
+/// occupies at least 3 of the 4 orthogonal neighbours are reassigned. Protected labels, 90-degree
+/// corners (`same_4 == 2`), and 1-2 px straight strokes (`same_4 == 2`) remain untouched.
+pub fn smooth_label_jaggies(labels: &mut [u8], w: usize, h: usize, protect: &[bool]) {
+    if w < 3 || h < 3 || labels.len() != w * h {
+        return;
+    }
+    let src = labels.to_vec();
+    for y in 1..(h - 1) {
+        let row = y * w;
+        for x in 1..(w - 1) {
+            let i = row + x;
+            let l = src[i];
+            if protect.get(l as usize).copied().unwrap_or(false) {
+                continue;
+            }
+            let nb = [src[i - 1], src[i + 1], src[i - w], src[i + w]];
+            let same4 = nb.iter().filter(|&&n| n == l).count();
+            if same4 > 1 {
+                continue;
+            }
+            for &cand in &[nb[0], nb[1]] {
+                if cand != l && nb.iter().filter(|&&n| n == cand).count() >= 3 {
+                    labels[i] = cand;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn t170_dehalo_removes_aa_halo_and_preserves_solid_olive_block() {
+        // Palette: 0 = dark green (#1F4D36), 1 = cream (#FCF7EC), 2 = olive (#89995A)
+        let dark: Rgb = [0x1F, 0x4D, 0x36];
+        let cream: Rgb = [0xFC, 0xF7, 0xEC];
+        let olive: Rgb = [0x89, 0x99, 0x5A];
+        let palette = [dark, cream, olive];
+        let (w, h) = (64usize, 40usize);
+        let mut img = RgbImage::from_pixel(w as u32, h as u32, image::Rgb(cream));
+        let mut labels = vec![1u8; w * h];
+
+        // Left dark block x in 4..20, y in 4..36
+        for y in 4..36 {
+            for x in 4..20 {
+                img.put_pixel(x as u32, y as u32, image::Rgb(dark));
+                labels[y * w + x] = 0;
+            }
+            // 2-px anti-alias halo band at x = 20, 21 labelled olive (2)
+            // x=20 is darker blend, x=21 is lighter blend
+            img.put_pixel(20, y as u32, image::Rgb([0x40, 0x6A, 0x52]));
+            labels[y * w + 20] = 2;
+            img.put_pixel(21, y as u32, image::Rgb([0xD4, 0xD8, 0xC6]));
+            labels[y * w + 21] = 2;
+        }
+
+        // Genuine wide olive block x in 36..58, y in 6..34
+        for y in 6..34 {
+            for x in 36..58 {
+                img.put_pixel(x as u32, y as u32, image::Rgb(olive));
+                labels[y * w + x] = 2;
+            }
+        }
+
+        let halo_before = (5..35)
+            .flat_map(|y| [labels[y * w + 20], labels[y * w + 21]])
+            .filter(|&l| l == 2)
+            .count();
+        assert_eq!(halo_before, 60);
+
+        dehalo_label_borders(&mut labels, &img, &palette, w, h);
+
+        let halo_after = (5..35)
+            .flat_map(|y| [labels[y * w + 20], labels[y * w + 21]])
+            .filter(|&l| l == 2)
+            .count();
+        assert_eq!(halo_after, 0, "expected 2-px halo band to be fully removed");
+        // Verify dark side snapped to dark (0) and light side snapped to cream (1)
+        assert_eq!(labels[20 * w + 20], 0);
+        assert_eq!(labels[20 * w + 21], 1);
+
+        // Genuine solid olive block must remain 100% intact
+        let olive_kept = (6..34)
+            .flat_map(|y| (36..58).map(move |x| (x, y)))
+            .filter(|&(x, y)| labels[y * w + x] == 2)
+            .count();
+        assert_eq!(olive_kept, 28 * 22, "genuine solid olive block must remain untouched");
+    }
+
+    #[test]
+    fn t170_smooth_label_jaggies_flattens_protrusion_and_keeps_corners_and_lines() {
+        let (w, h) = (32usize, 32usize);
+        let mut labels = vec![0u8; w * h];
+
+        // Rectangle of label 1 at x in 4..14, y in 4..14 (sharp 90-degree corners)
+        for y in 4..14 {
+            for x in 4..14 {
+                labels[y * w + x] = 1;
+            }
+        }
+        // Single 1-px jagged protrusion on its right edge at (14, 9)
+        labels[9 * w + 14] = 1;
+        // Single 1-px notch inside its bottom edge at (9, 13)
+        labels[13 * w + 9] = 0;
+
+        // Straight 2-px wide horizontal line of label 2 at x in 4..26, y in 22..24
+        for y in 22..24 {
+            for x in 4..26 {
+                labels[y * w + x] = 2;
+            }
+        }
+
+        smooth_label_jaggies(&mut labels, w, h, &[false, false, false]);
+
+        // Protrusion flattened and notch filled
+        assert_eq!(labels[9 * w + 14], 0, "1-px protrusion should be removed");
+        assert_eq!(labels[13 * w + 9], 1, "1-px notch should be filled");
+
+        // All four 90-degree corners of the rectangle remain intact
+        assert_eq!(labels[4 * w + 4], 1);
+        assert_eq!(labels[4 * w + 13], 1);
+        assert_eq!(labels[13 * w + 4], 1);
+        assert_eq!(labels[13 * w + 13], 1);
+
+        // 2-px straight line remains 100% intact
+        let line_kept = (22..24)
+            .flat_map(|y| (4..26).map(move |x| (x, y)))
+            .filter(|&(x, y)| labels[y * w + x] == 2)
+            .count();
+        assert_eq!(line_kept, 2 * 22, "2-px line must remain untouched");
+    }
+}

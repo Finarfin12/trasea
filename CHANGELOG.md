@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0] "Offline Core Quality Upgrade"
+
+- **Anti-Alias Border Dehaloing (`crates/trasea-core/src/palette.rs`, `pipeline.rs`).** Added `dehalo_label_borders` (2 fast Lab-space passes after `refine_thin_regions`, skipped in `ProductionMode::Shading`) to snap 1–2 px anti-alias halo pixels sandwiched between two distinct neighbours back to the closest real neighbour colour while keeping solid colour regions intact.
+- **Thin-Line Continuity & Micro-Gap Closing (`crates/trasea-core/src/lines.rs`).** Added bounded one-sided ink continuation (max 3 steps, colour- and contrast-verified) and color-verified 1-px closing in `thin_mask` so dark outlines bordering medium/dark colour fills stay continuous without absorbing large solid dark shapes.
+- **Label Boundary Jaggies Cleanup (`crates/trasea-core/src/palette.rs`, `pipeline.rs`).** Added 1-pass `smooth_label_jaggies` after `remove_small_regions_ex` to flatten isolated 1-px protrusions/notches while preserving protected labels, 90° corners, and 1–2 px straight lines.
+- **Tests (`palette.rs`, `lines.rs`, `pipeline.rs`).** Added 4 deterministic `t170_` unit/E2E tests verifying halo removal, jaggies smoothing, one-sided outline continuity, and flat-illustration vectorization quality (`108/108` `trasea-core` + `7/7` `trasea` = `115/115` workspace tests pass; 0 network crates added).
+
 ## [1.6.3] "OpenCode CLI, CLI Model/Reasoning & AI Vector Edit Fix"
 
 - **OpenCode CLI preset & CLI Model / Reasoning controls (`ai_engine.rs`, `AiEngineSettings.tsx`).** Added `aiCliModel` and `aiCliReasoningEffort` config fields, `normalize_cli_args_with_options` for `codex`, `claude`, `gemini`, and `opencode`, `fetch_cli_models` IPC command, and the 1-click `OpenCode CLI` preset (Codex preset sets `low` reasoning effort).

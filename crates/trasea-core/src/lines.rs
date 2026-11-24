@@ -355,6 +355,147 @@ pub fn thin_mask(img: &RgbImage, p: &ThinParams) -> ThinMask {
             }
             thin[i] = true;
         }
+
+        // One-sided ink continuation (max 3 steps from current mask): keeps dark outline segments
+        // that border a medium/dark colour fill on one side and a light background on the other,
+        // where the two-sided valley check would otherwise break the outline.
+        let lum = luminance(img);
+        let mean = local_mean(&lum, w, h, p.local_radius);
+        let k_val = p.open_radius + 2;
+        let val_axes: [(i32, i32); 4] = [(1, 0), (0, 1), (1, 1), (1, -1)];
+        let one_sided_ok = |idx: usize, base: [f32; 3]| -> bool {
+            let (x, y) = ((idx % w) as i32, (idx / w) as i32);
+            let l0 = lum[idx];
+            val_axes.iter().any(|&(dx, dy)| {
+                let sample = |s: i32| {
+                    let (xx, yy) = ((x + s * dx * k_val).clamp(0, w as i32 - 1), (y + s * dy * k_val).clamp(0, h as i32 - 1));
+                    let si = yy as usize * w + xx as usize;
+                    let c = img.get_pixel(xx as u32, yy as u32).0;
+                    let cd2 = (c[0] as f32 - base[0]).powi(2) + (c[1] as f32 - base[1]).powi(2) + (c[2] as f32 - base[2]).powi(2);
+                    (lum[si], cd2)
+                };
+                let (lp, dp2) = sample(1);
+                let (ln, dn2) = sample(-1);
+                let pos_bright = lp > l0 + p.weak_valley;
+                let neg_bright = ln > l0 + p.weak_valley;
+                (pos_bright ^ neg_bright) && dp2 > max_d2 && dn2 > max_d2
+            })
+        };
+
+        let (seed_lab, seed_areas) = label8(&thin, w, h);
+        let mut comp_sum = vec![[0f32; 3]; seed_areas.len() + 1];
+        for i in 0..w * h {
+            let l = seed_lab[i] as usize;
+            if l != 0 {
+                let px = img.get_pixel((i % w) as u32, (i / w) as u32).0;
+                for c in 0..3 {
+                    comp_sum[l][c] += px[c] as f32;
+                }
+            }
+        }
+        let mut comp_rgb = vec![[0f32; 3]; seed_areas.len() + 1];
+        let mut comp_lum = vec![0f32; seed_areas.len() + 1];
+        for (idx, &area) in seed_areas.iter().enumerate() {
+            let id = idx + 1;
+            let n = area.max(1) as f32;
+            let rgb = [comp_sum[id][0] / n, comp_sum[id][1] / n, comp_sum[id][2] / n];
+            comp_rgb[id] = rgb;
+            comp_lum[id] = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+        }
+
+        let mut depth = vec![u8::MAX; w * h];
+        let mut owner = seed_lab;
+        let mut queue = std::collections::VecDeque::new();
+        for i in 0..w * h {
+            if thin[i] {
+                depth[i] = 0;
+                queue.push_back(i);
+            }
+        }
+        let one_sided_delta = p.weak_delta * 0.75;
+        while let Some(i) = queue.pop_front() {
+            let d = depth[i];
+            if d >= 3 {
+                continue;
+            }
+            let cid = owner[i];
+            let base = comp_rgb[cid as usize];
+            let max_ink_lum = (comp_lum[cid as usize] + 35.0).min(p.weak_max_lum);
+            let (x, y) = ((i % w) as i32, (i / w) as i32);
+            for dy in -1..=1 {
+                let ny = y + dy;
+                if ny < 0 || ny >= h as i32 {
+                    continue;
+                }
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let nx = x + dx;
+                    if nx < 0 || nx >= w as i32 {
+                        continue;
+                    }
+                    let j = ny as usize * w + nx as usize;
+                    if depth[j] != u8::MAX {
+                        continue;
+                    }
+                    if lum[j] > max_ink_lum || (mean[j] - lum[j]) < one_sided_delta {
+                        continue;
+                    }
+                    let px = img.get_pixel(nx as u32, ny as u32).0;
+                    let cd2 = (px[0] as f32 - base[0]).powi(2) + (px[1] as f32 - base[1]).powi(2) + (px[2] as f32 - base[2]).powi(2);
+                    if cd2 > max_d2 {
+                        continue;
+                    }
+                    if !one_sided_ok(j, base) {
+                        continue;
+                    }
+                    thin[j] = true;
+                    depth[j] = d + 1;
+                    owner[j] = cid;
+                    queue.push_back(j);
+                }
+            }
+        }
+
+        // Color-verified 1-px closing: fill isolated 1-px breaks between opposite mask pixels
+        // only when the original pixel is genuinely dark and matches the ink colour.
+        if w >= 3 && h >= 3 {
+            let snap = thin.clone();
+            let close_d2 = (WEAK_COLOR_DIST + 15.0) * (WEAK_COLOR_DIST + 15.0);
+            let opp_axes: [(isize, isize); 4] = [(1, 0), (0, 1), (1, 1), (1, -1)];
+            for y in 1..(h - 1) {
+                let yi = y as isize;
+                for x in 1..(w - 1) {
+                    let xi = x as isize;
+                    let i = y * w + x;
+                    if snap[i] || opened_w[i] || lum[i] > p.weak_max_lum {
+                        continue;
+                    }
+                    let px = img.get_pixel(x as u32, y as u32).0;
+                    for &(dx, dy) in &opp_axes {
+                        let i1 = (yi + dy) as usize * w + (xi + dx) as usize;
+                        let i2 = (yi - dy) as usize * w + (xi - dx) as usize;
+                        if snap[i1] && snap[i2] {
+                            let c1 = img.get_pixel((i1 % w) as u32, (i1 / w) as u32).0;
+                            let c2 = img.get_pixel((i2 % w) as u32, (i2 / w) as u32).0;
+                            let avg = [
+                                (c1[0] as f32 + c2[0] as f32) * 0.5,
+                                (c1[1] as f32 + c2[1] as f32) * 0.5,
+                                (c1[2] as f32 + c2[2] as f32) * 0.5,
+                            ];
+                            let d2 = (px[0] as f32 - avg[0]).powi(2)
+                                + (px[1] as f32 - avg[1]).powi(2)
+                                + (px[2] as f32 - avg[2]).powi(2);
+                            if d2 <= close_d2 {
+                                thin[i] = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     bridge_gaps(&mut thin, w, h, p.bridge_gap);
     let (labels0, areas) = label8(&thin, w, h);
@@ -440,4 +581,59 @@ pub fn line_colors(tm: &ThinMask, k: usize) -> (Vec<usize>, Vec<Rgb>) {
     }
     let pal = centers.iter().map(|c| [c[0].round() as u8, c[1].round() as u8, c[2].round() as u8]).collect();
     (assign, pal)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn t170_thin_mask_continues_one_sided_outline_and_ignores_large_dark_block() {
+        let (w, h) = (160u32, 120u32);
+        let cream = image::Rgb([250, 245, 234]);
+        let medium_red = image::Rgb([110, 12, 12]);
+        let ink = image::Rgb([28, 36, 32]);
+        let mut img = RgbImage::from_pixel(w, h, cream);
+
+        // Medium-dark red fill patch touching the bottom of the outline for x in 60..66
+        // so those outline pixels only have light background on one side (above).
+        for y in 42..85 {
+            for x in 60..66 {
+                img.put_pixel(x, y, medium_red);
+            }
+        }
+
+        // Continuous 2-px dark outline across y = 40..42, x = 20..120
+        for y in 40..42 {
+            for x in 20..120 {
+                img.put_pixel(x, y, ink);
+            }
+        }
+
+        // Large dark solid block (> 12 px wide) far from the thin line
+        for y in 75..105 {
+            for x in 105..140 {
+                img.put_pixel(x, y, ink);
+            }
+        }
+
+        let tm = thin_mask(&img, &ThinParams::for_size(w, h));
+
+        // Every x along the outline (including the one-sided segment x = 60..66) must be present
+        let mut covered_cols = 0usize;
+        for x in 24..116 {
+            let col_hit = (39..=42).any(|y| tm.mask[y as usize * w as usize + x as usize]);
+            if col_hit {
+                covered_cols += 1;
+            }
+        }
+        assert_eq!(covered_cols, 92, "one-sided outline segment should stay continuous without gaps");
+
+        // Interior of the large dark block (35x30) must NOT be absorbed into the thin mask
+        let block_interior_hits = (80..100)
+            .flat_map(|y| (110..135).map(move |x| (x, y)))
+            .filter(|&(x, y)| tm.mask[y as usize * w as usize + x as usize])
+            .count();
+        assert_eq!(block_interior_hits, 0, "large dark solid block must not be absorbed as a thin line");
+    }
 }
