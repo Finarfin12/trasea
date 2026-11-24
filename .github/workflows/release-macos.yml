@@ -31,6 +31,9 @@ jobs:
       - name: Run trasea-core tests (release)
         run: cargo test --release -p trasea-core
 
+      - name: Prepare minimal frontend dist for tauri::generate_context!
+        run: mkdir -p dist && touch dist/index.html
+
       - name: Run trasea backend unit tests (release)
         run: cargo test --release -p trasea
 
@@ -69,8 +72,23 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Remove Windows-only Real-ESRGAN resources before macOS bundle
+        run: |
+          rm -rf src-tauri/resources/realesrgan
+          node -e 'const fs=require("fs");const p="src-tauri/tauri.conf.json";const c=JSON.parse(fs.readFileSync(p,"utf8"));if(c.bundle&&c.bundle.resources){delete c.bundle.resources["resources/realesrgan/"];}fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n");'
+
       - name: Build macOS .dmg (${{ matrix.target }})
         run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.macos.conf.json --bundles dmg
+
+      - name: Verify macOS bundle contains no Windows binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          BAD=$(find "target/${{ matrix.target }}/release/bundle/macos" -type f \( -iname "*.exe" -o -iname "*.dll" \) || true)
+          if [ -n "$BAD" ]; then
+            echo "Unexpected Windows binaries in macOS bundle: $BAD" >&2
+            exit 1
+          fi
 
       - name: Compute SHA-256 & prepare upload artifacts
         id: dmg

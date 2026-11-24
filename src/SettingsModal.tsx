@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Licenses from "./Licenses";
+import AiEngineSettings from "./AiEngineSettings";
 import {
 	DEFAULT_APP_SETTINGS,
 	DEFAULT_SHORTCUTS,
@@ -19,7 +20,7 @@ import {
 import { effectiveShortcuts, eventToShortcutString } from "./colorUtils";
 import { useI18n, type Lang } from "./i18n";
 
-export type SettingsTab = "general" | "export" | "performance" | "shortcuts" | "privacy";
+export type SettingsTab = "general" | "export" | "performance" | "ai" | "shortcuts" | "privacy";
 
 interface Props {
 	settings: AppSettings;
@@ -163,10 +164,11 @@ export default function SettingsModal({
 					<button className="ghost small" onClick={onClose}>{t.close}</button>
 				</div>
 
-				<div className="seg seg5" role="tablist" aria-label={t.settingsModalTitle} style={{ marginTop: 10 }}>
+				<div className="seg seg6" role="tablist" aria-label={t.settingsModalTitle} style={{ marginTop: 10 }}>
 					<button role="tab" aria-selected={tab === "general"} aria-pressed={tab === "general"} onClick={() => setTab("general")}>{t.tabGeneral}</button>
 					<button role="tab" aria-selected={tab === "export"} aria-pressed={tab === "export"} onClick={() => setTab("export")}>{t.tabExportDefaults}</button>
 					<button role="tab" aria-selected={tab === "performance"} aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>{t.tabPerformance}</button>
+					<button role="tab" aria-selected={tab === "ai"} aria-pressed={tab === "ai"} onClick={() => setTab("ai")}>{t.tabAiEngine}</button>
 					<button role="tab" aria-selected={tab === "shortcuts"} aria-pressed={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>{t.tabShortcuts}</button>
 					<button role="tab" aria-selected={tab === "privacy"} aria-pressed={tab === "privacy"} onClick={() => setTab("privacy")}>{t.privacyCredits}</button>
 				</div>
@@ -311,6 +313,8 @@ export default function SettingsModal({
 							</div>
 						</div>
 					)}
+
+					{tab === "ai" && <AiEngineSettings />}
 
 					{tab === "shortcuts" && (
 						<div className="settings-section">

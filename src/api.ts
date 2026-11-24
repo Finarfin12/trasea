@@ -477,3 +477,65 @@ export interface AppModeInfo {
 export const checkForUpdate = (): Promise<UpdateInfo> => invoke<UpdateInfo>("check_for_update");
 export const getAppMode = (): Promise<AppModeInfo> => invoke<AppModeInfo>("get_app_mode");
 export const openExternalUrl = (url: string): Promise<void> => invoke<void>("open_external_url", { url });
+
+export type AiProvider = "local" | "recraft" | "vectorizer_ai" | "claude" | "openai" | "gemini" | "cli";
+
+export interface AiConfigPublic {
+	aiProvider: string;
+	aiClaudeModel: string;
+	aiOpenaiModel: string;
+	aiGeminiModel: string;
+	aiCliExecutable: string;
+	aiCliArgs: string[];
+	aiCliTimeoutSec: number;
+	hasRecraftKey: boolean;
+	hasVectorizerKeys: boolean;
+	hasClaudeKey: boolean;
+	hasOpenaiKey: boolean;
+	hasGeminiKey: boolean;
+}
+
+export interface SaveAiConfigInput {
+	aiProvider?: string;
+	aiClaudeModel?: string;
+	aiOpenaiModel?: string;
+	aiGeminiModel?: string;
+	aiCliExecutable?: string;
+	aiCliArgs?: string[];
+	aiCliTimeoutSec?: number;
+	recraftApiKey?: string;
+	vectorizerApiId?: string;
+	vectorizerApiSecret?: string;
+	claudeApiKey?: string;
+	openaiApiKey?: string;
+	geminiApiKey?: string;
+}
+
+export interface AiModelItem {
+	id: string;
+	label: string;
+}
+
+export interface FetchAiModelsResult {
+	provider: string;
+	status: string;
+	message: string;
+	models: AiModelItem[];
+}
+
+export interface AiTestResult {
+	ok: boolean;
+	provider: string;
+	message: string;
+	resolvedPath: string | null;
+}
+
+export const getAiConfig = (): Promise<AiConfigPublic> => invoke<AiConfigPublic>("get_ai_config");
+export const saveAiConfig = (input: SaveAiConfigInput): Promise<AiConfigPublic> =>
+	invoke<AiConfigPublic>("save_ai_config", { input });
+export const fetchAiModels = (provider: string): Promise<FetchAiModelsResult> =>
+	invoke<FetchAiModelsResult>("fetch_ai_models", { provider });
+export const testAiConfig = (provider?: string): Promise<AiTestResult> =>
+	invoke<AiTestResult>("test_ai_config", { provider: provider ?? null });
+export const vectorizeWithAi = (path: string, params: Options, provider?: string): Promise<Processed> =>
+	invoke<Processed>("vectorize_with_ai", { path, params, provider: provider ?? null });
