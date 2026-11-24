@@ -594,6 +594,7 @@ fn trace_lines(b: &Base, params: &Params, k: Knobs, fo: &FieldsOut) -> LinesOut 
     let mut out = LinesOut { line_shapes: Vec::new(), line_fallback: Vec::new(), strokes: Vec::new(), cut_thickened: 0 };
     let copts = CenterOpts { merge: true, width_tol: 0.75 * scale };
     let Some(tm) = b.thin else { return out };
+    let dark = crate::lines::dark_mask(&b.prep.src, &ThinParams::for_size(w as u32, h as u32));
     let (assign_c, colors) = line_colors(tm, 3);
     let min_line = ((tm.comps.iter().map(|c| c.area).min().unwrap_or(8) as f64) * (up * up) as f64 * 0.5) as usize;
     let lp = TraceParams { sigma: lerp(0.6, 1.0, t) * s, tol: lerp(0.5, 1.5, t) * s * k.extra, min_area: min_line, ..fo.tp.clone() };
@@ -646,7 +647,44 @@ fn trace_lines(b: &Base, params: &Params, k: Knobs, fo: &FieldsOut) -> LinesOut 
         let min_len = MIN_STROKE_LEN * ww as f64 / w as f64;
         let kept: Vec<_> = cl.strokes.iter().filter(|st| { let mut l = 0.0; for cv in &st.curves { l += ((cv[3].0 - cv[0].0).powi(2) + (cv[3].1 - cv[0].1).powi(2)).sqrt(); } l >= min_len }).collect();
         if !kept.is_empty() {
-            out.strokes.push(StrokeLayer { color, strokes: kept.iter().map(|st| { let mut d = StrokeData::from(*st); d.width += STROKE_WIDTH_BIAS * scale; d }).collect() });
+            let mut layer_strokes: Vec<StrokeData> = kept
+                .iter()
+                .map(|st| {
+                    let mut d = StrokeData::from(*st);
+                    d.width += STROKE_WIDTH_BIAS * scale;
+                    // Recover clipped outer anti-aliased ink width only where dark_mask confirms dark pixels outside current half-width.
+                    let half = d.width * 0.5;
+                    let mut outer_dark = 0usize;
+                    let mut outer_tot = 0usize;
+                    let step = (d.curves.len() / 6).max(1);
+                    for cv in d.curves.iter().step_by(step) {
+                        let mx = 0.125 * cv[0].0 + 0.375 * cv[1].0 + 0.375 * cv[2].0 + 0.125 * cv[3].0;
+                        let my = 0.125 * cv[0].1 + 0.375 * cv[1].1 + 0.375 * cv[2].1 + 0.125 * cv[3].1;
+                        let tx = cv[3].0 - cv[0].0;
+                        let ty = cv[3].1 - cv[0].1;
+                        let tl = (tx * tx + ty * ty).sqrt();
+                        if tl < 1e-3 { continue; }
+                        let (nx, ny) = (-ty / tl, tx / tl);
+                        for side in [-1.0f64, 1.0] {
+                            let sx = ((mx + nx * half * side) / scale).round() as i32;
+                            let sy = ((my + ny * half * side) / scale).round() as i32;
+                            if sx >= 0 && sy >= 0 && (sx as usize) < w && (sy as usize) < h {
+                                outer_tot += 1;
+                                if dark[sy as usize * w + sx as usize] {
+                                    outer_dark += 1;
+                                }
+                            }
+                        }
+                    }
+                    if d.width / scale >= 3.3 && outer_tot > 0 && outer_dark * 5 >= outer_tot {
+                        let frac = (outer_dark as f64 / outer_tot as f64).clamp(0.20, 1.0);
+                        d.width += (1.20 + 0.45 * (frac - 0.20) / 0.80) * scale;
+                    }
+                    d
+                })
+                .collect();
+            crate::centerline::join_stroke_endpoints(&mut layer_strokes, &dark, w, h, scale);
+            out.strokes.push(StrokeLayer { color, strokes: layer_strokes });
         }
     }
     out

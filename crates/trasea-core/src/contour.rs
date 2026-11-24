@@ -302,18 +302,60 @@ pub fn build_die_cut_contours(doc: &Doc, opts: &ExportOptions) -> Vec<Contour> {
     if !opts.die_cut_contour || doc.width == 0 || doc.height == 0 {
         return Vec::new();
     }
+    let offset_mm = if opts.die_cut_offset_mm.is_finite() {
+        opts.die_cut_offset_mm.clamp(0.5, 10.0)
+    } else {
+        2.0
+    };
+    build_offset_contours_ex(doc, opts, offset_mm, 96.0)
+}
+
+/// Build smooth sticker backing contours (`die_cut_offset_mm + sticker_bleed_mm`) concentric with `CutContour`.
+pub fn build_sticker_backing_contours(doc: &Doc, opts: &ExportOptions) -> Vec<Contour> {
+    if !opts.die_cut_contour || !opts.sticker_backing || doc.width == 0 || doc.height == 0 {
+        return Vec::new();
+    }
+    let base_mm = if opts.die_cut_offset_mm.is_finite() {
+        opts.die_cut_offset_mm.clamp(0.5, 10.0)
+    } else {
+        2.0
+    };
+    let bleed_mm = if opts.sticker_bleed_mm.is_finite() {
+        opts.sticker_bleed_mm.clamp(0.0, 3.0)
+    } else {
+        0.0
+    };
+    build_offset_contours_ex(doc, opts, base_mm + bleed_mm, 96.0)
+}
+
+/// Generalized isotropic EDT outer offset contour builder at `offset_mm` and `dpi`.
+pub fn build_offset_contours(doc: &Doc, offset_mm: f64, dpi: f64) -> Vec<Contour> {
+    let opts = ExportOptions {
+        die_cut_contour: true,
+        die_cut_offset_mm: offset_mm,
+        ..ExportOptions::default()
+    };
+    build_offset_contours_ex(doc, &opts, offset_mm, dpi)
+}
+
+/// Generalized isotropic EDT outer offset contour builder respecting `opts` (lines_as, bridge_islands, target width).
+pub fn build_offset_contours_ex(doc: &Doc, opts: &ExportOptions, offset_mm: f64, dpi: f64) -> Vec<Contour> {
+    if doc.width == 0 || doc.height == 0 {
+        return Vec::new();
+    }
     let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
+    let dpi_mm_per_px = if dpi.is_finite() && dpi > 0.0 { 25.4 / dpi } else { MM_PER_PX_96DPI };
 
     // Convert physical offset (mm) to source pixels.
     let mm_per_px = match opts.dxf_unit {
         DxfUnit::Mm => match opts.dxf_target_width_mm {
             Some(tw) if tw.is_finite() && tw > 0.0 => tw as f64 / doc.width as f64,
-            _ => MM_PER_PX_96DPI,
+            _ => dpi_mm_per_px,
         },
-        DxfUnit::Px => MM_PER_PX_96DPI,
+        DxfUnit::Px => dpi_mm_per_px,
     };
-    let offset_mm = if opts.die_cut_offset_mm.is_finite() {
-        opts.die_cut_offset_mm.clamp(0.5, 10.0)
+    let offset_mm = if offset_mm.is_finite() {
+        offset_mm.clamp(0.0, 15.0)
     } else {
         2.0
     };

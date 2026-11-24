@@ -3,10 +3,13 @@ import Licenses from "./Licenses";
 import {
 	DEFAULT_APP_SETTINGS,
 	DEFAULT_SHORTCUTS,
-	getSettingsPath,
+	checkForUpdate,
+	getAppMode,
+	openExternalUrl,
 	licenses as fetchLicenses,
-	openFolder,
+	type AppModeInfo,
 	type AppSettings,
+	type UpdateInfo,
 	type CanvasBgChoice,
 	type ColorSpace,
 	type DxfUnit,
@@ -41,8 +44,6 @@ const SHORTCUT_ORDER: ShortcutAction[] = [
 	"openSettings",
 ];
 
-const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
-
 export default function SettingsModal({
 	settings,
 	initialTab = "general",
@@ -53,13 +54,16 @@ export default function SettingsModal({
 }: Props) {
 	const { t } = useI18n();
 	const [tab, setTab] = useState<SettingsTab>(initialTab);
-	const [settingsPath, setSettingsPath] = useState("");
+	const [appMode, setAppMode] = useState<AppModeInfo | null>(null);
+	const [checkingUpdate, setCheckingUpdate] = useState(false);
+	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+	const [updateErr, setUpdateErr] = useState("");
 	const [licensesMd, setLicensesMd] = useState("");
 	const [recording, setRecording] = useState<ShortcutAction | null>(null);
 	const [msg, setMsg] = useState("");
 
 	useEffect(() => {
-		void getSettingsPath().then(setSettingsPath).catch(() => {});
+		void getAppMode().then(setAppMode).catch(() => {});
 		void fetchLicenses().then(setLicensesMd).catch(() => {});
 	}, []);
 
@@ -138,6 +142,19 @@ export default function SettingsModal({
 		setMsg(t.settingsSavedMsg);
 	};
 
+	const runCheckUpdate = async () => {
+		setCheckingUpdate(true);
+		setUpdateErr("");
+		try {
+			const info = await checkForUpdate();
+			setUpdateInfo(info);
+		} catch (e) {
+			setUpdateInfo(null);
+			setUpdateErr(String(e));
+		} finally {
+			setCheckingUpdate(false);
+		}
+	};
 	return (
 		<div className="modal" role="dialog" aria-modal="true" aria-label={t.settingsModalTitle} onClick={onClose}>
 			<div className="modal-box settings-modal-box" onClick={e => e.stopPropagation()}>
@@ -197,17 +214,6 @@ export default function SettingsModal({
 								<span>{t.settingOpenFolderExport}</span>
 							</label>
 
-							{settingsPath && (
-								<div className="setting-path-box">
-									<div className="row between">
-										<span className="muted">{t.settingConfigPath}</span>
-										<button className="small" onClick={() => void openFolder(parentDir(settingsPath)).catch(() => {})}>
-											{t.openConfigFolder}
-										</button>
-									</div>
-									<code className="batch-path">{settingsPath}</code>
-								</div>
-							)}
 						</div>
 					)}
 
@@ -343,10 +349,57 @@ export default function SettingsModal({
 					)}
 
 					{tab === "privacy" && (
-						<Licenses
-							markdown={licensesMd}
-							initialTab={licenseSubTab}
-						/>
+						<div className="settings-section">
+							<div className="update-card">
+								<div className="row between">
+									<div>
+										<strong>{t.updateSectionTitle}</strong>
+										<div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+											{t.appModeLabel}: {appMode?.isPortable ? t.appModePortable : t.appModeInstalled}
+											{appMode ? ` · v${appMode.currentVersion}` : ""}
+										</div>
+									</div>
+									<button className="small" onClick={() => void runCheckUpdate()} disabled={checkingUpdate}>
+										{checkingUpdate ? t.updateChecking : t.updateCheckBtn}
+									</button>
+								</div>
+								<label className="check inline" style={{ marginTop: 8 }}>
+									<input
+										type="checkbox"
+										checked={settings.autoCheckUpdate}
+										onChange={e => patch({ autoCheckUpdate: e.target.checked })}
+									/>
+									<span>{t.updateAutoCheckLabel}</span>
+								</label>
+								{updateErr && (
+									<div className="hint" role="status" style={{ marginTop: 8, color: "var(--warn, #f59e0b)" }}>
+										{updateErr}
+									</div>
+								)}
+								{updateInfo && !updateInfo.hasUpdate && (
+									<div className="ok" role="status" style={{ marginTop: 8 }}>
+										{t.updateUpToDate} (v{updateInfo.currentVersion})
+									</div>
+								)}
+								{updateInfo && updateInfo.hasUpdate && (
+									<div className="update-available" role="status" style={{ marginTop: 8 }}>
+										<div className="row between">
+											<strong>{t.updateAvailable}: v{updateInfo.latestVersion}</strong>
+											<button className="small primary" onClick={() => void openExternalUrl(updateInfo.downloadUrl).catch(() => {})}>
+												{t.updateDownloadBtn}
+											</button>
+										</div>
+										{updateInfo.releaseNotes && (
+											<pre className="update-notes">{updateInfo.releaseNotes}</pre>
+										)}
+									</div>
+								)}
+							</div>
+							<Licenses
+								markdown={licensesMd}
+								initialTab={licenseSubTab}
+							/>
+						</div>
 					)}
 				</div>
 

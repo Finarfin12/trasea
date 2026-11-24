@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Trasea 1.4.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
+Trasea 1.5.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
 
 ## Bundled programs, models, and frontend libraries
 

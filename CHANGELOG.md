@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0] "Vector Polish & Public Distribution"
+
+- **Cleaner curves & fewer nodes (Post-Fit Curve Merge, `fit.rs`).** Adaptive tangent window `(n / 12).clamp(5, 14)` in `fit_cubic` plus greedy `merge_adjacent_beziers` on smooth runs between real corners (skipped inside Detail brush zones) cuts redundant nodes on smooth icons (`G15-09`: 28 nodes, MAE 0.249) and benchmark illustrations/logos (-0.7% to -6.3%) while preserving sharp corners (`G15-10`).
+- **Stroke corner & junction closing (`centerline.rs`, `pipeline.rs`).** Added `join_stroke_endpoints` verified against `dark_mask` (>= 75% dark bridge samples, 0 false bridges across white gaps) plus boundary-verified width recovery for bold clipped outlines (`w >= 3.3 px`). On `outline_landscape.png`, exact 0-px recall rises from 89.2%/91.4% to **93.13%** (normal) and **95.57%** (hard), while gaps >= 6 px drop by 54% (39 -> 18) and 44% (18 -> 10). Consistent round cap/join verified across SVG, PDF, and EPS.
+- **Sticker Offset / Bleed (`StickerBacking`, `contour.rs`, `export.rs`, `project.rs`, `trasea-cli.rs`, `src/App.tsx`).** Generalized `build_offset_contours(doc, offset_mm, dpi)` and added `sticker_backing`, `sticker_backing_color` (default `#FFFFFF`), and `sticker_bleed_mm` (`0.0..=3.0`) with `#[serde(default)]` for 100% `.trasea` 1.0–1.4 backward compatibility. Renders `StickerBacking` beneath `Bidang warna` in SVG, PDF (RGB & CMYK with pure `0 0 0 0 k` white), and EPS with expanded bounds; excluded from DXF (`CUTCONTOUR` only). Added CLI flags `--die-cut-contour`, `--sticker-backing`, `--sticker-backing-color`, `--sticker-bleed-mm` and Export tab UI controls with live preview.
+- **Privacy-first update check (`src-tauri/src/updater.rs`, `SettingsModal.tsx`, `App.tsx`).** Manual **Check for updates** in Settings → Privacy & Credits (optional startup toggle Off by default) plus lightweight header banner when a newer release exists. Queries only the public GitHub Releases endpoint via OS `curl` (5 s connect / 8 s total timeout, 0 cookies, 0 telemetry); `trasea-core` remains 0 network crates and WebView2 isolation is unchanged.
+- **Windows Portable mode (`src-tauri/src/main.rs`, `scripts/build-portable.ps1`).** When `portable.flag` is present next to `trasea.exe`, settings, custom presets, and palettes are stored in `<exe_dir>/data/` with automatic read-only fallback to `%APPDATA%`. Packaged as `Trasea_1.5.0_x64-portable.zip`.
+- **Settings UI polish.** Removed the redundant settings file path box from General settings.
+- **Tests & Audit:** 104/104 tests pass in `trasea-core` (94 existing + `G15-01..G15-10` in `tests/core15.rs`), `cargo check --workspace` 0 errors, `tsc` + `vite build` 0 errors, 0 network crates & 0 GPL/AGPL crates in `trasea-core`, `docs/LICENSE-AUDIT-1.5.0.md` published.
 ## [1.4.0] "All Features Unlocked"
 
 Trasea is free: the license system is removed completely and every feature is open to everyone.

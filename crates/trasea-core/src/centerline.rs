@@ -966,3 +966,247 @@ pub fn extract_full_centerline(
         strokes,
     }
 }
+
+/// Close small gaps where thin strokes meet (V-corners, T-junctions, and collinear breaks)
+/// that morphological opening clipped out of the thin-line mask.
+///
+/// Each candidate bridge is verified against `dark_mask` (>= 75% of sampled pixels along
+/// the bridge must lie on `dark_mask`), preventing false bridges across light gaps.
+pub fn join_stroke_endpoints(
+    strokes: &mut [crate::export::StrokeData],
+    dark_mask: &[bool],
+    w: usize,
+    h: usize,
+    scale: f64,
+) {
+    if strokes.is_empty() || w == 0 || h == 0 || dark_mask.len() < w * h {
+        return;
+    }
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let (wi, hi) = (w as i32, h as i32);
+
+    let is_dark_exact = |sx: i32, sy: i32| -> bool {
+        sx >= 0 && sy >= 0 && sx < wi && sy < hi && dark_mask[sy as usize * w + sx as usize]
+    };
+    let is_dark_near = |sx: i32, sy: i32| -> bool {
+        is_dark_exact(sx, sy)
+            || is_dark_exact(sx + 1, sy)
+            || is_dark_exact(sx - 1, sy)
+            || is_dark_exact(sx, sy + 1)
+            || is_dark_exact(sx, sy - 1)
+    };
+
+    // Sample every 1 source pixel along a -> b; require >= 75% of sampled points to be dark.
+    // Endpoints within 1 px of the existing stroke allow 1-px neighbor tolerance; interior points
+    // require strict dark_mask membership so narrow white gaps (e.g. 6 px) are never bridged.
+    let segment_is_dark = |a: (f64, f64), b: (f64, f64)| -> bool {
+        let dx = b.0 - a.0;
+        let dy = b.1 - a.1;
+        let len_src = (dx * dx + dy * dy).sqrt() / scale;
+        if len_src < 0.25 {
+            return true;
+        }
+        let steps = (len_src.ceil() as usize).max(2);
+        let mut hits = 0usize;
+        let mut total = 0usize;
+        for k in 1..steps {
+            let t = k as f64 / steps as f64;
+            let sx = ((a.0 + dx * t) / scale).round() as i32;
+            let sy = ((a.1 + dy * t) / scale).round() as i32;
+            total += 1;
+            let ok = if k == 1 || k + 1 == steps {
+                is_dark_near(sx, sy)
+            } else {
+                is_dark_exact(sx, sy)
+            };
+            if ok {
+                hits += 1;
+            }
+        }
+        total > 0 && hits * 4 >= total * 3
+    };
+
+    let dist = |a: (f64, f64), b: (f64, f64)| -> f64 { ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt() };
+    let unit = |vx: f64, vy: f64| -> Option<(f64, f64)> {
+        let l = (vx * vx + vy * vy).sqrt();
+        if l > 1e-6 { Some((vx / l, vy / l)) } else { None }
+    };
+    let eval_cubic = |c: &[(f64, f64); 4], t: f64| -> (f64, f64) {
+        let u = 1.0 - t;
+        let x = u * u * u * c[0].0 + 3.0 * u * u * t * c[1].0 + 3.0 * u * t * t * c[2].0 + t * t * t * c[3].0;
+        let y = u * u * u * c[0].1 + 3.0 * u * u * t * c[1].1 + 3.0 * u * t * t * c[2].1 + t * t * t * c[3].1;
+        (x, y)
+    };
+
+    #[derive(Clone, Copy)]
+    struct Ep {
+        si: usize,
+        is_start: bool,
+        p: (f64, f64),
+        d: (f64, f64),
+        w: f64,
+    }
+
+    let mut eps: Vec<Ep> = Vec::new();
+    let mut segs: Vec<(usize, (f64, f64), (f64, f64))> = Vec::new();
+    for (si, st) in strokes.iter().enumerate() {
+        if st.curves.is_empty() {
+            continue;
+        }
+        for c in &st.curves {
+            let mut prev = c[0];
+            for k in 1..=4 {
+                let pt = eval_cubic(c, k as f64 / 4.0);
+                segs.push((si, prev, pt));
+                prev = pt;
+            }
+        }
+        let first = st.curves[0][0];
+        let last = st.curves[st.curves.len() - 1][3];
+        if dist(first, last) < st.width * 1.5 {
+            continue;
+        }
+        let c0 = &st.curves[0];
+        if let Some(d) = unit(c0[0].0 - c0[1].0, c0[0].1 - c0[1].1)
+            .or_else(|| unit(c0[0].0 - c0[2].0, c0[0].1 - c0[2].1))
+            .or_else(|| unit(c0[0].0 - c0[3].0, c0[0].1 - c0[3].1))
+        {
+            eps.push(Ep { si, is_start: true, p: first, d, w: st.width });
+        }
+        let cn = &st.curves[st.curves.len() - 1];
+        if let Some(d) = unit(cn[3].0 - cn[2].0, cn[3].1 - cn[2].1)
+            .or_else(|| unit(cn[3].0 - cn[1].0, cn[3].1 - cn[1].1))
+            .or_else(|| unit(cn[3].0 - cn[0].0, cn[3].1 - cn[0].1))
+        {
+            eps.push(Ep { si, is_start: false, p: last, d, w: st.width });
+        }
+    }
+
+    let mut extensions: Vec<(usize, bool, (f64, f64), (f64, f64))> = Vec::new();
+    for (ai, a) in eps.iter().enumerate() {
+        let w_src = a.w / scale;
+        let r = (w_src * 2.2).clamp(4.5, 9.0) * scale;
+        let mut best: Option<(f64, (f64, f64))> = None;
+
+        // Type A: Endpoint-to-Endpoint (V-corner ray intersection or facing collinear)
+        for (bi, b) in eps.iter().enumerate() {
+            if ai == bi || (a.si == b.si && strokes[a.si].curves.len() < 2) {
+                continue;
+            }
+            let d_ab = dist(a.p, b.p);
+            if d_ab > r * 2.0 {
+                continue;
+            }
+            let det = b.d.0 * a.d.1 - b.d.1 * a.d.0;
+            if det.abs() > 0.12 {
+                let rx = b.p.0 - a.p.0;
+                let ry = b.p.1 - a.p.1;
+                let t_a = (b.d.0 * ry - b.d.1 * rx) / det;
+                let t_b = (a.d.0 * ry - a.d.1 * rx) / det;
+                if t_a >= 0.25 * scale && t_a <= r && t_b >= 0.25 * scale && t_b <= r {
+                    let x = (a.p.0 + t_a * a.d.0, a.p.1 + t_a * a.d.1);
+                    if best.map_or(true, |(bd, _)| t_a < bd) && segment_is_dark(a.p, x) && segment_is_dark(b.p, x) {
+                        best = Some((t_a, x));
+                    }
+                }
+            } else if d_ab >= 0.5 * scale && d_ab <= r {
+                let ux = (b.p.0 - a.p.0) / d_ab;
+                let uy = (b.p.1 - a.p.1) / d_ab;
+                if ux * a.d.0 + uy * a.d.1 > 0.75 && (-ux) * b.d.0 + (-uy) * b.d.1 > 0.75 {
+                    let mid = ((a.p.0 + b.p.0) * 0.5, (a.p.1 + b.p.1) * 0.5);
+                    let hd = d_ab * 0.5;
+                    if best.map_or(true, |(bd, _)| hd < bd) && segment_is_dark(a.p, b.p) {
+                        best = Some((hd, mid));
+                    }
+                }
+            }
+        }
+
+        // Type B: Endpoint-to-Segment (T-junction)
+        for &(sj, s0, s1) in &segs {
+            if sj == a.si {
+                continue;
+            }
+            let min_x = s0.0.min(s1.0) - r;
+            let max_x = s0.0.max(s1.0) + r;
+            let min_y = s0.1.min(s1.1) - r;
+            let max_y = s0.1.max(s1.1) + r;
+            if a.p.0 < min_x || a.p.0 > max_x || a.p.1 < min_y || a.p.1 > max_y {
+                continue;
+            }
+            let sx = s1.0 - s0.0;
+            let sy = s1.1 - s0.1;
+            let slen2 = sx * sx + sy * sy;
+            let t = if slen2 > 1e-9 {
+                (((a.p.0 - s0.0) * sx + (a.p.1 - s0.1) * sy) / slen2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let cx = (s0.0 + sx * t, s0.1 + sy * t);
+            let cd = dist(a.p, cx);
+            if cd >= 0.25 * scale && cd <= r && best.map_or(true, |(bd, _)| cd < bd) {
+                let dot = ((cx.0 - a.p.0) * a.d.0 + (cx.1 - a.p.1) * a.d.1) / cd;
+                if dot > 0.60 && segment_is_dark(a.p, cx) {
+                    best = Some((cd, cx));
+                }
+            }
+            let det = a.d.0 * (-sy) - a.d.1 * (-sx);
+            if det.abs() > 1e-6 {
+                let rx = s0.0 - a.p.0;
+                let ry = s0.1 - a.p.1;
+                let t_ray = (rx * (-sy) - ry * (-sx)) / det;
+                let u_seg = (a.d.0 * ry - a.d.1 * rx) / det;
+                if t_ray >= 0.25 * scale && t_ray <= r && (0.0..=1.0).contains(&u_seg) {
+                    let x = (a.p.0 + t_ray * a.d.0, a.p.1 + t_ray * a.d.1);
+                    if best.map_or(true, |(bd, _)| t_ray < bd) && segment_is_dark(a.p, x) {
+                        best = Some((t_ray, x));
+                    }
+                }
+            }
+        }
+
+        if let Some((_, x)) = best {
+            extensions.push((a.si, a.is_start, a.d, x));
+        }
+    }
+
+    let lerp = |a: (f64, f64), b: (f64, f64), t: f64| -> (f64, f64) {
+        (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+    };
+    for (si, is_start, d, x) in extensions {
+        let curves = &mut strokes[si].curves;
+        if curves.is_empty() {
+            continue;
+        }
+        if is_start {
+            let p = curves[0][0];
+            let l = dist(p, x);
+            if l < 1e-6 {
+                continue;
+            }
+            let dot = ((x.0 - p.0) * d.0 + (x.1 - p.1) * d.1) / l;
+            if dot > 0.85 {
+                let c0 = curves[0];
+                let shift = (x.0 - p.0, x.1 - p.1);
+                curves[0] = [x, (c0[1].0 + shift.0 * 0.5, c0[1].1 + shift.1 * 0.5), c0[2], c0[3]];
+            } else {
+                curves.insert(0, [x, lerp(x, p, 1.0 / 3.0), lerp(x, p, 2.0 / 3.0), p]);
+            }
+        } else {
+            let last_idx = curves.len() - 1;
+            let p = curves[last_idx][3];
+            let l = dist(p, x);
+            if l < 1e-6 {
+                continue;
+            }
+            let dot = ((x.0 - p.0) * d.0 + (x.1 - p.1) * d.1) / l;
+            if dot > 0.85 {
+                let cn = curves[last_idx];
+                let shift = (x.0 - p.0, x.1 - p.1);
+                curves[last_idx] = [cn[0], cn[1], (cn[2].0 + shift.0 * 0.5, cn[2].1 + shift.1 * 0.5), x];
+            } else {
+                curves.push([p, lerp(p, x, 1.0 / 3.0), lerp(p, x, 2.0 / 3.0), x]);
+            }
+        }
+    }
+}

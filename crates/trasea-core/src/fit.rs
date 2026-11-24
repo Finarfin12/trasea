@@ -371,19 +371,103 @@ fn fit_cubic(d: &[P], t1: P, t2: P, err2: f64, out: &mut Vec<Bezier>, depth: usi
         return;
     }
     // a wide baseline: with +-1 px neighbours the direction is dominated by pixel noise
-    let k = 5.min(split).min(n - 1 - split).max(1);
+    let k = (n / 12).clamp(5, 14).min(split).min(n - 1 - split).max(1);
     let center = norm(sub(d[split - k], d[split + k]));
     fit_cubic(&d[..=split], t1, center, err2, out, depth + 1);
     fit_cubic(&d[split..], mul(center, -1.0), t2, err2, out, depth + 1);
 }
 
 /// Fit an open run of points with cubic Beziers; `t1`/`t2` point into the run from each end.
-fn fit_open(d: &[P], t1: P, t2: P, tol: f64) -> Vec<Bezier> {
+/// Post-fit greedy merge of adjacent smooth cubic Bézier segments within a single run
+/// (between real corners). Reduces redundant nodes on long smooth curves while preserving
+/// accuracy (`max_err <= tol * 1.15`) and never merging across real corners.
+fn merge_adjacent_beziers(curves: &mut Vec<Bezier>, tol: f64) {
+    if curves.len() < 2 || !tol.is_finite() || tol <= 0.0 {
+        return;
+    }
+    let max_err2 = (tol * 0.75) * (tol * 0.75);
+    const SAMPLES: usize = 16;
+    let mut changed = true;
+    while changed && curves.len() >= 2 {
+        changed = false;
+        let mut i = 0usize;
+        while i + 1 < curves.len() {
+            let b0 = curves[i];
+            let b1 = curves[i + 1];
+            // Must be continuous and smoothly joined (do not merge across a cusp/corner)
+            if len(sub(b0[3], b1[0])) > 1e-2 {
+                i += 1;
+                continue;
+            }
+            let t_out = norm(sub(b0[3], b0[2]));
+            let t_in = norm(sub(b1[1], b1[0]));
+            if len(t_out) > 0.5 && len(t_in) > 0.5 && dot(t_out, t_in) < 0.70 {
+                i += 1;
+                continue;
+            }
+            let mut pts = Vec::with_capacity(SAMPLES * 2 + 1);
+            for k in 0..SAMPLES {
+                pts.push(bezier_at(&b0, k as f64 / SAMPLES as f64));
+            }
+            for k in 0..=SAMPLES {
+                pts.push(bezier_at(&b1, k as f64 / SAMPLES as f64));
+            }
+            let t1 = {
+                let v = norm(sub(b0[1], b0[0]));
+                if len(v) > 0.5 { v } else { norm(sub(b0[3], b0[0])) }
+            };
+            let t2 = {
+                let v = norm(sub(b1[2], b1[3]));
+                if len(v) > 0.5 { v } else { norm(sub(b1[0], b1[3])) }
+            };
+            let mut u = chord_params(&pts);
+            let mut m = generate(&pts, &u, t1, t2);
+            let mut err2 = max_error(&pts, &m, &u).0;
+            if err2 > max_err2 && err2 < max_err2 * 16.0 {
+                for _ in 0..4 {
+                    u = reparam(&m, &pts, &u);
+                    m = generate(&pts, &u, t1, t2);
+                    err2 = max_error(&pts, &m, &u).0;
+                    if err2 <= max_err2 {
+                        break;
+                    }
+                }
+            }
+            let run_len: f64 = pts.windows(2).map(|w| len(sub(w[1], w[0]))).sum();
+            let h1 = sub(m[1], m[0]);
+            let h2 = sub(m[2], m[3]);
+            let l1 = len(h1);
+            let l2 = len(h2);
+            let handles_ok = run_len > 1e-6
+                && dot(h1, t1) > 0.0
+                && dot(h2, t2) > 0.0
+                && l1 >= 1e-4 * run_len
+                && l2 >= 1e-4 * run_len
+                && l1 <= 0.55 * run_len
+                && l2 <= 0.55 * run_len;
+            if err2 <= max_err2 && handles_ok {
+                curves[i] = m;
+                curves.remove(i + 1);
+                changed = true;
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+fn fit_open_raw(d: &[P], t1: P, t2: P, tol: f64) -> Vec<Bezier> {
     let mut out = Vec::new();
     if d.len() < 2 {
         return out;
     }
     fit_cubic(d, t1, t2, tol * tol, &mut out, 0);
+    out
+}
+
+fn fit_open(d: &[P], t1: P, t2: P, tol: f64) -> Vec<Bezier> {
+    let mut out = fit_open_raw(d, t1, t2, tol);
+    merge_adjacent_beziers(&mut out, tol);
     out
 }
 
@@ -516,7 +600,7 @@ pub fn fit_polyline(pts: &[P], tol: f64) -> Vec<Bezier> {
     let m = 4.min(pts.len() - 1);
     let t1 = norm(sub(pts[m], pts[0]));
     let t2 = norm(sub(pts[pts.len() - 1 - m], pts[pts.len() - 1]));
-    fit_open(pts, t1, t2, tol)
+    fit_open_raw(pts, t1, t2, tol)
 }
 
 /// `fit_open` with a brush zone function: the run is cut where the zone changes and every piece is fitted with the
@@ -560,7 +644,10 @@ fn fit_open_z(d: &[P], t1: P, t2: P, tol: f64, zone: Option<ZoneFn>) -> Vec<Bezi
         let ta = if a == 0 { t1 } else { mul(norm(sub(d[a - wide.max(1)], d[(a + wide.max(1)).min(d.len() - 1)])), -1.0) };
         let wide_b = 5.min(b).min(d.len() - 1 - b);
         let tb = if b == d.len() - 1 { t2 } else { norm(sub(d[b - wide_b.max(1)], d[(b + wide_b.max(1)).min(d.len() - 1)])) };
-        fit_cubic(piece, ta, tb, local * local, &mut out, 0);
+        let mut piece_out = Vec::new();
+        fit_cubic(piece, ta, tb, local * local, &mut piece_out, 0);
+        if zone_of_piece != crate::brush::ZONE_DETAIL { merge_adjacent_beziers(&mut piece_out, local); }
+        out.extend(piece_out);
     }
     out
 }

@@ -9,7 +9,7 @@ use crate::color::{
     eps_string_escape, lookup_spot_name, parse_hex_rgb, pdf_name_encode, rgb_arr_to_cmyk,
     sanitize_spot_name, ColorSpace, SpotColorMapping,
 };
-use crate::contour::{build_die_cut_contours, die_cut_bounds_svg};
+use crate::contour::{build_die_cut_contours, build_sticker_backing_contours, die_cut_bounds_svg};
 use crate::dxf::DxfUnit;
 use crate::path_edit::group_contours_into_compounds;
 use crate::primitives::Primitive;
@@ -39,6 +39,14 @@ fn default_die_cut_spot_name() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_sticker_backing_color() -> String {
+    "#FFFFFF".to_string()
+}
+
+fn sticker_backing_rgb(opts: &ExportOptions) -> Rgb {
+    parse_hex_rgb(&opts.sticker_backing_color).unwrap_or([255, 255, 255])
 }
 
 /// Thin lines of one colour, as strokes (centerline + width), in working pixels.
@@ -123,6 +131,15 @@ pub struct ExportOptions {
     /// Named RIP spot colour mappings (e.g. `#FF0000 -> "Spot_Red"`).
     #[serde(default)]
     pub spot_colors: Vec<SpotColorMapping>,
+    /// Emit a solid sticker backing layer beneath `Bidang warna` concentric with `CutContour`.
+    #[serde(default)]
+    pub sticker_backing: bool,
+    /// Fill hex colour for `StickerBacking` (default `"#FFFFFF"`).
+    #[serde(default = "default_sticker_backing_color")]
+    pub sticker_backing_color: String,
+    /// Additional bleed outside `CutContour` in mm (`0.0..=3.0`, default `0.0`).
+    #[serde(default)]
+    pub sticker_bleed_mm: f64,
 }
 
 impl Default for ExportOptions {
@@ -140,6 +157,9 @@ impl Default for ExportOptions {
             die_cut_spot_name: default_die_cut_spot_name(),
             die_cut_bridge_islands: true,
             spot_colors: Vec::new(),
+            sticker_backing: false,
+            sticker_backing_color: default_sticker_backing_color(),
+            sticker_bleed_mm: 0.0,
         }
     }
 }
@@ -356,10 +376,16 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
     } else {
         Vec::new()
     };
-    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+    let backing_contours = build_sticker_backing_contours(doc, opts);
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() && backing_contours.is_empty() {
         (0.0, 0.0, doc.width as f64, doc.height as f64)
-    } else {
+    } else if backing_contours.is_empty() {
         die_cut_bounds_svg(doc, &die_cut_contours)
+    } else {
+        let mut all = Vec::with_capacity(die_cut_contours.len() + backing_contours.len());
+        all.extend_from_slice(&die_cut_contours);
+        all.extend_from_slice(&backing_contours);
+        die_cut_bounds_svg(doc, &all)
     };
     let content_w = dc_max_x - dc_min_x;
     let content_h = dc_max_y - dc_min_y;
@@ -430,6 +456,18 @@ pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
         s.push_str("</g>\n");
     } else if !opts.strip_background && !has_canvas_bg && doc.fields.is_empty() {
         s.push_str("<g id=\"Latar\" data-name=\"Latar\">\n</g>\n");
+    }
+    // 1b. Optional StickerBacking layer (solid fill beneath Bidang warna)
+    if !backing_contours.is_empty() {
+        let bg_hex = hex(sticker_backing_rgb(opts));
+        s.push_str("<g id=\"StickerBacking\" data-name=\"StickerBacking\">\n");
+        for c in &backing_contours {
+            s.push_str(&format!(
+                "<path fill=\"{bg_hex}\" fill-rule=\"evenodd\" d=\"{}\"/>\n",
+                path_d(std::slice::from_ref(c), k)
+            ));
+        }
+        s.push_str("</g>\n");
     }
     // 2. Bidang warna: one sub-group per colour
     s.push_str("<g id=\"Bidang_warna\" data-name=\"Bidang warna\">\n");
@@ -849,10 +887,16 @@ fn to_pdf_native(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) ->
     } else {
         Vec::new()
     };
-    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+    let backing_contours = build_sticker_backing_contours(doc, opts);
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() && backing_contours.is_empty() {
         (0.0, 0.0, doc.width as f64, doc.height as f64)
-    } else {
+    } else if backing_contours.is_empty() {
         die_cut_bounds_svg(doc, &die_cut_contours)
+    } else {
+        let mut all = Vec::with_capacity(die_cut_contours.len() + backing_contours.len());
+        all.extend_from_slice(&die_cut_contours);
+        all.extend_from_slice(&backing_contours);
+        die_cut_bounds_svg(doc, &all)
     };
     let shift_x = (-dc_min_x).max(0.0);
     let shift_y = (-dc_min_y).max(0.0);
@@ -938,10 +982,20 @@ fn to_pdf_native(doc: &Doc, opts: &ExportOptions, footer_label: Option<&str>) ->
         }
     };
 
-    // 1. Background + 2. Colour fields
+    // 1. Background + 1b. StickerBacking + 2. Colour fields
     let has_canvas_bg = doc.fields.first().map_or(false, |l| l.canvas);
     if !opts.strip_background && has_canvas_bg {
         emit_layer(&doc.fields[0], false, &mut stream);
+    }
+    if !backing_contours.is_empty() {
+        let bg_rgb = sticker_backing_rgb(opts);
+        if opts.color_space == ColorSpace::Cmyk && bg_rgb == [255, 255, 255] {
+            stream.push_str("0 0 0 0 k\n");
+        } else {
+            set_fill(bg_rgb, &mut stream);
+        }
+        emit_contours(&backing_contours, &mut stream);
+        stream.push_str("f*\n");
     }
     let skip_first = if has_canvas_bg { 1 } else { 0 };
     for layer in doc.fields.iter().skip(skip_first) {
@@ -1333,10 +1387,16 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
     } else {
         Vec::new()
     };
-    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() {
+    let backing_contours = build_sticker_backing_contours(doc, opts);
+    let (dc_min_x, dc_min_y, dc_max_x, dc_max_y) = if die_cut_contours.is_empty() && backing_contours.is_empty() {
         (0.0, 0.0, doc.width as f64, doc.height as f64)
-    } else {
+    } else if backing_contours.is_empty() {
         die_cut_bounds_svg(doc, &die_cut_contours)
+    } else {
+        let mut all = Vec::with_capacity(die_cut_contours.len() + backing_contours.len());
+        all.extend_from_slice(&die_cut_contours);
+        all.extend_from_slice(&backing_contours);
+        die_cut_bounds_svg(doc, &all)
     };
     let shift_x = (-dc_min_x).max(0.0);
     let shift_y = (-dc_min_y).max(0.0);
@@ -1440,10 +1500,22 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
         }
     };
 
-    // 1. Latar + 2. Bidang warna
+    // 1. Latar + 1b. StickerBacking + 2. Bidang warna
     let has_canvas_bg = doc.fields.first().map_or(false, |l| l.canvas);
     if !opts.strip_background && has_canvas_bg {
         emit_layer(&doc.fields[0], false, &mut s);
+    }
+    if !backing_contours.is_empty() {
+        let bg_rgb = sticker_backing_rgb(opts);
+        s.push_str("% StickerBacking\n");
+        if cs == ColorSpace::Cmyk && bg_rgb == [255, 255, 255] {
+            s.push_str("0 0 0 0 CMYK\n");
+        } else {
+            s.push_str(&ps_color(bg_rgb, cs, &spots));
+        }
+        s.push_str("newpath\n");
+        emit_contours(&backing_contours, &mut s);
+        s.push_str("F\n");
     }
     let skip_first = if has_canvas_bg { 1 } else { 0 };
     for layer in doc.fields.iter().skip(skip_first) {

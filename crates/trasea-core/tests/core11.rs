@@ -486,6 +486,9 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
             die_cut_spot_name: "CutContour".into(),
             die_cut_bridge_islands: true,
             spot_colors: vec![],
+            sticker_backing: false,
+            sticker_backing_color: "#FFFFFF".into(),
+            sticker_bleed_mm: 0.0,
         },
     };
     save_project(&v11_path, &proj11).unwrap();
