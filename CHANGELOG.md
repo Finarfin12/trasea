@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.1] "v2 App Logo & README Banner"
+
+- **Refreshed v2 App Icon (`src-tauri/icons/*`, `src/assets/trasea-icon-mini.svg`, `public/favicon.svg`, `docs/branding/*`).** Regenerated all Windows (`.ico`), macOS (`.icns`), PNG, header, and favicon icons from the v2 white-card T-mark logo.
+- **Outlined v2 README Banner (`docs/branding/trasea-logo-long.svg`, `docs/branding/trasea-logo-long.png`).** Updated the README banner to the v2 design with all `<text>` converted to pure `<path>` outlines (0 `<text>` elements) for consistent rendering on GitHub.
+
 ## [1.6.0] "macOS Build & External AI Engine"
 
 - **macOS support & GitHub Actions CI (`updater.rs`, `main.rs`, `tauri.macos.conf.json`, `.github/workflows/release-macos.yml`).** Added macOS (`open`) and Linux (`xdg-open`) browser open support, non-Windows-safe `realesrgan` fallback, clean macOS bundle configuration (`dmg`, `minimumSystemVersion: "11.0"`, zero Windows binaries), and automated GitHub Actions builds for `aarch64-apple-darwin` and `x86_64-apple-darwin` with SHA-256 digests.

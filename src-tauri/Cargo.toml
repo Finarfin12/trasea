@@ -1,6 +1,6 @@
 [package]
 name = "trasea"
-version = "1.6.0"
+version = "1.6.1"
 edition = "2021"
 description = "Trasea: local-first & private raster to clean vector (SVG/PDF/EPS/DXF) converter"
 license = "MIT"

@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg width="512" height="512" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
-<!-- Mini variant for sizes <= 32 px: letter T only, without the three small node squares (they merge at that size). -->
-<g id="Background">
-                        <path d="M400,0C461.814,0 512,50.186 512,112L512,400C512,461.814 461.814,512 400,512L112,512C50.186,512 0,461.814 0,400L0,112C0,50.186 50.186,0 112,0L400,0Z" style="fill:rgb(15,17,21);"/>
-                    </g>
-                    <g transform="translate(256 256) scale(1.2) translate(-256 -258)">
-<g id="Mark">
-                        <g id="left-arm" transform="matrix(1,0,0,1,24.417285,0)">
-                            <path d="M112,120L217.848,120C183.777,133.1 168.331,158.518 163.499,186L112,186L112,120Z" style="fill:rgb(0,149,217);fill-rule:nonzero;"/>
-                        </g>
-                        <path id="right-stem" d="M308,120L400,120L400,186L308,186C289.22,186 274,201.22 274,220L274,396L208,396L208,220C208,164.77 252.77,120 308,120Z" style="fill:rgb(242,183,5);fill-rule:nonzero;"/>
-                    </g>
-                    </g>
+<svg width="512" height="512" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g id="Background">
+        <path d="M400,0C461.814,0 512,50.186 512,112L512,400C512,461.814 461.814,512 400,512L112,512C50.186,512 0,461.814 0,400L0,112C0,50.186 50.186,0 112,0L400,0Z" style="fill:white;"/>
+    </g>
+    <g id="Mark">
+        <g id="left-arm" transform="matrix(1,0,0,1,24.417285,0)">
+            <path d="M112,120L217.848,120C183.777,133.1 168.331,158.518 163.499,186L112,186L112,120Z" style="fill:rgb(15,17,21);fill-rule:nonzero;"/>
+        </g>
+        <path id="right-stem" d="M308,120L400,120L400,186L308,186C289.22,186 274,201.22 274,220L274,396L208,396L208,220C208,164.77 252.77,120 308,120Z" style="fill:rgb(15,17,21);fill-rule:nonzero;"/>
+    </g>
+    <g id="AnchorNode">
+        <g id="node-accent" transform="matrix(0.5,-0.866025,0.866025,0.5,-147.403047,320.627799)">
+            <path d="M340,208C342.208,208 344,209.792 344,212L344,252C344,254.208 342.208,256 340,256L300,256C297.792,256 296,254.208 296,252L296,212C296,209.792 297.792,208 300,208L340,208Z" style="fill:white;"/>
+        </g>
+        <path id="node-accent1" d="M340,208C342.208,208 344,209.792 344,212L344,252C344,254.208 342.208,256 340,256L300,256C297.792,256 296,254.208 296,252L296,212C296,209.792 297.792,208 300,208L340,208Z" style="fill:rgb(0,149,217);"/>
+        <g id="node-accent2" transform="matrix(1,0,0,1,0,59.070292)">
+            <path d="M340,208C342.208,208 344,209.792 344,212L344,252C344,254.208 342.208,256 340,256L300,256C297.792,256 296,254.208 296,252L296,212C296,209.792 297.792,208 300,208L340,208Z" style="fill:rgb(230,0,126);"/>
+        </g>
+        <g id="node-accent3" transform="matrix(1,0,0,1,0,118.765668)">
+            <path d="M340,208C342.208,208 344,209.792 344,212L344,252C344,254.208 342.208,256 340,256L300,256C297.792,256 296,254.208 296,252L296,212C296,209.792 297.792,208 300,208L340,208Z" style="fill:rgb(242,183,5);"/>
+        </g>
+    </g>
 </svg>
