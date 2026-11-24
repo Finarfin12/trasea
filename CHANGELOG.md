@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.7.2] "Opening Splash Timing & Animation Polish"
+
+- **WebView2 first-paint synced opening splash (`src/App.tsx`, `src/styles.css`).** Started splash phase timers after a double `requestAnimationFrame` (`950 ms` → `leaving`, `1250 ms` → `done`; `400 ms` / `650 ms` for `prefers-reduced-motion`) with a solid `#0f1117` backdrop, an `88×88 px` Trasea v2 logo pop-in (`trasea-splash-pop`), an expanding glow ring (`trasea-splash-ring`), and a `300 ms` fade-out with subtle stage scale (`1.04`).
+
 ## [1.7.1] "Offline GPU Outline Polish, AI Trace Animation & Palette Coalescing"
 
 - **Hairline-only `thin_mask` when Real-ESRGAN GPU is active (`lines.rs`, `pipeline.rs`).** Added `ThinParams::for_ai_cleaned(w, h)` (`open_radius = 1`) and reordered `prepare()` to run `clean(...)` first so GPU-cleaned bold outlines trace cleanly while CPU Median (`!used_ai`) keeps `ThinParams::for_size` unchanged.

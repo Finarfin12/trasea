@@ -4,7 +4,7 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.7.1 ("Polish Outline GPU Offline, Animasi AI Trace & Penggabungan Palet AI")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.7.2 ("Perbaikan Timing & Animasi Opening Splash")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -47,6 +47,10 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.7.2
+
+- **Animasi Opening Splash Sinkron First-Paint WebView2.** Timer splash kini dimulai setelah double `requestAnimationFrame` (`950 ms` tampil + `300 ms` fade-out halus) dengan latar solid `#0f1117`, logo Trasea v2 `88×88 px` memantul masuk (*pop-in*), dan cincin *glow* meluas (`.app-splash-ring`), serta dukungan aksesibel `prefers-reduced-motion`.
 
 ### Baru di 1.7.1
 
@@ -94,7 +98,7 @@ Format keluaran yang didukung:
 - **Sudut & pertemuan garis tipis tertutup rapi.** Stroke garis tipis kini melewati tahap penyambungan ujung terverifikasi `dark_mask` (`join_stroke_endpoints`) dengan `round` cap/join konsisten di SVG, PDF, dan EPS — menutup celah sudut/T-junction tanpa garis nyasar melintasi celah terang.
 - **Latar Stiker Offset / Bleed (`StickerBacking`).** Tambah bidang latar stiker solid (bawaan `#FFFFFF`, warna bebas) plus *bleed* luar `0,0–3,0 mm` yang konsentris dengan `CutContour` pada SVG, PDF (RGB & CMYK putih murni `0 0 0 0 k`), dan EPS. Tidak dimasukkan ke DXF agar mesin potong hanya menerima jalur `CUTCONTOUR`. Tersedia di tab Ekspor dan CLI (`--sticker-backing`, `--sticker-backing-color`, `--sticker-bleed-mm`).
 - **Cek pembaruan privasi-pertama.** Tombol manual **Periksa pembaruan** di **Pengaturan → Privasi & Kredit** (plus sakelar opsional saat dibuka, bawaan Mati) hanya mengecek endpoint rilis publik GitHub dari backend Rust (0 cookie, 0 telemetri, timeout 8 detik; `trasea-core` tetap 0 crate jaringan dan WebView2 tetap terisolasi).
-- **Versi Portable Windows (`.zip`).** Ekstrak `Trasea_1.7.1_x64-portable.zip` ke mana saja dan langsung jalankan `trasea.exe` tanpa instalasi: bila `portable.flag` ada di sebelah `trasea.exe`, pengaturan dan preset tersimpan lokal di `./data/` tanpa menyentuh `%APPDATA%`.
+- **Versi Portable Windows (`.zip`).** Ekstrak `Trasea_1.7.2_x64-portable.zip` ke mana saja dan langsung jalankan `trasea.exe` tanpa instalasi: bila `portable.flag` ada di sebelah `trasea.exe`, pengaturan dan preset tersimpan lokal di `./data/` tanpa menyentuh `%APPDATA%`.
 
 ### Baru di 1.4.0 ("Semua Fitur Terbuka")
 

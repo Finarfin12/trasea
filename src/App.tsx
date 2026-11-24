@@ -2782,17 +2782,27 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 export default function App() {
 	const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
-	const [splashPhase, setSplashPhase] = useState<"show" | "leaving" | "done">(() =>
-		typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "done" : "show",
-	);
+	const [splashPhase, setSplashPhase] = useState<"show" | "leaving" | "done">("show");
 
 	useEffect(() => {
-		if (splashPhase === "done") return;
-		const t1 = window.setTimeout(() => setSplashPhase("leaving"), 500);
-		const t2 = window.setTimeout(() => setSplashPhase("done"), 720);
+		const reduced = typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+		const leaveMs = reduced ? 400 : 950;
+		const doneMs = reduced ? 650 : 1250;
+		let raf1 = 0;
+		let raf2 = 0;
+		let t1: number | undefined;
+		let t2: number | undefined;
+		raf1 = window.requestAnimationFrame(() => {
+			raf2 = window.requestAnimationFrame(() => {
+				t1 = window.setTimeout(() => setSplashPhase("leaving"), leaveMs);
+				t2 = window.setTimeout(() => setSplashPhase("done"), doneMs);
+			});
+		});
 		return () => {
-			window.clearTimeout(t1);
-			window.clearTimeout(t2);
+			window.cancelAnimationFrame(raf1);
+			window.cancelAnimationFrame(raf2);
+			if (t1 !== undefined) window.clearTimeout(t1);
+			if (t2 !== undefined) window.clearTimeout(t2);
 		};
 	}, []);
 
@@ -2843,7 +2853,10 @@ export default function App() {
 			<TraseaApp appSettings={settings} onUpdateSettings={updateSettings} />
 			{splashPhase !== "done" && (
 				<div className={`app-splash ${splashPhase === "leaving" ? "app-splash--leaving" : ""}`} aria-hidden="true">
-					<img src={logoIcon} alt="" className="app-splash-logo" />
+					<div className="app-splash-stage">
+						<span className="app-splash-ring" />
+						<img src={logoIcon} alt="" className="app-splash-logo" />
+					</div>
 				</div>
 			)}
 		</I18nProvider>
