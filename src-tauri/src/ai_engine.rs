@@ -661,7 +661,7 @@ fn friendly_http_error(provider: &str, status: u16, body: &[u8], keys: &AiKeys) 
     let raw_body = mask_secrets(&String::from_utf8_lossy(body), keys);
     let snippet = truncate_chars(&raw_body, 220);
     match status {
-        401 | 403 => format!("Kunci API {provider} ditolak (HTTP {status}). Periksa kembali API key Anda."),
+        401 | 403 => format!("Kunci API {provider} ditolak (HTTP {status}). Periksa kembali API key."),
         402 => format!("Kuota atau saldo API {provider} tidak mencukupi (HTTP 402)."),
         429 => format!("Batas permintaan API {provider} tercapai (HTTP 429). Coba lagi beberapa saat."),
         500..=599 => format!("Server {provider} sedang bermasalah (HTTP {status})."),

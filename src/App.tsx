@@ -145,6 +145,43 @@ type View = "editor" | "batch";
 type Tool = "pan" | "selectPath" | "node" | "detail" | "smooth" | "pipet";
 type PanelTab = "trace" | "colors" | "export";
 
+interface RecentFile {
+	path: string;
+	name: string;
+	kind: "image" | "project";
+}
+
+const RECENT_FILES_KEY = "trasea.recentFiles.v1";
+
+function loadRecentFiles(): RecentFile[] {
+	try {
+		const raw = window.localStorage.getItem(RECENT_FILES_KEY);
+		if (!raw) return [];
+		const parsed = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return [];
+		return parsed
+			.filter(
+				(x): x is RecentFile =>
+					!!x &&
+					typeof x === "object" &&
+					typeof x.path === "string" &&
+					typeof x.name === "string" &&
+					(x.kind === "image" || x.kind === "project"),
+			)
+			.slice(0, 4);
+	} catch {
+		return [];
+	}
+}
+
+function saveRecentFiles(list: RecentFile[]) {
+	try {
+		window.localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(list.slice(0, 4)));
+	} catch {
+		// ignore storage quota errors
+	}
+}
+
 function TipDot({ text }: { text: string }) {
 	return (
 		<span className="tip-dot" title={text} aria-label={text}>
@@ -380,6 +417,27 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [addingPreset, setAddingPreset] = useState(false);
 	const [history, setHistory] = useState<HistoryState>(emptyHistory);
 	const [appliedSig, setAppliedSig] = useState("");
+	const [recentFiles, setRecentFiles] = useState<RecentFile[]>(() => loadRecentFiles());
+	const [canvasZoom, setCanvasZoom] = useState(1);
+
+	const pushRecentFile = useCallback((filePath: string, kind: "image" | "project") => {
+		const trimmed = filePath.trim();
+		if (!trimmed) return;
+		const name = trimmed.split(/[\\/]/).pop() ?? trimmed;
+		setRecentFiles(prev => {
+			const next: RecentFile[] = [
+				{ path: trimmed, name, kind },
+				...prev.filter(item => item.path !== trimmed),
+			].slice(0, 4);
+			saveRecentFiles(next);
+			return next;
+		});
+	}, []);
+
+	const clearRecentFiles = useCallback(() => {
+		setRecentFiles([]);
+		saveRecentFiles([]);
+	}, []);
 
 	const busyRef = useRef(false);
 	const optsRef = useRef(opts);
@@ -686,6 +744,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setHiddenLayers(new Set());
 			setHistory(emptyHistory());
 			setTool("pan");
+			setCanvasZoom(1);
+			pushRecentFile(p, "image");
 			const nextOpts: Options = {
 				...optsRef.current,
 				customPalette: null,
@@ -698,7 +758,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setOpts(nextOpts);
 			void run(p, nextOpts);
 		},
-		[run],
+		[run, pushRecentFile],
 	);
 
 	const openProject = useCallback(
@@ -711,6 +771,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				const pe = normalizeExport(loaded.project.exportOptions);
 				setView("editor");
 				setProjectPath(projFile);
+				setCanvasZoom(1);
+				pushRecentFile(projFile, "project");
 				setOpts(po);
 				setExp(pe);
 				setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
@@ -747,7 +809,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				setError(errText(e));
 			}
 		},
-		[run, errText, t.projectOpenedChanged, t.projectOpened, t.projectMissingSource],
+		[run, pushRecentFile, errText, t.projectOpenedChanged, t.projectOpened, t.projectMissingSource],
 	);
 
 	const relinkMissingSource = async () => {
@@ -1631,12 +1693,12 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 						<button aria-pressed={lang === "id"} onClick={() => setLang("id")}>ID</button>
 						<button aria-pressed={lang === "en"} onClick={() => setLang("en")}>EN</button>
 					</div>
-					<button className="ghost" onClick={() => void doPasteClipboard()} disabled={busy} title={`${t.pasteImageTip} (${activeShortcuts.paste})`}>{t.pasteImage}</button>
+					<button onClick={() => void doPasteClipboard()} disabled={busy} title={`${t.pasteImageTip} (${activeShortcuts.paste})`}>{t.pasteImage}</button>
 					<button aria-pressed={view === "batch"} onClick={() => setView(v => (v === "batch" ? "editor" : "batch"))} disabled={busy}>
 						{t.batchFolder}
 					</button>
 					{view === "editor" && path && (
-						<button className="ghost" onClick={() => void saveProject(false)} disabled={busy} title={`${t.saveProjectTip} (${activeShortcuts.saveProject})`}>{t.saveProject}</button>
+						<button onClick={() => void saveProject(false)} disabled={busy} title={`${t.saveProjectTip} (${activeShortcuts.saveProject})`}>{t.saveProject}</button>
 					)}
 					<button onClick={() => void choose()} disabled={busy} title={`${t.openImageProjectTip} (${activeShortcuts.openFile})`}>{t.openImageProject}</button>
 					<button
@@ -1675,15 +1737,46 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 									</div>
 								)}
 								<div className="drop" role="button" tabIndex={0} onClick={() => void choose()} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") void choose(); }}>
+									<img className="drop-logo" src={logoIcon} alt="" aria-hidden="true" width={48} height={48} />
 									<div className="drop-title">{t.dropTitle}</div>
 									<div className="drop-sub">{t.dropSub1}</div>
 									<div className="drop-sub">{t.dropSub2}</div>
+									<div className="format-pills" aria-hidden="true">
+										<span className="format-pill">PNG</span>
+										<span className="format-pill">JPG</span>
+										<span className="format-pill">WebP</span>
+										<span className="format-pill">SVG</span>
+										<span className="format-pill">.trasea</span>
+									</div>
 								</div>
 								<div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
 									<button onClick={() => void openSample()}>{t.trySample}</button>
 									<button onClick={() => void doPasteClipboard()}>{t.pasteFromClipboard}</button>
 									<button onClick={() => setView("batch")}>{t.processBatchBtn}</button>
 								</div>
+								{recentFiles.length > 0 && (
+									<div className="recent-files">
+										<div className="recent-files-head">
+											<span>{t.recentFilesTitle}</span>
+											<button className="small ghost" onClick={clearRecentFiles}>{t.recentFilesClear}</button>
+										</div>
+										<div className="recent-files-list">
+											{recentFiles.map(rf => (
+												<button
+													key={rf.path}
+													className="recent-file-btn"
+													title={rf.path}
+													onClick={() => {
+														if (rf.kind === "project") void openProject(rf.path);
+														else openPicture(rf.path);
+													}}
+												>
+													<span className="recent-file-name">{rf.name}</span>
+												</button>
+											))}
+										</div>
+									</div>
+								)}
 							</div>
 						)}
 						{busy && (
@@ -1932,6 +2025,8 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										style={{
 											aspectRatio: `${result.width} / ${result.height}`,
 											width: `min(100%, calc((100vh - 156px) * ${(result.width / Math.max(1, result.height)).toFixed(4)}))`,
+											transform: canvasZoom === 1 ? undefined : `scale(${canvasZoom})`,
+											transformOrigin: "center center",
 										}}
 									>
 										{tool === "selectPath" || tool === "node" ? (
@@ -1990,6 +2085,40 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										{tool !== "selectPath" && tool !== "node" && (
 											<input className="slider" type="range" min={0} max={100} value={split} onChange={e => setSplit(Number(e.target.value))} aria-label={t.compareSliderAria} style={{ pointerEvents: tool === "pan" ? "auto" : "none" }} />
 										)}
+									</div>
+									<div className="canvas-zoom-bar" role="group" aria-label={t.zoomResetTip}>
+										<button
+											className="small"
+											title={t.zoomOutTip}
+											aria-label={t.zoomOutTip}
+											disabled={canvasZoom <= 0.25}
+											onClick={() => setCanvasZoom(z => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))}
+										>
+											−
+										</button>
+										<button
+											className="small canvas-zoom-pct"
+											title={t.zoomResetTip}
+											onClick={() => setCanvasZoom(1)}
+										>
+											{Math.round(canvasZoom * 100)}%
+										</button>
+										<button
+											className="small"
+											title={t.zoomInTip}
+											aria-label={t.zoomInTip}
+											disabled={canvasZoom >= 4}
+											onClick={() => setCanvasZoom(z => Math.min(4, Math.round((z + 0.25) * 100) / 100))}
+										>
+											+
+										</button>
+										<button
+											className="small"
+											title={t.zoomResetTip}
+											onClick={() => setCanvasZoom(1)}
+										>
+											{t.zoomFitLabel}
+										</button>
 									</div>
 								</div>
 								{showHeat && (
@@ -2094,7 +2223,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 									</div>
 
 									{/* Production Mode Dropdown */}
-									<div className="field-block">
+									<div className="field-block inspector-divider">
 										<label className="field-label" htmlFor="prodMode">
 											<span>{t.productionModeTitle}</span>
 										</label>
@@ -2114,8 +2243,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										{opts.productionMode === "screenPrint" && (
 											<div className="mode-box">
 												<label className="field-label" style={{ marginTop: 0 }}>
-													<span>{t.sablonMethodLabel}</span>
-													<TipDot text={opts.sablonKnockout ? t.sablonKnockoutHint : t.sablonHint} />
+													<span className="label-with-tip">{t.sablonMethodLabel} <TipDot text={opts.sablonKnockout ? t.sablonKnockoutHint : t.sablonHint} /></span>
 												</label>
 												<div className="seg seg2" role="group" aria-label={t.sablonMethodLabel} style={{ marginTop: 4 }}>
 													<button aria-pressed={!opts.sablonKnockout} onClick={() => set({ sablonKnockout: false }, t.sablonStacking)}>{t.sablonStacking}</button>
@@ -2182,7 +2310,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 													if (checked) setChecker(true);
 												}}
 											/>
-											<span style={{ flex: 1 }}><b>{t.removeBgToggle}</b></span>
+											<span>{t.removeBgToggle}</span>
 											<TipDot text={t.removeBgHint} />
 										</label>
 										{opts.preprocess.removeBackground && (
@@ -2227,7 +2355,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 									)}
 
 									{/* Core Trace Controls (clean tooltips, no verbose paragraphs) */}
-									<div className="field-block">
+									<div className="field-block inspector-divider">
 										{opts.productionMode !== "centerline" && (
 											<>
 												<label className="field-label" htmlFor="colors">
@@ -2267,7 +2395,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 													</label>
 													<label className="check">
 														<input type="checkbox" checked={opts.detectPrimitives} onChange={e => set({ detectPrimitives: e.target.checked }, t.detectPrimitives)} />
-														<span style={{ flex: 1 }}>{t.detectPrimitives}</span>
+														<span>{t.detectPrimitives}</span>
 														<TipDot text={t.primitivesHint} />
 													</label>
 													<label className="field-label" htmlFor="symmetry">
@@ -2283,7 +2411,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 											)}
 											<label className="check">
 												<input type="checkbox" checked={!appSettings.preferMedianOnly && opts.aiClean} disabled={appSettings.preferMedianOnly} onChange={e => set({ aiClean: e.target.checked }, t.aiCleanLabel)} />
-												<span style={{ flex: 1 }}>{t.aiCleanLabel}</span>
+												<span>{t.aiCleanLabel}</span>
 												<TipDot text={appSettings.preferMedianOnly ? t.medianOnlyHint : t.aiCleanHint} />
 											</label>
 											{opts.aiClean && !hasSidecar && !appSettings.preferMedianOnly && <div className="warn">{t.noSidecarWarn}</div>}
@@ -2550,7 +2678,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 														checked={exp.dieCutContour}
 														onChange={e => setExp(ex => ({ ...ex, dieCutContour: e.target.checked }))}
 													/>
-													<span style={{ flex: 1 }}><b>{t.dieCutEnable}</b></span>
+													<span>{t.dieCutEnable}</span>
 													<TipDot text={t.dieCutHint} />
 												</label>
 												{exp.dieCutContour && (
@@ -2591,7 +2719,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 																checked={exp.stickerBacking}
 																onChange={e => setExp(ex => ({ ...ex, stickerBacking: e.target.checked }))}
 															/>
-															<span style={{ flex: 1 }}>{t.stickerBackingEnable}</span>
+															<span>{t.stickerBackingEnable}</span>
 															<TipDot text={t.stickerBackingHint} />
 														</label>
 														{exp.stickerBacking && (
