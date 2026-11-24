@@ -1,6 +1,8 @@
 // Trasea desktop app: a thin Tauri shell around `trasea-core`. Everything runs on this computer; the app makes no network request.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updater;
+
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,6 +92,10 @@ fn default_die_cut_spot_name() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_sticker_backing_color() -> String {
+    "#FFFFFF".to_string()
 }
 
 #[derive(Deserialize, Clone)]
@@ -214,6 +220,12 @@ struct UiExport {
     die_cut_bridge_islands: bool,
     #[serde(default)]
     spot_colors: Vec<SpotColorMapping>,
+    #[serde(default)]
+    sticker_backing: bool,
+    #[serde(default = "default_sticker_backing_color")]
+    sticker_backing_color: String,
+    #[serde(default)]
+    sticker_bleed_mm: f64,
 }
 
 #[derive(Deserialize)]
@@ -317,6 +329,8 @@ struct AppSettings {
     undo_limit: usize,
     #[serde(default)]
     shortcuts: HashMap<String, String>,
+    #[serde(default)]
+    auto_check_update: bool,
 }
 
 fn default_language() -> String {
@@ -355,6 +369,7 @@ impl Default for AppSettings {
             prefer_median_only: false,
             undo_limit: default_undo_limit(),
             shortcuts: HashMap::new(),
+            auto_check_update: false,
         }
     }
 }
@@ -386,6 +401,21 @@ fn sanitize_settings(s: &mut AppSettings) {
 }
 
 fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if updater::is_portable_mode() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let data_dir = parent.join("data");
+                if std::fs::create_dir_all(&data_dir).is_ok() {
+                    let probe = data_dir.join(".trasea_write_test");
+                    if std::fs::write(&probe, b"ok").is_ok() {
+                        let _ = std::fs::remove_file(&probe);
+                        return Ok(data_dir);
+                    }
+                }
+                eprintln!("Trasea portable: folder data read-only, fallback ke APPDATA.");
+            }
+        }
+    }
     let dir = app.path().app_config_dir().map_err(|e| format!("Gagal menemukan folder konfigurasi: {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Gagal membuat folder konfigurasi: {e}"))?;
     Ok(dir)
@@ -520,7 +550,17 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         },
         die_cut_bridge_islands: options.die_cut_bridge_islands,
         spot_colors: options.spot_colors.clone(),
-        ..ExportOptions::default()
+        sticker_backing: options.sticker_backing,
+        sticker_backing_color: if options.sticker_backing_color.trim().is_empty() {
+            default_sticker_backing_color()
+        } else {
+            options.sticker_backing_color.trim().to_string()
+        },
+        sticker_bleed_mm: if options.sticker_bleed_mm.is_finite() {
+            options.sticker_bleed_mm.clamp(0.0, 3.0)
+        } else {
+            0.0
+        },
     }
 }
 
@@ -1229,6 +1269,26 @@ fn sidecar_available(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
+async fn check_for_update() -> Result<updater::UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(updater::check_latest_release)
+        .await
+        .map_err(|e| format!("Gagal memeriksa pembaruan: {e}"))?
+}
+
+#[tauri::command]
+fn get_app_mode() -> updater::AppModeInfo {
+    updater::AppModeInfo {
+        is_portable: updater::is_portable_mode(),
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    updater::open_download_url(&url)
+}
+
+#[tauri::command]
 fn third_party_licenses(app: AppHandle) -> String {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(res) = app.path().resource_dir() {
@@ -1277,7 +1337,10 @@ fn main() {
             stop_watch_folder,
             open_folder,
             sidecar_available,
-            third_party_licenses
+            third_party_licenses,
+            check_for_update,
+            get_app_mode,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trasea");

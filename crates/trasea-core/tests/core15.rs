@@ -504,3 +504,77 @@ fn g15_08_thin_strokes_round_cap_and_join() {
     let eps = to_eps(&out.doc, &opts_cmyk);
     assert!(eps.contains("1 setlinecap 1 setlinejoin"), "EPS thin strokes must set 1 setlinecap 1 setlinejoin");
 }
+
+/// G15-09 (P5): Simple 2-colour curved acorn/shield icon (512x512, smooth=0.5, target_nodes=None)
+/// produces clean curves with <= 40 nodes and MAE <= 1.5.
+#[test]
+fn g15_09_p5_simple_curved_icon_clean_node_count() {
+    let size = 512u32;
+    let mut img = RgbImage::from_pixel(size, size, Rgb([255, 255, 255]));
+    let cx = 256.0f64;
+    for y in 0..size {
+        for x in 0..size {
+            let fx = x as f64 - cx;
+            let fy = y as f64;
+            // Acorn cap (top dome)
+            let cap_dx = fx / 155.0;
+            let cap_dy = (fy - 210.0) / 115.0;
+            let in_cap = fy <= 215.0 && (cap_dx * cap_dx + cap_dy * cap_dy <= 1.0);
+            // Stem on top
+            let in_stem = (fx.abs() <= 16.0) && fy >= 60.0 && fy <= 110.0;
+            // Acorn body (smooth tapered nut silhouette)
+            let t = ((fy - 215.0) / 225.0).clamp(0.0, 1.0);
+            let half_w = 132.0 * (1.0 - t * t).max(0.0).sqrt();
+            let in_body = fy >= 215.0 && fy <= 440.0 && fx.abs() <= half_w;
+            if in_cap || in_stem {
+                img.put_pixel(x, y, Rgb([125, 74, 42]));
+            } else if in_body {
+                img.put_pixel(x, y, Rgb([214, 152, 86]));
+            }
+        }
+    }
+    let mut p = Params::default();
+    p.colors = 3;
+    p.smooth = 0.5;
+    p.target_nodes = None;
+    p.ai_clean = false;
+    p.measure = true;
+    let out = vectorize(&img, &p, &|_, _| {}).expect("vectorize acorn icon");
+    let mae = out.stats.mae.unwrap_or(99.0);
+    println!("G15-09 acorn icon: paths={} nodes={} MAE={:.3}", out.stats.paths, out.stats.nodes, mae);
+    assert!(out.stats.nodes <= 40, "expected <= 40 nodes for simple 2-colour icon, got {}", out.stats.nodes);
+    assert!(mae <= 1.5, "expected MAE <= 1.5, got {mae:.3}");
+}
+
+/// G15-10 (P5): Sharp corners (square / triangle) stay sharp and are not rounded by post-fit merge.
+#[test]
+fn g15_10_p5_sharp_corners_preserved() {
+    let size = 300u32;
+    let mut img = RgbImage::from_pixel(size, size, Rgb([255, 255, 255]));
+    // Draw a crisp dark blue triangle with 3 sharp vertices: (150, 40), (260, 250), (40, 250)
+    for y in 40..=250 {
+        let t = (y - 40) as f64 / 210.0;
+        let x0 = (150.0 - 110.0 * t).round() as u32;
+        let x1 = (150.0 + 110.0 * t).round() as u32;
+        for x in x0..=x1 {
+            img.put_pixel(x, y, Rgb([28, 72, 160]));
+        }
+    }
+    let mut p = Params::default();
+    p.colors = 2;
+    p.smooth = 0.5;
+    p.detect_primitives = false;
+    p.ai_clean = false;
+    p.measure = true;
+    let out = vectorize(&img, &p, &|_, _| {}).expect("vectorize sharp triangle");
+    let mae = out.stats.mae.unwrap_or(99.0);
+    // Count straight line segments ('L') in the triangle path
+    let l_count = out.svg.matches(" L ").count() + out.svg.matches("L").count();
+    println!("G15-10 sharp triangle: nodes={} MAE={:.3} L_ops={l_count}", out.stats.nodes, mae);
+    assert!(mae <= 2.5, "sharp triangle MAE too high: {mae:.3}");
+    assert!(out.stats.nodes <= 20, "sharp triangle should stay compact (<= 20 nodes), got {}", out.stats.nodes);
+    // Verify the rendered top apex (150, 44) is still dark blue (not rounded away)
+    let rend = render_svg(&out.svg, size, size).expect("render triangle");
+    let apex = rend.get_pixel(150, 46);
+    assert!(apex[2] > 100 && apex[0] < 90, "top sharp apex got rounded away: {:?}", apex);
+}

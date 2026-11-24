@@ -167,6 +167,9 @@ export interface ExportOptions {
 	dieCutSpotName: string;
 	dieCutBridgeIslands: boolean;
 	spotColors: SpotColorMapping[];
+	stickerBacking: boolean;
+	stickerBackingColor: string;
+	stickerBleedMm: number;
 }
 
 export type BatchStatus = "ok" | "failed" | "cancelled";
@@ -288,6 +291,7 @@ export interface AppSettings {
 	preferMedianOnly: boolean;
 	undoLimit: 20 | 50 | 100;
 	shortcuts: Record<string, string>;
+	autoCheckUpdate: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -304,6 +308,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 	preferMedianOnly: false,
 	undoLimit: 50,
 	shortcuts: {},
+	autoCheckUpdate: false,
 };
 
 export interface SavedPaletteColor {
@@ -454,3 +459,21 @@ export const onDrop = async (fn: (paths: string[]) => void, setOver: (over: bool
 			fn(e.payload.paths);
 		}
 	});
+
+export interface UpdateInfo {
+	currentVersion: string;
+	latestVersion: string;
+	hasUpdate: boolean;
+	releaseNotes: string;
+	downloadUrl: string;
+	isPortable: boolean;
+}
+
+export interface AppModeInfo {
+	isPortable: boolean;
+	currentVersion: string;
+}
+
+export const checkForUpdate = (): Promise<UpdateInfo> => invoke<UpdateInfo>("check_for_update");
+export const getAppMode = (): Promise<AppModeInfo> => invoke<AppModeInfo>("get_app_mode");
+export const openExternalUrl = (url: string): Promise<void> => invoke<void>("open_external_url", { url });

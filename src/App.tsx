@@ -31,7 +31,9 @@ import {
 import {
 	collectDroppedImages,
 	copySvgToClipboard,
+	checkForUpdate,
 	DEFAULT_APP_SETTINGS,
+	openExternalUrl,
 	DEFAULT_PREPROCESS,
 	deletePreset,
 	deleteSavedPalette,
@@ -68,6 +70,7 @@ import {
 	type DxfUnit,
 	type ExportKind,
 	type ExportOptions,
+	type UpdateInfo,
 	type Options,
 	type PaletteTextExportKind,
 	type PathEdit,
@@ -130,6 +133,9 @@ const DEFAULT_EXP: ExportOptions = {
 	dieCutSpotName: "CutContour",
 	dieCutBridgeIslands: true,
 	spotColors: [],
+	stickerBacking: false,
+	stickerBackingColor: "#FFFFFF",
+	stickerBleedMm: 0.0,
 };
 
 type View = "editor" | "batch";
@@ -185,6 +191,9 @@ const normalizeExport = (pe: Partial<ExportOptions>): ExportOptions => ({
 	dieCutSpotName: pe.dieCutSpotName ?? "CutContour",
 	dieCutBridgeIslands: pe.dieCutBridgeIslands ?? true,
 	spotColors: Array.isArray(pe.spotColors) ? pe.spotColors : [],
+	stickerBacking: pe.stickerBacking ?? false,
+	stickerBackingColor: pe.stickerBackingColor ?? "#FFFFFF",
+	stickerBleedMm: pe.stickerBleedMm ?? 0.0,
 });
 
 function applySoftProofToSvg(svg: string, proofMap: Map<string, string>): string {
@@ -304,6 +313,17 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		tab: SettingsTab;
 		licenseSubTab?: "privacy" | "thirdParty";
 	} | null>(null);
+	const [updateBanner, setUpdateBanner] = useState<UpdateInfo | null>(null);
+	useEffect(() => {
+		if (!appSettings.autoCheckUpdate) return;
+		let alive = true;
+		void checkForUpdate()
+			.then(info => {
+				if (alive && info.hasUpdate) setUpdateBanner(info);
+			})
+			.catch(() => {});
+		return () => { alive = false; };
+	}, [appSettings.autoCheckUpdate]);
 	const [showText, setShowText] = useState(false);
 	const [showHeat, setShowHeat] = useState(false);
 	const [tool, setTool] = useState<Tool>("pan");
@@ -569,6 +589,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		exp.dieCutOffsetMm,
 		exp.dieCutSpotName,
 		exp.dieCutBridgeIslands,
+		exp.stickerBacking,
+		exp.stickerBackingColor,
+		exp.stickerBleedMm,
 		exp.linesAs,
 		exp.trapPt,
 		opts.registrationMarks,
@@ -1531,6 +1554,13 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			<header className="top">
 				<div className="brand">
 					<img className="logo" src={logoIcon} alt="" aria-hidden="true" width={24} height={24} /> Trasea <small>{t.headerOffline}</small>
+					{updateBanner && (
+						<span className="update-pill" role="status">
+							{t.updateBannerText} v{updateBanner.latestVersion}
+							<button className="small primary" onClick={() => void openExternalUrl(updateBanner.downloadUrl).catch(() => {})}>{t.updateBannerBtn}</button>
+							<button className="small ghost" onClick={() => setUpdateBanner(null)} aria-label={t.close}>×</button>
+						</span>
+					)}
 				</div>
 				<div className="row">
 					<div className="seg seg2 lang-switch" role="group" aria-label={t.switchLangTip} title={t.switchLangTip}>
@@ -2451,6 +2481,45 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 															/>
 															{t.dieCutBridgeLabel}
 														</label>
+														<label className="check" style={{ marginTop: 8 }}>
+															<input
+																type="checkbox"
+																checked={exp.stickerBacking}
+																onChange={e => setExp(ex => ({ ...ex, stickerBacking: e.target.checked }))}
+															/>
+															<span style={{ flex: 1 }}>{t.stickerBackingEnable}</span>
+															<TipDot text={t.stickerBackingHint} />
+														</label>
+														{exp.stickerBacking && (
+															<>
+																<div className="row between" style={{ marginTop: 6 }}>
+																	<label className="field-label" htmlFor="stickerBackingColor" style={{ marginTop: 0 }}>{t.stickerBackingColorLabel}</label>
+																	<div className="row" style={{ gap: 6 }}>
+																		<input
+																			id="stickerBackingColor"
+																			type="color"
+																			value={exp.stickerBackingColor}
+																			onChange={e => setExp(ex => ({ ...ex, stickerBackingColor: e.target.value.toUpperCase() }))}
+																			style={{ width: 28, height: 24, padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
+																		/>
+																		<code style={{ fontSize: 11 }}>{exp.stickerBackingColor}</code>
+																	</div>
+																</div>
+																<label className="field-label" htmlFor="stickerBleed">
+																	<span>{t.stickerBleedLabel}</span>
+																	<b>{exp.stickerBleedMm.toFixed(1)} mm</b>
+																</label>
+																<input
+																	id="stickerBleed"
+																	type="range"
+																	min={0}
+																	max={3}
+																	step={0.5}
+																	value={exp.stickerBleedMm}
+																	onChange={e => setExp(ex => ({ ...ex, stickerBleedMm: Number(e.target.value) }))}
+																/>
+															</>
+														)}
 													</>
 												)}
 											</div>
