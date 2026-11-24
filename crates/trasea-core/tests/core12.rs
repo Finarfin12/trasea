@@ -548,6 +548,9 @@ fn g12_09_project_compat_and_roundtrip_120() {
                 hex: "#FF0000".to_string(),
                 spot_name: "Spot_Red".to_string(),
             }],
+            sticker_backing: false,
+            sticker_backing_color: "#FFFFFF".into(),
+            sticker_bleed_mm: 0.0,
         },
     };
     let tmp = std::env::temp_dir().join("trasea_g12_09_roundtrip.trasea");

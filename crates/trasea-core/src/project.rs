@@ -36,6 +36,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_sticker_backing_color() -> String {
+    "#FFFFFF".to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectOptions {
@@ -104,6 +108,12 @@ pub struct ProjectExportOptions {
     pub die_cut_bridge_islands: bool,
     #[serde(default)]
     pub spot_colors: Vec<SpotColorMapping>,
+    #[serde(default)]
+    pub sticker_backing: bool,
+    #[serde(default = "default_sticker_backing_color")]
+    pub sticker_backing_color: String,
+    #[serde(default)]
+    pub sticker_bleed_mm: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

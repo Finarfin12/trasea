@@ -520,6 +520,7 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         },
         die_cut_bridge_islands: options.die_cut_bridge_islands,
         spot_colors: options.spot_colors.clone(),
+        ..ExportOptions::default()
     }
 }
 

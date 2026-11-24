@@ -206,6 +206,9 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             die_cut_spot_name: "CutContour".into(),
             die_cut_bridge_islands: true,
             spot_colors: vec![],
+            sticker_backing: false,
+            sticker_backing_color: "#FFFFFF".into(),
+            sticker_bleed_mm: 0.0,
         },
     };
     let p_path = root.join("demo.trasea");
@@ -268,6 +271,9 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             die_cut_spot_name: "CutContour".into(),
             die_cut_bridge_islands: true,
             spot_colors: vec![],
+            sticker_backing: false,
+            sticker_backing_color: "#FFFFFF".into(),
+            sticker_bleed_mm: 0.0,
         },
     };
     let p_path = root.join("moved.trasea");

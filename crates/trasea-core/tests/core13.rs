@@ -496,6 +496,9 @@ fn g13_06_project_roundtrip_and_export_propagation() {
             die_cut_spot_name: "CutContour".into(),
             die_cut_bridge_islands: true,
             spot_colors: Vec::new(),
+            sticker_backing: false,
+            sticker_backing_color: "#FFFFFF".into(),
+            sticker_bleed_mm: 0.0,
         },
     };
     let tmp = std::env::temp_dir().join("trasea_g13_06_roundtrip.trasea");

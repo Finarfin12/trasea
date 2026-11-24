@@ -47,7 +47,7 @@ fn parse_spot_arg(s: &str) -> Option<SpotColorMapping> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt PT] [--sablon-knockout] [--remove-bg] [--bg-tolerance 0..100] [--defringe 0..3] [--die-cut-mm MM] [--die-cut-spot NAME] [--no-die-cut-bridge] [--spot \"#HEX=Name\"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--delete-path ID] [--recolor-path \"ID=#RRGGBB\"] [--simplify-path \"ID[=TOL_PX]\"] [--inspect-nodes ID] [--png out.png] [--sidecar DIR]\n  (the input may also be an .svg file: it is opened as vectors without tracing; path/node edits, --die-cut-mm, --color-space, --spot and every export work on it)\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut-mm MM] [--spot \"#HEX=Name\"] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
+        "usage:\n  trasea-cli <input> <output.svg> [--mode standard|sablon|cutting|shading|centerline] [--centerline-invert] [--centerline-stroke-pt PT] [--sablon-knockout] [--remove-bg] [--bg-tolerance 0..100] [--defringe 0..3] [--die-cut-contour] [--die-cut-mm MM] [--die-cut-spot NAME] [--no-die-cut-bridge] [--sticker-backing] [--sticker-backing-color HEX] [--sticker-bleed-mm MM] [--spot \"#HEX=Name\"] [--pdf out.pdf] [--eps out.eps] [--dxf out.dxf] [--ase out.ase] [--separations DIR] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--crop x,y,w,h] [--rotate DEG] [--colors N] [--smooth 0..1] [--lines stroke|shape] [--trap PT] [--min-stroke PT] [--reg-marks|--no-reg-marks] [--strip-bg|--keep-bg] [--no-lines] [--ai|--no-ai] [--no-primitives] [--symmetry off|auto|vertical|horizontal] [--no-text-detect] [--target-nodes N] [--palette \"#RRGGBB,#RRGGBB\"] [--delete-path ID] [--recolor-path \"ID=#RRGGBB\"] [--simplify-path \"ID[=TOL_PX]\"] [--inspect-nodes ID] [--png out.png] [--sidecar DIR]\n  (the input may also be an .svg file: it is opened as vectors without tracing; path/node edits, --die-cut-mm, --color-space, --spot and every export work on it)\n  trasea-cli --batch <input-dir> <output-dir> [--mode standard|sablon|cutting|shading|centerline] [--remove-bg] [--die-cut-mm MM] [--spot \"#HEX=Name\"] [--subfolders] [--pdf] [--eps] [--dxf] [--ase] [--separations] [--color-space rgb|cmyk] [--dxf-unit mm|px] [--dxf-width-mm MM] [--no-report] [options...]\n  trasea-cli --watch <input-dir> --out <output-dir> [--poll-ms MS] [--debounce-ms MS] [--watch-timeout-ms MS] [batch options...]"
     );
 }
 
@@ -125,6 +125,10 @@ fn main() {
     let mut die_cut_mm: Option<f64> = None;
     let mut die_cut_spot: Option<String> = None;
     let mut die_cut_bridge = true;
+    let mut die_cut_enabled = false;
+    let mut sticker_backing = false;
+    let mut sticker_backing_color: Option<String> = None;
+    let mut sticker_bleed_mm: Option<f64> = None;
     let mut inspect_ids: Vec<String> = Vec::new();
     let mut spot_colors: Vec<SpotColorMapping> = Vec::new();
 
@@ -200,7 +204,32 @@ fn main() {
                     }
                 }
             }
+            "--die-cut-contour" => die_cut_enabled = true,
             "--no-die-cut-bridge" => die_cut_bridge = false,
+            "--sticker-backing" => {
+                sticker_backing = true;
+                die_cut_enabled = true;
+            }
+            "--sticker-backing-color" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) if trasea_core::color::parse_hex_rgb(v).is_some() => sticker_backing_color = Some(v.trim().to_uppercase()),
+                    _ => {
+                        eprintln!("--sticker-backing-color needs a hex colour like #FFFFFF");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--sticker-bleed-mm" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v >= 0.0) {
+                    Some(mm) => sticker_bleed_mm = Some(mm.clamp(0.0, 3.0)),
+                    None => {
+                        eprintln!("--sticker-bleed-mm needs a number 0.0..=3.0 (e.g. 1.5)");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "--spot" => {
                 i += 1;
                 match args.get(i).and_then(|v| parse_spot_arg(v)) {
@@ -485,9 +514,22 @@ fn main() {
     eo.color_space = color_space;
     eo.dxf_unit = dxf_unit;
     eo.dxf_target_width_mm = dxf_width_mm;
+    if die_cut_enabled {
+        eo.die_cut_contour = true;
+    }
     if let Some(mm) = die_cut_mm {
         eo.die_cut_contour = true;
         eo.die_cut_offset_mm = mm;
+    }
+    if sticker_backing {
+        eo.sticker_backing = true;
+        eo.die_cut_contour = true;
+    }
+    if let Some(hex_col) = sticker_backing_color {
+        eo.sticker_backing_color = hex_col;
+    }
+    if let Some(bleed) = sticker_bleed_mm {
+        eo.sticker_bleed_mm = bleed;
     }
     if let Some(spot_name) = die_cut_spot {
         eo.die_cut_spot_name = spot_name;
