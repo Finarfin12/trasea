@@ -184,10 +184,15 @@ pub struct Recall {
 }
 
 pub fn outline_recall(render: &RgbImage, truth: &[bool]) -> Recall {
+    outline_recall_tol(render, truth, 2)
+}
+
+/// Same, with a tolerance of `tol` pixels (0 = a lost outline pixel counts even when a dark pixel sits right next to it).
+pub fn outline_recall_tol(render: &RgbImage, truth: &[bool], tol: i64) -> Recall {
     let dark = dark_pixels(render);
     let near = |x: i64, y: i64| -> bool {
-        for dy in -2..=2 {
-            for dx in -2..=2 {
+        for dy in -tol..=tol {
+            for dx in -tol..=tol {
                 let (nx, ny) = (x + dx, y + dy);
                 if nx >= 0 && ny >= 0 && (nx as usize) < W && (ny as usize) < H && dark[ny as usize * W + nx as usize] {
                     return true;
@@ -242,7 +247,7 @@ pub fn outline_recall(render: &RgbImage, truth: &[bool]) -> Recall {
             }
         }
         max_gap = max_gap.max((x1 - x0).max(y1 - y0) + 1);
-        if (x1 - x0).max(y1 - y0) + 1 >= 8 {
+        if (x1 - x0).max(y1 - y0) + 1 >= 6 {
             gaps.push((x0, y0, x1, y1));
         }
     }
@@ -363,7 +368,8 @@ fn g14_02_selection_is_one_stroke_without_collateral_damage() {
     }
 }
 
-/// G14-03 - outline recall >= 95 % and no gap wider than 2x the line width, without more nodes (AC-5.3).
+/// G14-03 - outline recall >= 95 % and no run of lost outline wider than 2x the line width, without more nodes (AC-5.3). Measured with
+/// a 2 px tolerance (a lost outline pixel counts only when no dark pixel lies within 2 px); G14-06 holds the strict numbers.
 #[test]
 fn g14_03_outline_recall_and_no_gaps() {
     for (hard, node_cap) in [(false, 548usize), (true, 597)] {
@@ -440,4 +446,22 @@ fn g14_05_old_projects_still_load_and_fingerprint_roundtrips() {
     let mut none = p.clone();
     none.options.edit_fingerprint = None;
     assert!(!serde_json::to_string(&none).unwrap().contains("editFingerprint"), "absent when unused, so 1.3 files stay unchanged");
+}
+
+/// G14-06 - strict outline floor (exact overlap, no tolerance). The thin-line extractor of 1.3.0 loses the pixels of outline
+/// corners and junctions (foot of a mountain, base of a tree): about 9-11 % of the outline at 0 px tolerance. This is a KNOWN
+/// limitation that 1.4.0 does not change: a junction-restoring variant closed most gaps but raised node counts on the benchmark
+/// by up to +117 % (it interacts with the node budget), so it was not shipped. The floors below record today's numbers so any
+/// later change of the extractor is measured against them (they may only go up).
+#[test]
+fn g14_06_strict_outline_floor() {
+    for (hard, floor0, floor1, gaps1_max) in [(false, 0.88f64, 0.96f64, 45usize), (true, 0.90, 0.98, 25)] {
+        let (img, truth) = landscape_variant(hard);
+        let rend = render(&trace(&img, &base()));
+        let r0 = outline_recall_tol(&rend, &truth, 0);
+        let r1 = outline_recall_tol(&rend, &truth, 1);
+        assert!(r0.recall >= floor0, "hard={hard}: exact recall {:.3} < {floor0}", r0.recall);
+        assert!(r1.recall >= floor1, "hard={hard}: recall at 1 px {:.3} < {floor1}", r1.recall);
+        assert!(r1.gaps.len() <= gaps1_max, "hard={hard}: {} gaps (>= 6 px) at 1 px tolerance", r1.gaps.len());
+    }
 }
