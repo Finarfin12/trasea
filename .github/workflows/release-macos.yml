@@ -28,6 +28,9 @@ jobs:
       - name: Cache Cargo registry & build
         uses: Swatinem/rust-cache@v2
 
+      - name: Remove Windows-only .cargo/config.toml on macOS runner
+        run: rm -f .cargo/config.toml
+
       - name: Run trasea-core tests (release)
         run: cargo test --release -p trasea-core
 
@@ -71,6 +74,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Remove Windows-only .cargo/config.toml on macOS runner
+        run: rm -f .cargo/config.toml
 
       - name: Remove Windows-only Real-ESRGAN resources before macOS bundle
         run: |
