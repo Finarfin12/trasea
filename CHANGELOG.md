@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1] "Offline GPU Outline Polish, AI Trace Animation & Palette Coalescing"
+
+- **Hairline-only `thin_mask` when Real-ESRGAN GPU is active (`lines.rs`, `pipeline.rs`).** Added `ThinParams::for_ai_cleaned(w, h)` (`open_radius = 1`) and reordered `prepare()` to run `clean(...)` first so GPU-cleaned bold outlines trace cleanly while CPU Median (`!used_ai`) keeps `ThinParams::for_size` unchanged.
+- **Near-duplicate AI/CLI colour coalescing (`svg_import.rs`, `main.rs`, `pipeline.rs`, `AiEngineSettings.tsx`).** Added deterministic `coalesce_similar_colors(doc, 8.0)` (CIE Lab `ΔE < 8.0` merged into dominant canonical colour, deduplicated palette in `vectorize_svg`), invoked in `vectorize_with_ai`, and updated CLI preset prompts (`claude`, `gemini`, `codex`, `opencode`) to request a clean flat palette (`<= 10 hex colors, no near-duplicate shades`).
+- **AI Trace loading card + `MM:SS` timer & micro-splash opening (`App.tsx`, `styles.css`).** Added GPU-accelerated pulsing Trasea v2 logo, indeterminate bar, and live `MM:SS` timer during AI/CLI runs plus a 700 ms opening logo micro-splash with full `prefers-reduced-motion: reduce` support.
+- **Tests:** Added `t171_for_ai_cleaned_captures_2px_hairline_and_skips_6px_bold_outline` and `t171_coalesce_similar_colors_merges_near_duplicates_and_keeps_contrasts` (`110/110` `trasea-core` + `7/7` `trasea` = `117/117` workspace tests pass).
+
 ## [1.7.0] "Offline Core Quality Upgrade"
 
 - **Anti-Alias Border Dehaloing (`crates/trasea-core/src/palette.rs`, `pipeline.rs`).** Added `dehalo_label_borders` (2 fast Lab-space passes after `refine_thin_regions`, skipped in `ProductionMode::Shading`) to snap 1–2 px anti-alias halo pixels sandwiched between two distinct neighbours back to the closest real neighbour colour while keeping solid colour regions intact.

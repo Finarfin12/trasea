@@ -306,3 +306,111 @@ fn add_path(p: &usvg::Path, ctx: &mut Ctx) {
         }
     }
 }
+
+/// Merge visually near-identical fill and stroke colours (CIE Lab ΔE < `max_delta_e`) in an
+/// imported AI/CLI vector document into their dominant canonical colour without altering path
+/// geometry or paint order.
+pub fn coalesce_similar_colors(doc: &mut Doc, max_delta_e: f32) {
+    if max_delta_e <= 0.0 {
+        return;
+    }
+    let mut weights: std::collections::BTreeMap<Rgb, usize> = std::collections::BTreeMap::new();
+    for l in &doc.fields {
+        let w: usize = l
+            .contours
+            .iter()
+            .map(|c| c.curves.len().max(1))
+            .sum::<usize>()
+            .saturating_add(l.prims.len())
+            .max(1);
+        *weights.entry(l.color).or_insert(0) += w;
+    }
+    for sl in &doc.strokes {
+        let w: usize = sl
+            .strokes
+            .iter()
+            .map(|s| s.curves.len().max(1))
+            .sum::<usize>()
+            .max(1);
+        *weights.entry(sl.color).or_insert(0) += w;
+    }
+    if weights.len() <= 1 {
+        return;
+    }
+
+    // Sort descending by weight, deterministic tie-break by RGB tuple.
+    let mut ordered: Vec<(Rgb, usize)> = weights.into_iter().collect();
+    ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let max_d2 = max_delta_e * max_delta_e;
+    let mut canonicals: Vec<(Rgb, [f32; 3])> = Vec::new();
+    let mut remap: std::collections::HashMap<Rgb, Rgb> = std::collections::HashMap::new();
+    for (rgb, _) in ordered {
+        let lab = crate::palette::rgb_to_lab(rgb);
+        let mut found: Option<Rgb> = None;
+        for &(c_rgb, c_lab) in &canonicals {
+            let d2 = (lab[0] - c_lab[0]).powi(2)
+                + (lab[1] - c_lab[1]).powi(2)
+                + (lab[2] - c_lab[2]).powi(2);
+            if d2 < max_d2 {
+                found = Some(c_rgb);
+                break;
+            }
+        }
+        let target = match found {
+            Some(c) => c,
+            None => {
+                canonicals.push((rgb, lab));
+                rgb
+            }
+        };
+        remap.insert(rgb, target);
+    }
+
+    for l in &mut doc.fields {
+        if let Some(&target) = remap.get(&l.color) {
+            l.color = target;
+            l.id = hex(target);
+        }
+    }
+
+    // Remap stroke layers and combine entries that now share the same canonical colour.
+    let old_strokes = std::mem::take(&mut doc.strokes);
+    for mut sl in old_strokes {
+        let target = remap.get(&sl.color).copied().unwrap_or(sl.color);
+        sl.color = target;
+        if let Some(existing) = doc.strokes.iter_mut().find(|e| e.color == target) {
+            existing.strokes.extend(sl.strokes);
+        } else {
+            doc.strokes.push(sl);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn t171_coalesce_similar_colors_merges_near_duplicates_and_keeps_contrasts() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+            <rect x="0" y="0" width="120" height="120" fill="#FCF7EC"/>
+            <rect x="10" y="10" width="30" height="30" fill="#1F4D36"/>
+            <rect x="45" y="10" width="20" height="20" fill="#1E4D35"/>
+            <rect x="70" y="10" width="20" height="20" fill="#204E37"/>
+            <rect x="10" y="60" width="40" height="40" fill="#A82820"/>
+        </svg>"##;
+        let mut imp = parse_svg_doc(svg.as_bytes()).expect("valid svg");
+        coalesce_similar_colors(&mut imp.doc, 8.0);
+
+        let mut unique: Vec<Rgb> = Vec::new();
+        for l in &imp.doc.fields {
+            if !unique.contains(&l.color) {
+                unique.push(l.color);
+            }
+        }
+        assert_eq!(unique.len(), 3, "3 near-duplicate greens should merge into 1, leaving 3 distinct colours: {unique:?}");
+        assert!(unique.contains(&[0xFC, 0xF7, 0xEC]), "cream must remain intact");
+        assert!(unique.contains(&[0xA8, 0x28, 0x20]), "red must remain intact");
+    }
+}
