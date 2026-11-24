@@ -1,6 +1,7 @@
 // Trasea desktop app: a thin Tauri shell around `trasea-core`. Everything runs on this computer; the app makes no network request.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai_engine;
 mod updater;
 
 use base64::Engine;
@@ -447,7 +448,11 @@ fn sidecar_dir(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(dev) = std::env::var("TRASEA_SIDECAR") {
         candidates.push(PathBuf::from(dev));
     }
-    candidates.into_iter().find(|d| d.join(trasea_core::clean::SIDECAR_EXE).is_file())
+    #[cfg(target_os = "windows")]
+    let exe_name = trasea_core::clean::SIDECAR_EXE;
+    #[cfg(not(target_os = "windows"))]
+    let exe_name = "realesrgan-ncnn-vulkan";
+    candidates.into_iter().find(|d| d.join(exe_name).is_file())
 }
 
 fn png_data_url(img: &image::RgbImage) -> Result<String, String> {
@@ -1289,6 +1294,123 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_ai_config(app: AppHandle) -> Result<ai_engine::AiConfigPublic, String> {
+    let dir = config_dir(&app)?;
+    Ok(ai_engine::get_ai_config_public(&dir))
+}
+
+#[tauri::command]
+fn save_ai_config(
+    app: AppHandle,
+    input: ai_engine::SaveAiConfigInput,
+) -> Result<ai_engine::AiConfigPublic, String> {
+    let dir = config_dir(&app)?;
+    ai_engine::save_ai_config(&dir, input)
+}
+
+#[tauri::command]
+async fn fetch_ai_models(
+    app: AppHandle,
+    provider: String,
+) -> Result<ai_engine::FetchAiModelsResult, String> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || ai_engine::fetch_ai_models(&dir, &provider))
+        .await
+        .map_err(|e| format!("Gagal memuat daftar model AI: {e}"))
+}
+
+#[tauri::command]
+async fn test_ai_config(
+    app: AppHandle,
+    provider: Option<String>,
+) -> Result<ai_engine::AiTestResult, String> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_engine::test_ai_config(&dir, provider.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Gagal menguji konfigurasi AI: {e}"))
+}
+
+#[tauri::command]
+async fn vectorize_with_ai(
+    app: AppHandle,
+    last: State<'_, Last>,
+    path: String,
+    params: UiParams,
+    provider: Option<String>,
+) -> Result<Processed, String> {
+    let dir = config_dir(&app)?;
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
+        let t0 = Instant::now();
+        let p = to_core_params(&params, None);
+        let eo = export_options_for_production(&p.production);
+        let raw_img =
+            load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
+        let pre_img = trasea_core::preprocess::apply_preprocess_rgb(&raw_img, &p.preprocess);
+        let original = png_data_url(&pre_img)?;
+
+        let mut png_bytes = Vec::new();
+        pre_img
+            .write_to(
+                &mut std::io::Cursor::new(&mut png_bytes),
+                image::ImageFormat::Png,
+            )
+            .map_err(|e| format!("Gagal mengodekan PNG untuk AI: {e}"))?;
+
+        let (used_provider, import) =
+            ai_engine::run_external_ai_to_svg_import(&dir, provider.as_deref(), &png_bytes)?;
+        let (w, h) = (import.doc.width, import.doc.height);
+        let mut out = trasea_core::vectorize_svg(import, &p, &eo);
+        out.notes
+            .insert(0, format!("Vektorisasi melalui mesin AI ({used_provider})."));
+
+        let palette_proof: Vec<PaletteProofItem> = out
+            .palette
+            .iter()
+            .map(|&c| PaletteProofItem {
+                hex: hex(c),
+                proof_hex: hex(rgb_to_soft_proof_rgb(c[0], c[1], c[2])),
+                out_of_gamut: is_out_of_cmyk_gamut(c[0], c[1], c[2]),
+            })
+            .collect();
+
+        let processed = Processed {
+            svg: out.svg.clone(),
+            original,
+            width: w,
+            height: h,
+            paths: out.stats.paths,
+            nodes: out.stats.nodes,
+            bytes: out.stats.bytes,
+            mae: out.stats.mae,
+            notes: out.notes.clone(),
+            palette: out.palette.iter().map(|c| hex(*c)).collect(),
+            palette_proof,
+            used_ai: true,
+            secs: t0.elapsed().as_secs_f64(),
+            thin_pixels: 0,
+            primitives: out.stats.primitives,
+            symmetry_applied: None,
+            text_regions: Vec::new(),
+            heatmap: out.heatmap.clone(),
+            effective_smooth: p.smooth * 100.0,
+            budget_met: None,
+            reused: false,
+            trace_fingerprint: out.trace_fingerprint.clone(),
+            edits_stale: out.edits_stale,
+        };
+        Ok((processed, out.doc))
+    })
+    .await
+    .map_err(|e| format!("Proses AI terhenti tak terduga: {e}"))??;
+
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
+    Ok(result.0)
+}
+
+#[tauri::command]
 fn third_party_licenses(app: AppHandle) -> String {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(res) = app.path().resource_dir() {
@@ -1340,7 +1462,12 @@ fn main() {
             third_party_licenses,
             check_for_update,
             get_app_mode,
-            open_external_url
+            open_external_url,
+            get_ai_config,
+            save_ai_config,
+            fetch_ai_models,
+            test_ai_config,
+            vectorize_with_ai
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trasea");

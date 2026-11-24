@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.0] "macOS Build & External AI Engine"
+
+- **macOS support & GitHub Actions CI (`updater.rs`, `main.rs`, `tauri.macos.conf.json`, `.github/workflows/release-macos.yml`).** Added macOS (`open`) and Linux (`xdg-open`) browser open support, non-Windows-safe `realesrgan` fallback, clean macOS bundle configuration (`dmg`, `minimumSystemVersion: "11.0"`, zero Windows binaries), and automated GitHub Actions builds for `aarch64-apple-darwin` and `x86_64-apple-darwin` with SHA-256 digests.
+- **External AI Engine — BYOK APIs & Local CLI Hook (`src-tauri/src/ai_engine.rs`, `src/AiEngineSettings.tsx`, `src/SettingsModal.tsx`, `src/App.tsx`).** Opt-in external vectorization supporting **Recraft V3**, **Vectorizer.AI**, **Claude**, **GPT (OpenAI)**, **Gemini**, and **Local CLI** commands via OS `curl` and safe `Vec<String>` `Command` execution (0 network crates added; `trasea-core` remains 0 network & 0 GPL/AGPL crates). Real dynamic model fetching for Claude, OpenAI, and Gemini (zero hardcoded model lists), isolated `ai-keys.json` storage (mode `0600` on Unix, masked in errors, never exported to `.trasea`), and native `trasea_core::svg_import` sanitization/integration.
+- **Tests & Audit:** 104/104 `trasea-core` tests + 5/5 `trasea` AI backend unit tests (`T16-01..T16-05`) pass; `docs/LICENSE-AUDIT-1.6.0.md` published.
+
 ## [1.5.2] "Compact Header Version Hotfix"
 
 - **Compact header version (`src/i18n/id.ts`, `src/i18n/en.ts`).** Simplified `headerOffline` to `` `v${APP_VERSION}` `` (`v1.5.2`) by removing the `· lokal & privat` / `· local-first` suffix.

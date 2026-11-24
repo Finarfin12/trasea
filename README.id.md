@@ -4,7 +4,7 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.5.2 ("Paket Poles Vektor & Distribusi Publik")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.6.0 ("Build macOS & Mesin AI Eksternal")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -48,6 +48,11 @@ Format keluaran yang didukung:
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
 
+### Baru di 1.6.0 ("Build macOS & Mesin AI Eksternal")
+
+- **Build macOS Resmi (`.dmg`).** Installer `.dmg` terpisah untuk Apple Silicon (`aarch64`) dan Intel (`x86_64`) yang dibangun otomatis lewat GitHub Actions (`macos-latest`, macOS 11.0+), dengan fallback mulus ke pembersih gambar bawaan.
+- **Mesin AI Eksternal (API BYOK & CLI Lokal).** Vektorisasi AI opt-in di samping mesin lokal offline: atur **Recraft V3**, **Vectorizer.AI**, **Claude**, **GPT (OpenAI)**, **Gemini**, atau **CLI Lokal** (`claude`, `gemini`, `codex`, atau skrip Python) di **Pengaturan -> Mesin AI**. Claude, GPT, dan Gemini memuat daftar model aktif secara otomatis dari API resmi (tanpa daftar model hardcode). Kunci API disimpan terpisah di `ai-keys.json` (permission `0600` di Unix), tidak pernah masuk file `.trasea`, dan tidak pernah dikirim mentah ke WebView. Hasil SVG AI langsung masuk ke kanvas Trasea (Alat Node, Warna, Sticker Backing/Bleed, `CutContour`, PDF CMYK, EPS, DXF).
+
 ### Baru di 1.5.2
 
 - **Label versi header ringkas.** Header aplikasi kini hanya menampilkan versi rilis (`v1.5.2`) tanpa label tambahan.
@@ -62,7 +67,7 @@ Format keluaran yang didukung:
 - **Sudut & pertemuan garis tipis tertutup rapi.** Stroke garis tipis kini melewati tahap penyambungan ujung terverifikasi `dark_mask` (`join_stroke_endpoints`) dengan `round` cap/join konsisten di SVG, PDF, dan EPS — menutup celah sudut/T-junction tanpa garis nyasar melintasi celah terang.
 - **Latar Stiker Offset / Bleed (`StickerBacking`).** Tambah bidang latar stiker solid (bawaan `#FFFFFF`, warna bebas) plus *bleed* luar `0,0–3,0 mm` yang konsentris dengan `CutContour` pada SVG, PDF (RGB & CMYK putih murni `0 0 0 0 k`), dan EPS. Tidak dimasukkan ke DXF agar mesin potong hanya menerima jalur `CUTCONTOUR`. Tersedia di tab Ekspor dan CLI (`--sticker-backing`, `--sticker-backing-color`, `--sticker-bleed-mm`).
 - **Cek pembaruan privasi-pertama.** Tombol manual **Periksa pembaruan** di **Pengaturan → Privasi & Kredit** (plus sakelar opsional saat dibuka, bawaan Mati) hanya mengecek endpoint rilis publik GitHub dari backend Rust (0 cookie, 0 telemetri, timeout 8 detik; `trasea-core` tetap 0 crate jaringan dan WebView2 tetap terisolasi).
-- **Versi Portable Windows (`.zip`).** Ekstrak `Trasea_1.5.2_x64-portable.zip` ke mana saja dan langsung jalankan `trasea.exe` tanpa instalasi: bila `portable.flag` ada di sebelah `trasea.exe`, pengaturan dan preset tersimpan lokal di `./data/` tanpa menyentuh `%APPDATA%`.
+- **Versi Portable Windows (`.zip`).** Ekstrak `Trasea_1.6.0_x64-portable.zip` ke mana saja dan langsung jalankan `trasea.exe` tanpa instalasi: bila `portable.flag` ada di sebelah `trasea.exe`, pengaturan dan preset tersimpan lokal di `./data/` tanpa menyentuh `%APPDATA%`.
 
 ### Baru di 1.4.0 ("Semua Fitur Terbuka")
 
@@ -104,7 +109,8 @@ Fitur baru 1.3.0:
 
 ## Pakai
 
-1. Unduh `Trasea_1.5.2_x64-setup.exe` (atau `.zip` berisi installer yang sama) dari [halaman Releases](https://github.com/Finarfin12/trasea/releases), cocokkan SHA-256 di catatan rilis, jalankan (per pengguna, tanpa admin), lalu buka Trasea.
+1. **macOS (Apple Silicon & Intel):** Unduh `.dmg` yang sesuai (`aarch64` atau `x86_64`) dari [halaman Releases](https://github.com/Finarfin12/trasea/releases), seret `Trasea.app` ke `Applications`, lalu bila Gatekeeper macOS menahan aplikasi tanpa tanda tangan Apple Developer, jalankan `xattr -cr /Applications/Trasea.app` di Terminal sebelum membukanya.
+2. **Windows:** Unduh `Trasea_1.6.0_x64-setup.exe` (atau `.zip` berisi installer yang sama) dari [halaman Releases](https://github.com/Finarfin12/trasea/releases), cocokkan SHA-256 di catatan rilis, jalankan (per pengguna, tanpa admin), lalu buka Trasea.
 2. Ganti bahasa (`ID | EN`) atau buka **Pengaturan Aplikasi (`⚙` / `Ctrl+,`)** kapan saja untuk memilih tema Gelap/Terang/Ikuti Sistem, default ekspor, dan pintasan keyboard kustom.
 3. Klik **Coba contoh gambar**, tekan `Ctrl+V` untuk menempel dari clipboard, seret gambar/`.svg`/proyek `.trasea`/folder ke jendela, atau klik **Buka gambar / proyek…**.
 4. Gunakan **Hapus latar belakang (1-klik)**, **Potong & Putar**, **Mode Produksi** (**Standar**, **Sablon**, **Cutting / Bordir**, **Gradasi**, **Garis Tengah**), **Pilih Path (`Ctrl+E`)**, **Alat Node (`A`)**, **Soft-Proof CMYK (`Ctrl+P`)**, **Outline (`Ctrl+Y`)**, Inspektor Warna (klik chip warna untuk HEX/RGB/CMYK/HSL & tinta spot), dan Pustaka Palet Tersimpan.

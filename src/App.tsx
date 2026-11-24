@@ -32,6 +32,8 @@ import {
 	collectDroppedImages,
 	copySvgToClipboard,
 	checkForUpdate,
+	vectorizeWithAi,
+	type AiProvider,
 	DEFAULT_APP_SETTINGS,
 	openExternalUrl,
 	DEFAULT_PREPROCESS,
@@ -279,6 +281,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 
 	const [view, setView] = useState<View>("editor");
 	const [panelTab, setPanelTab] = useState<PanelTab>("trace");
+	const [traceEngine, setTraceEngine] = useState<AiProvider>("local");
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
 	const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -432,7 +435,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	);
 
 	const run = useCallback(
-		async (p: string, o: Options) => {
+		async (p: string, o: Options, engineOverride: AiProvider = "local") => {
 			if (busyRef.current) return;
 			busyRef.current = true;
 			setBusy(true);
@@ -447,7 +450,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				editFingerprint: hasEdits ? editFpRef.current : null,
 			};
 			try {
-				const r = await processImage(p, effectiveOpts);
+				const useExternalAi = engineOverride !== "local" && !p.toLowerCase().endsWith(".svg");
+				const r = useExternalAi ? await vectorizeWithAi(p, effectiveOpts, engineOverride) : await processImage(p, effectiveOpts);
 				if (hasEdits && !r.editsStale) {
 					// legacy projects have no fingerprint: adopt the one of the trace they were just applied to
 					if (editFpRef.current === null) editFpRef.current = r.traceFingerprint;
@@ -1218,7 +1222,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 		const apply = () => {
 		setMergeSource(null);
-		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
+		if (path) void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }, traceEngine);
 				};
 
 	const applyPreprocess = (pp: PreprocessOptions) => {
@@ -1942,6 +1946,31 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 						<div className="panel-body">
 							{panelTab === "trace" && (
 								<div className="panel-section-stack">
+									<div className="field-group">
+										<label htmlFor="trace-engine-select">{t.traceEngineLabel}</label>
+										<div className="row" style={{ gap: 6 }}>
+											<select
+												id="trace-engine-select"
+												value={traceEngine}
+												onChange={e => setTraceEngine(e.target.value as AiProvider)}
+												style={{ flex: 1 }}
+											>
+												<option value="local">{t.aiProviderLocal}</option>
+												<option value="recraft">Recraft V3</option>
+												<option value="vectorizer_ai">Vectorizer.AI</option>
+												<option value="claude">Claude</option>
+												<option value="openai">GPT (OpenAI)</option>
+												<option value="gemini">Gemini</option>
+												<option value="cli">{t.aiProviderCli}</option>
+											</select>
+											<button
+												className="small"
+												onClick={() => setSettingsModal({ tab: "ai" })}
+											>
+												{t.aiConfigureBtn}
+											</button>
+										</div>
+									</div>
 									{/* Compact 1-row Custom Presets */}
 									<div className="field-block">
 										<div className="field-head">
@@ -2636,7 +2665,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 								</div>
 							)}
 							<button className={`primary footer-apply ${dirty ? "dirty" : ""}`} onClick={apply} disabled={!path || busy}>
-								{result ? t.applyAgain : t.vectorizeBtn}
+								{traceEngine !== "local" ? t.vectorizeAiBtn : result ? t.applyAgain : t.vectorizeBtn}
 							</button>
 							{error && <div className="error footer-msg" role="alert">{error}</div>}
 							{info && <div className="ok footer-msg" role="status">{info}</div>}

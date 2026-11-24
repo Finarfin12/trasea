@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "targets": [
+      "dmg"
+    ],
+    "resources": {
+      "../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md",
+      "resources/sample/": "sample/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": null,
+      "entitlements": null
+    }
+  }
+}
