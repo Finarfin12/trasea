@@ -1955,7 +1955,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 												onChange={e => setTraceEngine(e.target.value as AiProvider)}
 												style={{ flex: 1 }}
 											>
-												<option value="local">{t.aiProviderLocal}</option>
+												<option value="local">{appSettings.preferMedianOnly ? t.aiProviderLocalCpu : t.aiProviderLocalGpu}</option>
 												<option value="recraft">Recraft V3</option>
 												<option value="vectorizer_ai">Vectorizer.AI</option>
 												<option value="claude">Claude</option>

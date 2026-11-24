@@ -941,6 +941,27 @@ pub fn run_cli_hook(
     run_cli_hook_with_prefix(executable, args_template, input_png, timeout_sec, keys, "trasea-ai-cli")
 }
 
+/// Defensively normalize CLI arguments (e.g. inject `--skip-git-repo-check` for `codex exec`).
+pub fn normalize_cli_args(exe: &str, mut args: Vec<String>) -> Vec<String> {
+    let file_name = Path::new(exe.trim())
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(exe.trim())
+        .to_ascii_lowercase();
+    let base = file_name
+        .strip_suffix(".exe")
+        .or_else(|| file_name.strip_suffix(".cmd"))
+        .or_else(|| file_name.strip_suffix(".bat"))
+        .unwrap_or(&file_name);
+    if base == "codex"
+        && args.first().map(|s| s.as_str()) == Some("exec")
+        && !args.iter().any(|a| a == "--skip-git-repo-check")
+    {
+        args.insert(1, "--skip-git-repo-check".to_string());
+    }
+    args
+}
+
 fn run_cli_hook_with_prefix(
     executable: &str,
     args_template: &[String],
@@ -962,13 +983,17 @@ fn run_cli_hook_with_prefix(
     let input_str = input_path.to_string_lossy().to_string();
     let output_str = output_path.to_string_lossy().to_string();
     let uses_output_placeholder = args_template.iter().any(|a| a.contains("{output}"));
-    let resolved_args: Vec<String> = args_template
-        .iter()
-        .map(|tok| tok.replace("{input}", &input_str).replace("{output}", &output_str))
-        .collect();
+    let resolved_args = normalize_cli_args(
+        exe,
+        args_template
+            .iter()
+            .map(|tok| tok.replace("{input}", &input_str).replace("{output}", &output_str))
+            .collect(),
+    );
 
     let mut cmd = Command::new(exe);
-    cmd.args(&resolved_args)
+    cmd.current_dir(tmp.path())
+        .args(&resolved_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -1666,6 +1691,26 @@ mod tests {
         let gemini_models = parse_gemini_models(gemini_json).expect("parse gemini");
         let gemini_ids: Vec<&str> = gemini_models.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(gemini_ids, vec!["gemini-2.5-pro", "gemini-2.0-flash"]);
+    }
+
+    /// T162-01: normalize_cli_args injects --skip-git-repo-check for codex exec without duplicating or touching other CLIs.
+    #[test]
+    fn t162_normalize_cli_args_codex_skip_git_repo_check() {
+        assert_eq!(
+            normalize_cli_args("codex", vec!["exec".into(), "prompt".into()]),
+            vec!["exec", "--skip-git-repo-check", "prompt"]
+        );
+        assert_eq!(
+            normalize_cli_args(
+                r"C:\tools\codex.cmd",
+                vec!["exec".into(), "--skip-git-repo-check".into(), "prompt".into()]
+            ),
+            vec!["exec", "--skip-git-repo-check", "prompt"]
+        );
+        assert_eq!(
+            normalize_cli_args("claude", vec!["-p".into(), "prompt".into()]),
+            vec!["-p", "prompt"]
+        );
     }
 
     /// T16-05: Doc imported from AI CLI SVG exports cleanly to PDF CMYK with CutContour +
