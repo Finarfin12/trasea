@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0] "All Features Unlocked"
+
+Trasea is free: the license system is removed completely and every feature is open to everyone.
+
+- **EPS export, Separation Films, and one-shot Batch Folder are open.** The checks behind them (`require_pro_license`) are gone, so they run without a key, and no button or banner carries a "(Pro)" label or an activation prompt anymore.
+- **License engine removed.** `license.rs`, the internal `trasea-keygen` tool, the license tests, the three Tauri commands (`license_status`, `activate_license`, `deactivate_license`), the `LicenseStatus` API, the header pill, and every Pro/trial/activation text (ID and EN) are deleted. Settings → **Privacy & Credits** now has two sub-tabs: **Privacy** and **Third-Party Licenses**. An old `license.key` file is simply ignored (never read, never deleted).
+- **Dependencies:** `ed25519-dalek`, `getrandom` and `base64` are no longer dependencies of `trasea-core` (14 fewer crates in the Windows build: 353 → 339); `sha2` stays for project hashes and the new trace fingerprint.
+- **Fix: lines disappearing after "Apply again".** Path edits and node edits address shapes by position, so after the trace changed (colours, smoothness, crop, …) the same position held another shape and an old *Delete* removed a different outline. Every trace now carries a SHA-256 fingerprint (`trace_fingerprint`); edits are stored with the fingerprint of the trace they were made on and are **skipped** when it differs (`edits_stale`), with a bilingual notice. The reset is one Undo step that brings the old settings and their edits back. `.trasea` projects store the fingerprint (`editFingerprint`, optional): projects from 1.0–1.3 still open and adopt the fingerprint of their first trace.
+- **Outline check (known limitation).** A synthetic flat landscape with 3–6 px outlines (`tests/fixtures/outline_landscape.png`) was used to measure the thin-line extractor. With a 2 px tolerance it keeps ≥ 96 % of the outline, but at exact pixel overlap it loses about 9–11 % at corners and junctions (the foot of a mountain, the base of a tree). A variant that restored those junctions closed most gaps but raised node counts on the 10-image benchmark by up to +117 %, so it was **not** shipped: the extractor is unchanged and Standard-mode output stays byte-identical to 1.3.0. The current numbers are locked as floors in test `G14-06`.
+- **Installer icon.** The NSIS installer now uses the Trasea icon (it used the generic installer icon) and refreshes the Windows icon cache after install, so upgraded installs stop showing the icon of an older version in the taskbar and shortcuts.
+- **Public-ready repository.** `LICENSE` (MIT) at the root, `releases/` is no longer tracked (installers are published as GitHub Release assets with their SHA-256), README *License* and *Download* sections.
+- **Tests & Audit:** 3 license tests removed, `G14-01`..`G14-06` added in `tests/core14.rs` (94/94 tests pass in `trasea-core`); `docs/LICENSE-AUDIT-1.4.0.md` published (339 crates, 0 GPL/AGPL, 0 network crates); `THIRD_PARTY_LICENSES.md` regenerated; `docs/RELEASE-SIGNING.md` no longer has the license key-pair section.
+
 ## [1.3.0] "Node Editor & Vector Pro"
 
 All 1.3.0 features are open without requiring a Pro key; the 1.0.0 local Ed25519 license system and every earlier test remain intact. Standard-mode SVG output is byte-identical to 1.2.0 on the 10-image benchmark (0.00% regression).

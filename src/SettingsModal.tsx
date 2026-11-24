@@ -10,7 +10,6 @@ import {
 	type CanvasBgChoice,
 	type ColorSpace,
 	type DxfUnit,
-	type LicenseStatus,
 	type ShortcutAction,
 	type ThemeChoice,
 } from "./api";
@@ -22,10 +21,7 @@ export type SettingsTab = "general" | "export" | "performance" | "shortcuts" | "
 interface Props {
 	settings: AppSettings;
 	initialTab?: SettingsTab;
-	license: LicenseStatus;
-	licenseSubTab?: "license" | "privacy" | "thirdParty";
-	licenseHint?: string;
-	onLicenseChanged: (next: LicenseStatus) => void;
+	licenseSubTab?: "privacy" | "thirdParty";
 	onUpdate: (next: AppSettings) => void;
 	onApplyExportDefaultsNow: (next: AppSettings) => void;
 	onClose: () => void;
@@ -50,10 +46,7 @@ const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 export default function SettingsModal({
 	settings,
 	initialTab = "general",
-	license,
-	licenseSubTab = "license",
-	licenseHint = "",
-	onLicenseChanged,
+	licenseSubTab = "privacy",
 	onUpdate,
 	onApplyExportDefaultsNow,
 	onClose,
@@ -158,7 +151,7 @@ export default function SettingsModal({
 					<button role="tab" aria-selected={tab === "export"} aria-pressed={tab === "export"} onClick={() => setTab("export")}>{t.tabExportDefaults}</button>
 					<button role="tab" aria-selected={tab === "performance"} aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>{t.tabPerformance}</button>
 					<button role="tab" aria-selected={tab === "shortcuts"} aria-pressed={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>{t.tabShortcuts}</button>
-					<button role="tab" aria-selected={tab === "privacy"} aria-pressed={tab === "privacy"} onClick={() => setTab("privacy")}>{t.privacyLicense}</button>
+					<button role="tab" aria-selected={tab === "privacy"} aria-pressed={tab === "privacy"} onClick={() => setTab("privacy")}>{t.privacyCredits}</button>
 				</div>
 
 				<div className="settings-body">
@@ -352,10 +345,7 @@ export default function SettingsModal({
 					{tab === "privacy" && (
 						<Licenses
 							markdown={licensesMd}
-							license={license}
 							initialTab={licenseSubTab}
-							promptHint={licenseHint}
-							onLicenseChanged={onLicenseChanged}
 						/>
 					)}
 				</div>

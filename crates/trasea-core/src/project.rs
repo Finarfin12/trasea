@@ -74,6 +74,9 @@ pub struct ProjectOptions {
     pub path_edits: Vec<PathEdit>,
     #[serde(default)]
     pub node_edits: Vec<NodeEdit>,
+    /// Fingerprint of the unedited trace the path/node edits were made on (1.4.0). Absent in older projects: edits then apply as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edit_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

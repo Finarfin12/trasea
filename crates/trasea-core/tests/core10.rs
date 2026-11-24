@@ -6,7 +6,6 @@ use std::sync::Arc;
 use trasea_core::batch::{run_batch, scan_image_files, BatchConfig};
 use trasea_core::brush::{BrushKind, BrushStroke};
 use trasea_core::export::{to_eps, Doc, ExportOptions, StrokeData, StrokeLayer, REG_MARGIN};
-use trasea_core::license::{generate_keypair, sign_license, verify_license, LicenseInfo};
 use trasea_core::primitives::Primitive;
 use trasea_core::project::{load_project, save_project, sha256_file, ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION};
 use trasea_core::trace::{Contour, Layer};
@@ -156,72 +155,6 @@ fn e03_batch_with_write_eps_produces_valid_eps_alongside_svg() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-// ---------------------------------------------------------------- L-01
-
-#[test]
-fn l01_sign_and_verify_ed25519_license_roundtrip() {
-    let (secret, pubkey) = generate_keypair().unwrap();
-    let info = LicenseInfo {
-        v: 1,
-        id: "TR-2026-0042".into(),
-        name: "Budi Santoso".into(),
-        tier: "pro".into(),
-        issued: "2026-11-23".into(),
-    };
-    let key = sign_license(&info, &secret).unwrap();
-    assert!(key.starts_with("TRSA1-"));
-    let parsed = verify_license(&key, &pubkey).unwrap();
-    assert_eq!(parsed, info);
-}
-
-// ---------------------------------------------------------------- L-02
-
-#[test]
-fn l02_tampered_payload_signature_or_prefix_is_rejected() {
-    let (secret, pubkey) = generate_keypair().unwrap();
-    let info = LicenseInfo {
-        v: 1,
-        id: "TR-2026-0001".into(),
-        name: "Tester".into(),
-        tier: "pro".into(),
-        issued: "2026-11-23".into(),
-    };
-    let key = sign_license(&info, &secret).unwrap();
-    // Flip 1 character in payload
-    let mut chars: Vec<char> = key.chars().collect();
-    chars[8] = if chars[8] == 'A' { 'B' } else { 'A' };
-    let bad_payload: String = chars.into_iter().collect();
-    assert!(verify_license(&bad_payload, &pubkey).is_err(), "tampered payload must fail");
-
-    // Flip 1 character in signature
-    let mut sig_chars: Vec<char> = key.chars().collect();
-    let last = sig_chars.len() - 2;
-    sig_chars[last] = if sig_chars[last] == 'A' { 'B' } else { 'A' };
-    let bad_sig: String = sig_chars.into_iter().collect();
-    assert!(verify_license(&bad_sig, &pubkey).is_err(), "tampered signature must fail");
-
-    // Wrong prefix
-    let bad_prefix = key.replacen("TRSA1-", "TRSA2-", 1);
-    assert!(verify_license(&bad_prefix, &pubkey).is_err(), "wrong prefix must fail");
-}
-
-// ---------------------------------------------------------------- L-03
-
-#[test]
-fn l03_license_signed_by_different_private_key_is_rejected() {
-    let (secret_a, _pub_a) = generate_keypair().unwrap();
-    let (_secret_b, pub_b) = generate_keypair().unwrap();
-    let info = LicenseInfo {
-        v: 1,
-        id: "TR-2026-0099".into(),
-        name: "Wrong Key".into(),
-        tier: "pro".into(),
-        issued: "2026-11-23".into(),
-    };
-    let key = sign_license(&info, &secret_a).unwrap();
-    assert!(verify_license(&key, &pub_b).is_err(), "key signed by another private key must fail");
-}
-
 // ---------------------------------------------------------------- P-01
 
 #[test]
@@ -258,6 +191,7 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             centerline_stroke_pt: 1.0,
             path_edits: vec![],
             node_edits: vec![],
+            edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),
@@ -319,6 +253,7 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             centerline_stroke_pt: 1.0,
             path_edits: vec![],
             node_edits: vec![],
+            edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
             lines_as: "shape".into(),

@@ -17,7 +17,6 @@ use trasea_core::export::{
     export_options_for_production, palette_of, to_ase_with_spots, to_dxf, to_eps, to_pdf,
     to_separation_pdfs, to_separation_svgs, to_svg, Doc, ExportOptions, LinesAs,
 };
-use trasea_core::license::{verify_embedded, LicenseInfo};
 use trasea_core::node_edit::{inspect_path_nodes as core_inspect_path_nodes, NodeEdit, PathNodeGeometry};
 use trasea_core::path_edit::PathEdit;
 use trasea_core::preprocess::PreprocessOptions;
@@ -133,6 +132,9 @@ struct UiParams {
     /// 1.3.0 node edits (move node / handle, delete node, toggle smooth, simplify), in source pixels.
     #[serde(default)]
     node_edits: Vec<NodeEdit>,
+    /// Fingerprint of the unedited trace the edits were made on; edits for another trace are skipped (1.4.0).
+    #[serde(default)]
+    edit_fingerprint: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -167,6 +169,10 @@ struct Processed {
     effective_smooth: f32,
     budget_met: Option<bool>,
     reused: bool,
+    /// Fingerprint of the unedited trace (path/node edits are tied to it).
+    trace_fingerprint: String,
+    /// True when the sent edits were skipped because they were made on a different trace.
+    edits_stale: bool,
 }
 
 #[derive(Serialize)]
@@ -255,13 +261,6 @@ struct UiWatchConfig {
 #[serde(rename_all = "camelCase")]
 struct WatchStoppedEvent {
     error: Option<String>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct LicenseStatusDto {
-    active: bool,
-    info: Option<LicenseInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -398,10 +397,6 @@ fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn license_file(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(config_dir(app)?.join("license.key"))
-}
-
 fn presets_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("presets.json"))
 }
@@ -412,18 +407,6 @@ fn palettes_file(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn settings_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("settings.json"))
-}
-
-fn read_active_license(app: &AppHandle) -> Option<LicenseInfo> {
-    let p = license_file(app).ok()?;
-    let raw = std::fs::read_to_string(p).ok()?;
-    verify_embedded(&raw).ok()
-}
-
-fn require_pro_license(app: &AppHandle, feature: &str) -> Result<LicenseInfo, String> {
-    read_active_license(app).ok_or_else(|| {
-        format!("{feature} adalah fitur Trasea Pro (bayar sekali, verifikasi lokal). Buka Privasi & Lisensi untuk memasukkan kunci aktivasi.")
-    })
 }
 
 fn sidecar_dir(app: &AppHandle) -> Option<PathBuf> {
@@ -510,6 +493,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         preprocess: params.preprocess.clone(),
         path_edits: params.path_edits.clone(),
         node_edits: params.node_edits.clone(),
+        edit_fingerprint: params.edit_fingerprint.clone(),
         ..Params::default()
     }
 }
@@ -627,6 +611,8 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             effective_smooth: out.effective_smooth * 100.0,
             budget_met: out.budget_met,
             reused,
+            trace_fingerprint: out.trace_fingerprint.clone(),
+            edits_stale: out.edits_stale,
         };
         Ok((processed, out.doc, fresh))
     })
@@ -684,6 +670,8 @@ async fn process_svg(last: &State<'_, Last>, path: String, params: UiParams) -> 
             effective_smooth: p.smooth * 100.0,
             budget_met: None,
             reused: false,
+            trace_fingerprint: out.trace_fingerprint.clone(),
+            edits_stale: out.edits_stale,
         };
         Ok((processed, out.doc))
     })
@@ -759,12 +747,9 @@ fn save_text_file(path: String, content: String) -> Result<(), String> {
 }
 
 /// Write the last result. `kind` is "svg", "pdf", "eps", "dxf", or "ase".
-/// Per QT-1=A, all 1.1.0 & 1.2.0 features (DXF, CMYK PDF/ASE, Die-Cut Contour, Named Spot, Centerline) are open without a Pro key.
+/// Per QT-1=A, all 1.1.0 & 1.2.0 features (DXF, CMYK PDF/ASE, Die-Cut Contour, Named Spot, Centerline) are open to everyone (Trasea is free; there is no license system).
 #[tauri::command]
-fn save_file(app: AppHandle, last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
-    if kind == "eps" {
-        require_pro_license(&app, "Ekspor EPS")?;
-    }
+fn save_file(last: State<'_, Last>, kind: String, path: String, options: UiExport) -> Result<(), String> {
     let doc = last
         .doc
         .lock()
@@ -864,10 +849,9 @@ fn copy_svg_to_clipboard(last: State<'_, Last>, options: UiExport) -> Result<usi
     Ok(len)
 }
 
-/// Export 100%-black per-colour separation films (Pro feature, supports RGB and pure CMYK K=100% PDFs).
+/// Export 100%-black per-colour separation films (supports RGB and pure CMYK K=100% PDFs).
 #[tauri::command]
-fn save_separations(app: AppHandle, last: State<'_, Last>, dir: String, base_name: String, kind: String, options: UiExport) -> Result<Vec<String>, String> {
-    require_pro_license(&app, "Ekspor Film Separasi")?;
+fn save_separations(last: State<'_, Last>, dir: String, base_name: String, kind: String, options: UiExport) -> Result<Vec<String>, String> {
     let doc = last.doc.lock().map_err(|_| "internal error".to_string())?.clone().ok_or("Belum ada hasil untuk diekspor.")?;
     let out_dir = PathBuf::from(&dir);
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("Gagal membuat folder {dir}: {e}"))?;
@@ -983,32 +967,6 @@ fn delete_saved_palette(app: AppHandle, id: String) -> Result<Vec<SavedPalette>,
 }
 
 #[tauri::command]
-fn license_status(app: AppHandle) -> LicenseStatusDto {
-    match read_active_license(&app) {
-        Some(info) => LicenseStatusDto { active: true, info: Some(info) },
-        None => LicenseStatusDto { active: false, info: None },
-    }
-}
-
-#[tauri::command]
-fn activate_license(app: AppHandle, key: String) -> Result<LicenseStatusDto, String> {
-    let trimmed = key.trim();
-    let info = verify_embedded(trimmed).map_err(|e| e.to_string())?;
-    let p = license_file(&app)?;
-    std::fs::write(&p, trimmed).map_err(|e| format!("Gagal menyimpan kunci lisensi: {e}"))?;
-    Ok(LicenseStatusDto { active: true, info: Some(info) })
-}
-
-#[tauri::command]
-fn deactivate_license(app: AppHandle) -> Result<LicenseStatusDto, String> {
-    let p = license_file(&app)?;
-    if p.exists() {
-        std::fs::remove_file(&p).map_err(|e| format!("Gagal menghapus kunci lisensi: {e}"))?;
-    }
-    Ok(LicenseStatusDto { active: false, info: None })
-}
-
-#[tauri::command]
 fn save_project(path: String, source_path: String, options: ProjectOptions, export_options: ProjectExportOptions) -> Result<(), String> {
     let sha = if !source_path.is_empty() && Path::new(&source_path).is_file() {
         sha256_file(Path::new(&source_path)).unwrap_or_default()
@@ -1116,7 +1074,6 @@ fn collect_dropped_images(paths: Vec<String>, include_subfolders: bool) -> Resul
 
 #[tauri::command]
 async fn run_batch(app: AppHandle, batch_ctrl: State<'_, BatchControl>, config: UiBatchConfig) -> Result<BatchSummary, String> {
-    require_pro_license(&app, "Batch Folder")?;
     if batch_ctrl.running.swap(true, Ordering::SeqCst) {
         return Err("Proses batch lain sedang berjalan.".into());
     }
@@ -1305,9 +1262,6 @@ fn main() {
             list_saved_palettes,
             save_palette_library_item,
             delete_saved_palette,
-            license_status,
-            activate_license,
-            deactivate_license,
             save_project,
             load_project,
             list_presets,

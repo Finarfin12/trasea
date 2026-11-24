@@ -481,6 +481,7 @@ fn g13_06_project_roundtrip_and_export_propagation() {
             centerline_stroke_pt: 1.0,
             path_edits: vec![PathEdit::Delete { target_id: "f:3:0".into() }],
             node_edits: edits.clone(),
+            edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),

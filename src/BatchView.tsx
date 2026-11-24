@@ -16,7 +16,6 @@ import {
 	type ColorSpace,
 	type DxfUnit,
 	type ExportOptions,
-	type LicenseStatus,
 	type Options,
 	type ProductionMode,
 	type UserPreset,
@@ -28,10 +27,8 @@ interface Props {
 	opts: Options;
 	exp: ExportOptions;
 	initialFiles: string[];
-	license: LicenseStatus;
 	presets: UserPreset[];
 	onApplyPreset: (preset: UserPreset) => void;
-	onOpenLicenseModal: (hint?: string) => void;
 	onChangeMode: (mode: ProductionMode) => void;
 	onOpenInEditor: (filePath: string) => void;
 	onBack: () => void;
@@ -43,7 +40,7 @@ type SubTab = "batch" | "watch";
 const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 const joinPath = (a: string, b: string): string => `${a.replace(/[\\/]+$/, "")}\\${b}`;
 
-export default function BatchView({ opts, exp, initialFiles, license, presets, onApplyPreset, onOpenLicenseModal, onChangeMode, onOpenInEditor, onBack }: Props) {
+export default function BatchView({ opts, exp, initialFiles, presets, onApplyPreset, onChangeMode, onOpenInEditor, onBack }: Props) {
 	const { t, lang } = useI18n();
 	const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError);
 	const modeLabel = (m: ProductionMode): string =>
@@ -197,10 +194,6 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 	};
 
 	const startBatch = async () => {
-		if (!license.active) {
-			onOpenLicenseModal(t.batchProPrompt);
-			return;
-		}
 		if (files.length === 0 || !outputDir || running) return;
 		setRunning(true);
 		setCancelling(false);
@@ -242,7 +235,7 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 		}
 	};
 
-	// Watch Folder actions (OPEN without Pro key per QT-1=B)
+	// Watch Folder actions
 	const chooseWatchIn = async () => {
 		const dir = await pickFolder(t.watchChooseInput);
 		if (!dir) return;
@@ -340,13 +333,6 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 				</div>
 			</div>
 
-			{!license.active && subTab === "batch" && (
-				<div className="warn row between">
-					<span>{t.trialBatchBanner}</span>
-					<button className="small" onClick={() => onOpenLicenseModal(t.batchProPrompt)}>{t.activateLicenseBtn}</button>
-				</div>
-			)}
-
 			{subTab === "batch" ? (
 				<>
 					<div className="batch-setup">
@@ -425,7 +411,7 @@ export default function BatchView({ opts, exp, initialFiles, license, presets, o
 					<div className="batch-actions">
 						<div className="row">
 							<button className="primary batch-run" onClick={() => void startBatch()} disabled={running || files.length === 0 || !outputDir}>
-								{running ? `${t.processingLabel} (${done}/${total})…` : !license.active ? t.startBatchPro : `${t.startBatch} (${files.length})`}
+								{running ? `${t.processingLabel} (${done}/${total})…` : `${t.startBatch} (${files.length})`}
 							</button>
 							{running && (
 								<button className="danger" onClick={() => void stopBatch()} disabled={cancelling}>

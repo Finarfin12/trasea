@@ -37,7 +37,6 @@ import {
 	deleteSavedPalette,
 	exportDxf,
 	getAppSettings,
-	getLicenseStatus,
 	getSampleImagePath,
 	listPresets,
 	listSavedPalettes,
@@ -69,7 +68,6 @@ import {
 	type DxfUnit,
 	type ExportKind,
 	type ExportOptions,
-	type LicenseStatus,
 	type Options,
 	type PaletteTextExportKind,
 	type PathEdit,
@@ -116,6 +114,7 @@ const DEFAULTS: Options = {
 	centerlineStrokePt: 1.0,
 	pathEdits: [],
 	nodeEdits: [],
+	editFingerprint: null,
 };
 
 const DEFAULT_EXP: ExportOptions = {
@@ -163,6 +162,7 @@ const normalizeOptions = (po: Partial<Options>): Options => ({
 	centerlineStrokePt: po.centerlineStrokePt ?? 1.0,
 	pathEdits: Array.isArray(po.pathEdits) ? po.pathEdits : [],
 	nodeEdits: Array.isArray(po.nodeEdits) ? po.nodeEdits : [],
+	editFingerprint: typeof po.editFingerprint === "string" ? po.editFingerprint : null,
 	preprocess: po.preprocess
 		? {
 				crop: po.preprocess.crop ?? null,
@@ -302,8 +302,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [cropOpen, setCropOpen] = useState(false);
 	const [settingsModal, setSettingsModal] = useState<{
 		tab: SettingsTab;
-		licenseSubTab?: "license" | "privacy" | "thirdParty";
-		licenseHint?: string;
+		licenseSubTab?: "privacy" | "thirdParty";
 	} | null>(null);
 	const [showText, setShowText] = useState(false);
 	const [showHeat, setShowHeat] = useState(false);
@@ -318,6 +317,10 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [nodeSel, setNodeSel] = useState<NodeSelection | null>(null);
 	const [showAllHandles, setShowAllHandles] = useState(false);
 	const keepSelectionRef = useRef(false);
+	// Edits are tied to the trace they were made on (fingerprint of the unedited trace, from the backend).
+	const editFpRef = useRef<string | null>(null);
+	// The options of the last run whose edits were valid (so Undo can bring the old trace and its edits back).
+	const lastEditRunRef = useRef<Options | null>(null);
 	const [palette, setPalette] = useState<string[] | null>(null);
 	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
 	const [mergeSource, setMergeSource] = useState<string | null>(null);
@@ -330,7 +333,6 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [targetChoice, setTargetChoice] = useState<TargetChoice>("auto");
 	const [customTarget, setCustomTarget] = useState("800");
 	const [hasSidecar, setHasSidecar] = useState(true);
-	const [license, setLicense] = useState<LicenseStatus>({ active: false, info: null });
 	const [presets, setPresets] = useState<UserPreset[]>([]);
 	const [selectedPresetId, setSelectedPresetId] = useState("");
 	const [presetNameInput, setPresetNameInput] = useState("");
@@ -393,6 +395,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
 			pathEdits: pathEdits.map(pe => ({ ...pe })),
 			nodeEdits: nodeEdits.map(ne => ({ ...ne })),
+			editFingerprint: editFpRef.current,
 			targetChoice,
 			customTarget,
 			exp: { ...exp, spotColors: exp.spotColors.map(s => ({ ...s })) },
@@ -418,9 +421,18 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setStage(t.loadingImage);
 			setFraction(0);
 			setPath(p);
-			const effectiveOpts: Options = appSettings.preferMedianOnly ? { ...o, aiClean: false } : o;
+			const hasEdits = o.pathEdits.length + o.nodeEdits.length > 0;
+			const effectiveOpts: Options = {
+				...(appSettings.preferMedianOnly ? { ...o, aiClean: false } : o),
+				editFingerprint: hasEdits ? editFpRef.current : null,
+			};
 			try {
 				const r = await processImage(p, effectiveOpts);
+				if (hasEdits && !r.editsStale) {
+					// legacy projects have no fingerprint: adopt the one of the trace they were just applied to
+					if (editFpRef.current === null) editFpRef.current = r.traceFingerprint;
+					lastEditRunRef.current = { ...effectiveOpts, editFingerprint: editFpRef.current };
+				}
 				setResult(r);
 				setLiveSvg(null);
 				setHiddenLayers(new Set());
@@ -449,6 +461,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setStrokes(snap.strokes);
 			setPathEdits(restoredEdits);
 			setNodeEdits(restoredNodeEdits);
+			editFpRef.current = snap.editFingerprint ?? null;
 			setNodeSel(null);
 			setTargetChoice(snap.targetChoice);
 			setCustomTarget(snap.customTarget);
@@ -501,8 +514,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 		[opts, palette, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits],
 	);
 
-	const openPrivacyModal = useCallback((licenseSubTab: "license" | "privacy" | "thirdParty" = "license", licenseHint = "") => {
-		setSettingsModal({ tab: "privacy", licenseSubTab, licenseHint });
+	const openPrivacyModal = useCallback((licenseSubTab: "privacy" | "thirdParty" = "privacy") => {
+		setSettingsModal({ tab: "privacy", licenseSubTab });
 	}, []);
 
 	const effectiveExport = useCallback((): ExportOptions => {
@@ -574,6 +587,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			setLive(null);
 			setPathEdits([]);
 			setNodeEdits([]);
+			editFpRef.current = null;
+			lastEditRunRef.current = null;
 			setNodeSel(null);
 			setNodeGeo(null);
 			setSelectedPathId(null);
@@ -617,7 +632,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setStrokes(po.brushStrokes ?? []);
 				setPathEdits(po.pathEdits ?? []);
 				setNodeEdits(po.nodeEdits ?? []);
-				setNodeSel(null);
+				editFpRef.current = po.editFingerprint ?? null;
+				lastEditRunRef.current = null;
+setNodeSel(null);
 setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
 				setHiddenLayers(new Set());
 				setHistory(emptyHistory());
@@ -663,7 +680,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			try {
 				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
 				if (!dest) return;
-				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits };
+				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits, editFingerprint: pathEdits.length + nodeEdits.length > 0 ? editFpRef.current : null };
 				await saveProjectFile(dest, path, fullOpts, effectiveExport());
 				setProjectPath(dest);
 				setInfo(`${t.projectSaved} ${dest}`);
@@ -718,7 +735,6 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 	useEffect(() => {
 		void sidecarAvailable().then(setHasSidecar);
-		void getLicenseStatus().then(setLicense);
 		void listPresets().then(setPresets).catch(() => {});
 		void listSavedPalettes().then(setSavedPalettes).catch(() => {});
 		const subs: Array<Promise<() => void>> = [
@@ -758,6 +774,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		(edit: PathEdit, label: string) => {
 			if (!path || busyRef.current) return;
 			recordHistory(label);
+			if (editFpRef.current === null && result) editFpRef.current = result.traceFingerprint;
 			const nextEdits = [...pathEdits, edit];
 			setPathEdits(nextEdits);
 			setSelectedPathId(null);
@@ -771,7 +788,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				nodeEdits,
 			});
 		},
-		[path, recordHistory, pathEdits, nodeEdits, run, opts, palette, paletteMerges, targetNodes, strokes],
+		[path, recordHistory, pathEdits, nodeEdits, result, run, opts, palette, paletteMerges, targetNodes, strokes],
 	);
 
 	const deleteSelectedPath = useCallback(() => {
@@ -793,6 +810,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 	const resetAllPathEdits = useCallback(() => {
 		if (!path || pathEdits.length === 0 || busyRef.current) return;
 		recordHistory(t.pathResetEdits);
+		if (nodeEdits.length === 0) editFpRef.current = null;
 		setPathEdits([]);
 		setSelectedPathId(null);
 		void run(path, {
@@ -805,6 +823,38 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 							nodeEdits,
 						});
 					}, [path, pathEdits.length, nodeEdits, recordHistory, t.pathResetEdits, run, opts, palette, paletteMerges, targetNodes, strokes]);
+
+	// An edit belongs to the trace it was made on. When the backend reports the sent edits stale (the trace changed), they were not
+	// applied; drop them here, keep a history step that brings the old trace and its edits back, and tell the user.
+	useEffect(() => {
+		if (!result?.editsStale) return;
+		const prev = lastEditRunRef.current;
+		if (prev) {
+			const tn = prev.targetNodes;
+			const snap: EditorSnapshot = {
+				opts: prev,
+				palette: prev.customPalette,
+				paletteMerges: prev.paletteMerges,
+				strokes: prev.brushStrokes,
+				pathEdits: prev.pathEdits,
+				nodeEdits: prev.nodeEdits,
+				editFingerprint: prev.editFingerprint,
+				targetChoice: tn === null ? "auto" : [500, 1000, 2000].includes(tn) ? (String(tn) as TargetChoice) : "custom",
+				customTarget: tn === null ? "" : String(tn),
+				exp,
+				label: t.editsResetLabel,
+			};
+			setHistory(h => pushSnapshot(h, snap, appSettings.undoLimit));
+		}
+		lastEditRunRef.current = null;
+		editFpRef.current = null;
+		setPathEdits([]);
+		setNodeEdits([]);
+		setNodeSel(null);
+		setSelectedPathId(null);
+		setInfo(t.editsResetNotice);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [result]);
 
 	// ---- Node tool (1.3.0) ----
 	// geometry of the selected path (source pixels); refreshed after every re-render
@@ -830,6 +880,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		(edit: NodeEdit, label: string) => {
 			if (!path || busyRef.current) return;
 			recordHistory(label);
+			if (editFpRef.current === null && result) editFpRef.current = result.traceFingerprint;
 			const next = [...nodeEdits, edit];
 			setNodeEdits(next);
 			keepSelectionRef.current = true;
@@ -843,7 +894,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				nodeEdits: next,
 			});
 		},
-		[path, recordHistory, nodeEdits, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
+		[path, recordHistory, nodeEdits, result, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
 	);
 
 	const onNodeMove = useCallback(
@@ -886,6 +937,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 	const resetNodeEdits = useCallback(() => {
 		if (!path || nodeEdits.length === 0 || busyRef.current) return;
 		recordHistory(t.nodeResetLabel);
+		if (pathEdits.length === 0) editFpRef.current = null;
 		setNodeEdits([]);
 		setNodeSel(null);
 		keepSelectionRef.current = true;
@@ -1163,6 +1215,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		setStrokes([]);
 		setPathEdits([]);
 		setNodeEdits([]);
+		editFpRef.current = null;
 		setNodeSel(null);
 		setOpts(nextOpts);
 		if (path) void run(path, nextOpts);
@@ -1174,10 +1227,6 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 	const exportAs = async (kind: ExportKind) => {
 		if (!path) return;
-		if (kind === "eps" && !license.active) {
-			void openPrivacyModal("license", t.epsProPrompt);
-			return;
-		}
 		setError("");
 		setInfo("");
 		const effExp = effectiveExport();
@@ -1231,10 +1280,6 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 	const exportSeparationFilms = async () => {
 		if (!path) return;
-		if (!license.active) {
-			void openPrivacyModal("license", t.sepProPrompt);
-			return;
-		}
 		setError("");
 		setInfo("");
 		try {
@@ -1486,13 +1531,6 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			<header className="top">
 				<div className="brand">
 					<img className="logo" src={logoIcon} alt="" aria-hidden="true" width={24} height={24} /> Trasea <small>{t.headerOffline}</small>
-					<button
-						className={`small lic-pill ${license.active ? "lic-pro" : "lic-trial"}`}
-						onClick={() => void openPrivacyModal("license")}
-						title={t.licenseTitle}
-					>
-						{license.active ? t.proActive : t.trialActivate}
-					</button>
 				</div>
 				<div className="row">
 					<div className="seg seg2 lang-switch" role="group" aria-label={t.switchLangTip} title={t.switchLangTip}>
@@ -1523,10 +1561,8 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 					opts={opts}
 					exp={effectiveExport()}
 					initialFiles={batchInitialFiles}
-					license={license}
 					presets={presets}
 					onApplyPreset={applyPreset}
-					onOpenLicenseModal={hint => void openPrivacyModal("license", hint ?? "")}
 					onChangeMode={switchProductionMode}
 					onOpenInEditor={p => openPicture(p)}
 					onBack={() => setView("editor")}
@@ -2478,14 +2514,14 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 												<button onClick={() => void exportAs("svg")}>{t.exportSvg}</button>
 												<button onClick={() => void exportAs("pdf")}>{t.exportPdf}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 												<button onClick={() => void exportAs("dxf")}>{t.exportDxf}</button>
-												<button onClick={() => void exportAs("eps")}>{t.exportEps}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}{!license.active ? " (Pro)" : ""}</button>
+												<button onClick={() => void exportAs("eps")}>{t.exportEps}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 												<button onClick={() => void exportAs("ase")}>{t.exportAse}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 											</div>
 
 											{opts.productionMode === "screenPrint" && (
 												<div className="sep-box" style={{ marginTop: 4 }}>
 													<label className="check" style={{ marginTop: 0 }}><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> {t.includeSepPdf}</label>
-													<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>{t.exportSepBtn}{!license.active ? " (Pro)" : ""}</button>
+													<button style={{ width: "100%", marginTop: 6 }} onClick={() => void exportSeparationFilms()}>{t.exportSepBtn}</button>
 												</div>
 											)}
 										</>
@@ -2553,10 +2589,6 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				<SettingsModal
 					settings={appSettings}
 					initialTab={settingsModal.tab}
-					license={license}
-					licenseSubTab={settingsModal.licenseSubTab}
-					licenseHint={settingsModal.licenseHint}
-					onLicenseChanged={setLicense}
 					onUpdate={onUpdateSettings}
 					onApplyExportDefaultsNow={next => {
 						setExp(ex => ({

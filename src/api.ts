@@ -92,6 +92,8 @@ export interface Options {
 	centerlineStrokePt: number;
 	pathEdits: PathEdit[];
 	nodeEdits: NodeEdit[];
+	/** Fingerprint of the unedited trace the path/node edits were made on (edits for another trace are skipped). */
+	editFingerprint: string | null;
 }
 
 export interface BrushStroke {
@@ -140,6 +142,10 @@ export interface Processed {
 	effectiveSmooth: number;
 	budgetMet: boolean | null;
 	reused: boolean;
+	/** Fingerprint of the unedited trace; path/node edits belong to exactly this trace. */
+	traceFingerprint: string;
+	/** True when the edits sent with this run were skipped because they were made on a different trace. */
+	editsStale: boolean;
 }
 
 export interface RawImagePreview {
@@ -311,19 +317,6 @@ export interface SavedPalette {
 	colors: SavedPaletteColor[];
 }
 
-export interface LicenseInfo {
-	v: number;
-	id: string;
-	name: string;
-	tier: string;
-	issued: string;
-}
-
-export interface LicenseStatus {
-	active: boolean;
-	info: LicenseInfo | null;
-}
-
 export interface ProjectFile {
 	schemaVersion: number;
 	appVersion: string;
@@ -373,9 +366,6 @@ export const listSavedPalettes = (): Promise<SavedPalette[]> => invoke<SavedPale
 export const savePaletteLibraryItem = (palette: SavedPalette): Promise<SavedPalette[]> => invoke<SavedPalette[]>("save_palette_library_item", { palette });
 export const deleteSavedPalette = (id: string): Promise<SavedPalette[]> => invoke<SavedPalette[]>("delete_saved_palette", { id });
 
-export const getLicenseStatus = (): Promise<LicenseStatus> => invoke<LicenseStatus>("license_status");
-export const activateLicense = (key: string): Promise<LicenseStatus> => invoke<LicenseStatus>("activate_license", { key });
-export const deactivateLicense = (): Promise<LicenseStatus> => invoke<LicenseStatus>("deactivate_license");
 
 export const saveProjectFile = (path: string, sourcePath: string, options: Options, exportOptions: ExportOptions): Promise<void> =>
 	invoke<void>("save_project", { path, sourcePath, options, exportOptions });

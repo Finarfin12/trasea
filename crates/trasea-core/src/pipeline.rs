@@ -63,6 +63,10 @@ pub struct Params {
     pub path_edits: Vec<PathEdit>,
     /// Non-destructive node edits (move node/handle, delete node, toggle smooth, simplify) applied after `path_edits`.
     pub node_edits: Vec<NodeEdit>,
+    /// Fingerprint (`Output::trace_fingerprint`) of the unedited trace the edits were made on. When set and different from the
+    /// fingerprint of this trace, `path_edits` and `node_edits` are NOT applied (they address shapes by position, and a
+    /// different trace puts other shapes at those positions). `None` = legacy behaviour: always apply.
+    pub edit_fingerprint: Option<String>,
 }
 
 impl Default for Params {
@@ -86,6 +90,7 @@ impl Default for Params {
             preprocess: PreprocessOptions::default(),
             path_edits: Vec::new(),
             node_edits: Vec::new(),
+            edit_fingerprint: None,
         }
     }
 }
@@ -113,6 +118,38 @@ pub struct Output {
     pub effective_smooth: f32,
     /// `Some(true)` when `target_nodes` was met, `Some(false)` when it could not be, `None` without a target.
     pub budget_met: Option<bool>,
+    /// SHA-256 (hex) of the traced drawing BEFORE any path/node edit. Edits are only valid for the trace they were made on.
+    pub trace_fingerprint: String,
+    /// True when `path_edits`/`node_edits` were skipped because `Params::edit_fingerprint` does not match this trace.
+    pub edits_stale: bool,
+}
+
+/// SHA-256 (hex) over a canonical dump of the drawing. The `Debug` text of the document prints every float with its shortest
+/// round-trip form, so the same trace always gives the same digest and any change of a coordinate, colour or shape count
+/// changes it.
+pub fn trace_fingerprint(doc: &Doc) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(format!("{doc:?}").as_bytes());
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Apply `path_edits` then `node_edits` unless they belong to another trace. Returns (doc, fingerprint of the unedited doc, stale).
+fn apply_edits_guarded(doc: Doc, params: &Params) -> (Doc, String, bool) {
+    let fp = trace_fingerprint(&doc);
+    let has_edits = !params.path_edits.is_empty() || !params.node_edits.is_empty();
+    let stale = has_edits && params.edit_fingerprint.as_deref().map_or(false, |f| f != fp);
+    if !has_edits || stale {
+        return (doc, fp, stale);
+    }
+    let mut doc = doc;
+    if !params.path_edits.is_empty() {
+        doc = apply_path_edits(&doc, &params.path_edits);
+    }
+    if !params.node_edits.is_empty() {
+        doc = apply_node_edits(&doc, &params.node_edits);
+    }
+    (doc, fp, false)
 }
 
 /// The expensive first half of the pipeline, kept in memory: the loaded picture, its cleaned copy at working size and the
@@ -669,7 +706,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         } else {
             vec![stroke_layer]
         };
-        let mut doc = Doc {
+        let doc = Doc {
             width: prep.src.width(),
             height: prep.src.height(),
             scale,
@@ -678,12 +715,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
             line_fallback: Vec::new(),
             strokes,
         };
-        if !params.path_edits.is_empty() {
-            doc = apply_path_edits(&doc, &params.path_edits);
-        }
-        if !params.node_edits.is_empty() {
-            doc = apply_node_edits(&doc, &params.node_edits);
-        }
+        let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
         progress("Writing SVG", 0.95);
         let svg = to_svg(&doc, &exp_opts);
         let (paths, nodes) = count_svg(&svg);
@@ -712,6 +744,8 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
             heatmap,
             effective_smooth: params.smooth.clamp(0.0, 1.0),
             budget_met: None,
+            trace_fingerprint: trace_fp,
+            edits_stale,
         });
     }
 
@@ -807,13 +841,8 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         notes.push(format!("{micro_removed} bintik mikro dibuang."));
     }
 
-    // Apply non-destructive per-path edits (`Delete` / `ReassignColor`) before stats, SVG, and export.
-    if !params.path_edits.is_empty() {
-        doc = apply_path_edits(&doc, &params.path_edits);
-    }
-    if !params.node_edits.is_empty() {
-        doc = apply_node_edits(&doc, &params.node_edits);
-    }
+    // Apply non-destructive per-path and node edits before stats, SVG, and export (skipped when they belong to another trace).
+    let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
 
     let svg = to_svg(&doc, &exp_opts);
     // Measure MAE without registration margins so the comparison aligns pixel-for-pixel with the source.
@@ -848,6 +877,8 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         heatmap,
         effective_smooth: knobs.t as f32,
         budget_met,
+        trace_fingerprint: trace_fp,
+        edits_stale,
     })
 }
 /// Turn an imported `.svg` (see `svg_import`) into an `Output` with the same edits and statistics as a traced drawing:
@@ -855,13 +886,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
 /// pipeline runs, so there is no MAE (`stats.mae == None`).
 pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_opts: &ExportOptions) -> Output {
     let crate::svg_import::SvgImport { doc, notes } = import;
-    let mut doc = doc;
-    if !params.path_edits.is_empty() {
-        doc = apply_path_edits(&doc, &params.path_edits);
-    }
-    if !params.node_edits.is_empty() {
-        doc = apply_node_edits(&doc, &params.node_edits);
-    }
+    let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
     let svg = to_svg(&doc, exp_opts);
     let (paths, nodes) = count_svg(&svg);
     let stats = Stats { paths, nodes, bytes: svg.len(), mae: None, primitives: count_primitives(&svg) };
@@ -886,5 +911,7 @@ pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_
         heatmap,
         effective_smooth: params.smooth,
         budget_met: None,
+        trace_fingerprint: trace_fp,
+        edits_stale,
     }
 }

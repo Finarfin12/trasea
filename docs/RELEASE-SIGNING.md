@@ -1,36 +1,10 @@
-# Panduan Build Rilis, Code Signing, & Distribusi — Trasea 1.0.0
+# Panduan Build Rilis, Code Signing, & Distribusi — Trasea
 
-Dokumen ini merangkum langkah persiapan distribusi komersial Trasea 1.0.0 untuk **Windows (Authenticode)** dan **macOS (Universal Binary + Notarization)**, serta rotasi kunci lisensi Ed25519 produksi.
-
----
-
-## 1. Rotasi Keypair Lisensi Ed25519 (WAJIB Sebelum Jual Publik)
-
-Build pengembangan di repositori ini memakai *dev keypair* (disimpan di luar repo pada `Shared/vektora/v1.0.0/dev-license-keys.txt`). Sebelum merilis installer komersial pertama ke pembeli:
-
-1. Bangun utilitas internal `trasea-keygen` (tidak pernah dibundel ke installer):
-   ```powershell
-   cargo build --release --bin trasea-keygen -p trasea-core
-   ```
-2. Buat keypair produksi baru:
-   ```powershell
-   .\target\x86_64-pc-windows-gnu\release\trasea-keygen.exe init
-   ```
-3. Simpan `PRIVATE_KEY_HEX` di password manager / brankas terenkripsi milik Anda (di luar repo git, jangan pernah di-commit).
-4. Salin array 32-byte `EMBEDDED_PUBLIC_KEY` ke `crates/trasea-core/src/license.rs`, lalu bangun ulang installer.
-5. Untuk menerbitkan kunci pembeli baru:
-   ```powershell
-   $env:TRASEA_LICENSE_SECRET = "<PRIVATE_KEY_HEX>"
-   .\target\x86_64-pc-windows-gnu\release\trasea-keygen.exe issue --name "Nama Pembeli" --id "TR-2026-0001"
-   ```
-   Untuk verifikasi lokal terhadap public key tertanam:
-   ```powershell
-   .\target\x86_64-pc-windows-gnu\release\trasea-keygen.exe verify "TRSA1-..."
-   ```
+Dokumen ini merangkum langkah persiapan distribusi Trasea untuk **Windows (Authenticode)** dan **macOS (Universal Binary + Notarization)**. Trasea gratis dan tidak memakai sistem lisensi, sehingga tidak ada kunci aktivasi yang perlu dikelola.
 
 ---
 
-## 2. Windows Code Signing (Authenticode + NSIS Installer)
+## 1. Windows Code Signing (Authenticode + NSIS Installer)
 
 Konfigurasi di `src-tauri/tauri.conf.json` sudah menyiapkan field `bundle.windows.certificateThumbprint`, `digestAlgorithm: "sha256"`, dan `timestampUrl`.
 
@@ -58,12 +32,12 @@ Konfigurasi di `src-tauri/tauri.conf.json` sudah menyiapkan field `bundle.window
 2. Gunakan `signtool.exe` + `Azure.CodeSigning.Dlib.dll` melalui `bundle.windows.signCommand` di `tauri.release.conf.json`.
 3. Verifikasi tanda tangan digital hasil build:
    ```powershell
-   signtool verify /pa /v "target\x86_64-pc-windows-gnu\release\bundle\nsis\Trasea_1.0.0_x64-setup.exe"
+   signtool verify /pa /v "target\x86_64-pc-windows-gnu\release\bundle\nsis\Trasea_1.4.0_x64-setup.exe"
    ```
 
 ---
 
-## 3. macOS Universal Binary & Notarization (Apple Silicon + Intel)
+## 2. macOS Universal Binary & Notarization (Apple Silicon + Intel)
 
 Konfigurasi `src-tauri/tauri.conf.json` sudah menyertakan:
 - `icons/icon.icns` (logo huruf `T` Trasea, 58 KB)
@@ -96,10 +70,8 @@ Konfigurasi `src-tauri/tauri.conf.json` sudah menyertakan:
 
 ---
 
-## 4. Daftar Cek Sebelum Upload ke Toko (Gumroad / LemonSqueezy / Web Sendiri)
+## 3. Daftar Cek Sebelum Mengunggah Installer (GitHub Releases / Web Sendiri)
 
-- [ ] `EMBEDDED_PUBLIC_KEY` sudah diganti ke keypair produksi pribadi.
-- [ ] `trasea-keygen` TIDAK ikut masuk ke installer / folder distribusi.
 - [ ] Installer Windows lolos `signtool verify /pa` tanpa peringatan SmartScreen merah.
 - [ ] File `THIRD_PARTY_LICENSES.md` ikut terpasang di folder aplikasi (terverifikasi otomatis lewat `bundle.resources`).
-- [ ] Uji manual `M-01` (EPS di Illustrator / Affinity / CorelDraw) dan uji aktivasi kunci produksi di mesin bersih tanpa internet.
+- [ ] Uji manual `M-01` (EPS di Illustrator / Affinity / CorelDraw) dan uji pasang di mesin bersih tanpa internet.

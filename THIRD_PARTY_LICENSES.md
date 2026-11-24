@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Trasea 1.3.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
+Trasea 1.4.0 is MIT licensed. It bundles or links the following third-party components. Potrace (GPL) is NOT used.
 
 ## Bundled programs, models, and frontend libraries
 
@@ -11,17 +11,15 @@ Trasea 1.3.0 is MIT licensed. It bundles or links the following third-party comp
 | ncnn (inside `realesrgan-ncnn-vulkan.exe`) | BSD-3-Clause | Copyright (c) 2017, Tencent — https://github.com/Tencent/ncnn |
 | `vcomp140.dll` (OpenMP runtime) | Microsoft Visual C++ Redistributable | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
 | VTracer / visioncortex (tracing engine) | MIT | https://github.com/visioncortex/vtracer |
-| ed25519-dalek (offline license verification) | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek |
 | React, React DOM | MIT | Copyright (c) Meta Platforms, Inc. — https://react.dev |
 | Tauri 2 & `@tauri-apps/*` | MIT OR Apache-2.0 | https://tauri.app |
 | Inter typeface (only as outlined glyph paths in the logo wordmark; no font file is bundled) | SIL Open Font License 1.1 | Copyright (c) The Inter Project Authors — https://rsms.me/inter |
 
-## Full BSD-3-Clause notice (Real-ESRGAN, ncnn, ed25519-dalek)
+## Full BSD-3-Clause notice (Real-ESRGAN, ncnn)
 
 ```text
 Real-ESRGAN: Copyright (c) 2021, Xintao Wang. All rights reserved.
 ncnn: Copyright (c) 2017, Tencent. All rights reserved.
-ed25519-dalek: Copyright (c) 2017-2024, Isis Lovecruft & Henry de Valence. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
@@ -66,7 +64,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-## Rust crates linked into the Windows app (353)
+## Rust crates linked into the Windows app (339)
 
 | Crate | Version | License |
 |---|---|---|
@@ -81,12 +79,11 @@ DEALINGS IN THE SOFTWARE.
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | base64 | 0.23.1 | MIT OR Apache-2.0 |
-| base64ct | 1.8.3 | Apache-2.0 OR MIT |
-| bitflags | 1.3.2 | MIT/Apache-2.0 |
-| bitflags | 2.13.2 | MIT OR Apache-2.0 |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT |
 | bit-vec | 0.6.3 | MIT/Apache-2.0 |
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT |
+| bitflags | 1.3.2 | MIT/Apache-2.0 |
+| bitflags | 2.13.2 | MIT OR Apache-2.0 |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 |
 | block-buffer | 0.12.1 | MIT OR Apache-2.0 |
 | brotli | 9.1.3 | BSD-3-Clause AND MIT |
@@ -108,7 +105,6 @@ DEALINGS IN THE SOFTWARE.
 | clipboard-win | 5.4.3 | BSL-1.0 |
 | color_quant | 1.1.0 | MIT |
 | const-oid | 0.10.3 | Apache-2.0 OR MIT |
-| const-oid | 0.9.6 | Apache-2.0 OR MIT |
 | cookie | 0.18.2 | MIT OR Apache-2.0 |
 | core_detect | 1.0.0 | MIT/Apache-2.0 |
 | core_maths | 0.1.1 | MIT |
@@ -124,13 +120,10 @@ DEALINGS IN THE SOFTWARE.
 | cssparser | 0.37.0 | MPL-2.0 |
 | cssparser-macros | 0.7.1 | MPL-2.0 |
 | ctor | 1.0.14 | Apache-2.0 OR MIT |
-| curve25519-dalek | 4.1.3 | BSD-3-Clause |
-| curve25519-dalek-derive | 0.1.1 | MIT/Apache-2.0 |
 | darling | 0.24.1 | MIT |
 | darling_core | 0.24.1 | MIT |
 | darling_macro | 0.24.1 | MIT |
 | data-url | 0.3.2 | MIT OR Apache-2.0 |
-| der | 0.7.10 | Apache-2.0 OR MIT |
 | deranged | 0.5.9 | MIT OR Apache-2.0 |
 | derive_more | 2.1.1 | MIT |
 | derive_more-impl | 2.1.1 | MIT |
@@ -145,8 +138,6 @@ DEALINGS IN THE SOFTWARE.
 | dtoa-short | 0.3.5 | MPL-2.0 |
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 |
-| ed25519 | 2.2.3 | Apache-2.0 OR MIT |
-| ed25519-dalek | 2.2.0 | BSD-3-Clause |
 | either | 1.19.0 | MIT OR Apache-2.0 |
 | embed-resource | 3.0.12 | MIT |
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
@@ -163,11 +154,10 @@ DEALINGS IN THE SOFTWARE.
 | float-cmp | 0.9.0 | MIT |
 | fnv | 1.0.7 | Apache-2.0 / MIT |
 | foldhash | 0.2.0 | Zlib |
-| fontdb | 0.23.0 | MIT |
 | font-types | 0.11.3 | MIT OR Apache-2.0 |
+| fontdb | 0.23.0 | MIT |
 | form_urlencoded | 1.2.3 | MIT OR Apache-2.0 |
 | generic-array | 0.14.7 | MIT |
-| getrandom | 0.2.17 | MIT OR Apache-2.0 |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
 | gif | 0.13.3 | MIT OR Apache-2.0 |
@@ -193,8 +183,8 @@ DEALINGS IN THE SOFTWARE.
 | idna | 1.1.0 | MIT OR Apache-2.0 |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
 | image | 0.25.10 | MIT OR Apache-2.0 |
-| imagesize | 0.13.0 | MIT |
 | image-webp | 0.2.4 | MIT OR Apache-2.0 |
+| imagesize | 0.13.0 | MIT |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT |
 | infer | 0.22.0 | MIT |
@@ -248,7 +238,6 @@ DEALINGS IN THE SOFTWARE.
 | phf_shared | 0.13.1 | MIT |
 | pico-args | 0.5.0 | MIT |
 | pin-project-lite | 0.2.18 | Apache-2.0 OR MIT |
-| pkcs8 | 0.10.2 | Apache-2.0 OR MIT |
 | plist | 1.10.4 | MIT |
 | png | 0.17.16 | MIT OR Apache-2.0 |
 | png | 0.18.1 | MIT OR Apache-2.0 |
@@ -261,7 +250,6 @@ DEALINGS IN THE SOFTWARE.
 | quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.42.0 | MIT |
 | quote | 1.0.47 | MIT OR Apache-2.0 |
-| rand_core | 0.6.4 | MIT OR Apache-2.0 |
 | rangemap | 1.8.0 | MIT/Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | rayon | 1.12.0 | MIT OR Apache-2.0 |
@@ -306,7 +294,6 @@ DEALINGS IN THE SOFTWARE.
 | sha2 | 0.10.9 | MIT OR Apache-2.0 |
 | sha2 | 0.11.1 | MIT OR Apache-2.0 |
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
-| signature | 2.2.0 | Apache-2.0 OR MIT |
 | simd-adler32 | 0.3.10 | MIT |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 |
 | simplecss | 0.2.2 | Apache-2.0 OR MIT |
@@ -316,7 +303,6 @@ DEALINGS IN THE SOFTWARE.
 | smallvec | 1.16.6 | MIT OR Apache-2.0 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 |
 | softbuffer | 0.4.8 | MIT OR Apache-2.0 |
-| spki | 0.7.3 | Apache-2.0 OR MIT |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
 | static_vcruntime | 3.0.0 | MIT OR Apache-2.0 OR Zlib |
 | strict-num | 0.1.1 | MIT |
@@ -324,7 +310,6 @@ DEALINGS IN THE SOFTWARE.
 | string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | strsim | 0.11.1 | MIT |
 | subsetter | 0.2.6 | MIT OR Apache-2.0 |
-| subtle | 2.6.1 | BSD-3-Clause |
 | svg2pdf | 0.13.0 | MIT OR Apache-2.0 |
 | svgtypes | 0.15.3 | Apache-2.0 OR MIT |
 | syn | 2.0.119 | MIT OR Apache-2.0 |
@@ -388,6 +373,7 @@ DEALINGS IN THE SOFTWARE.
 | webview2-com-sys | 0.39.1 | MIT |
 | weezl | 0.1.12 | MIT OR Apache-2.0 |
 | winapi-util | 0.1.11 | Unlicense OR MIT |
+| window-vibrancy | 0.8.1 | Apache-2.0 OR MIT |
 | windows | 0.62.2 | MIT OR Apache-2.0 |
 | windows-collections | 0.3.2 | MIT OR Apache-2.0 |
 | windows-core | 0.62.2 | MIT OR Apache-2.0 |
@@ -401,10 +387,9 @@ DEALINGS IN THE SOFTWARE.
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 |
 | windows-threading | 0.2.1 | MIT OR Apache-2.0 |
 | windows-version | 0.1.7 | MIT OR Apache-2.0 |
-| window-vibrancy | 0.8.1 | Apache-2.0 OR MIT |
 | winnow | 1.0.5 | MIT |
-| writeable | 0.6.4 | Unicode-3.0 |
 | write-fonts | 0.48.1 | MIT OR Apache-2.0 |
+| writeable | 0.6.4 | Unicode-3.0 |
 | wry | 0.57.3 | Apache-2.0 OR MIT |
 | xmlwriter | 0.1.0 | MIT |
 | yoke | 0.8.4 | Unicode-3.0 |
@@ -413,7 +398,6 @@ DEALINGS IN THE SOFTWARE.
 | zerocopy-derive | 0.8.64 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | zerofrom | 0.1.8 | Unicode-3.0 |
 | zerofrom-derive | 0.1.8 | Unicode-3.0 |
-| zeroize | 1.9.2 | Apache-2.0 OR MIT |
 | zerotrie | 0.2.5 | Unicode-3.0 |
 | zerovec | 0.11.9 | Unicode-3.0 |
 | zerovec-derive | 0.11.7 | Unicode-3.0 |
