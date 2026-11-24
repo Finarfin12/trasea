@@ -8,6 +8,7 @@ import {
 	getAppMode,
 	openExternalUrl,
 	licenses as fetchLicenses,
+	type AiProvider,
 	type AppModeInfo,
 	type AppSettings,
 	type UpdateInfo,
@@ -25,6 +26,7 @@ export type SettingsTab = "general" | "export" | "performance" | "ai" | "shortcu
 interface Props {
 	settings: AppSettings;
 	initialTab?: SettingsTab;
+	initialAiProvider?: AiProvider;
 	licenseSubTab?: "privacy" | "thirdParty";
 	onUpdate: (next: AppSettings) => void;
 	onApplyExportDefaultsNow: (next: AppSettings) => void;
@@ -48,6 +50,7 @@ const SHORTCUT_ORDER: ShortcutAction[] = [
 export default function SettingsModal({
 	settings,
 	initialTab = "general",
+	initialAiProvider,
 	licenseSubTab = "privacy",
 	onUpdate,
 	onApplyExportDefaultsNow,
@@ -314,7 +317,7 @@ export default function SettingsModal({
 						</div>
 					)}
 
-					{tab === "ai" && <AiEngineSettings />}
+					{tab === "ai" && <AiEngineSettings initialProvider={initialAiProvider} />}
 
 					{tab === "shortcuts" && (
 						<div className="settings-section">

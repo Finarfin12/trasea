@@ -67,10 +67,16 @@ function cliKind(exe: string): "codex" | "claude" | "gemini" | "opencode" | "oth
 	return "other";
 }
 
-export default function AiEngineSettings() {
+interface AiEngineSettingsProps {
+	initialProvider?: AiProvider;
+}
+
+export default function AiEngineSettings({ initialProvider }: AiEngineSettingsProps = {}) {
 	const { t } = useI18n();
 	const [cfg, setCfg] = useState<AiConfigPublic | null>(null);
-	const [selected, setSelected] = useState<AiProvider>("recraft");
+	const [selected, setSelected] = useState<AiProvider>(() =>
+		initialProvider && EXTERNAL_PROVIDERS.includes(initialProvider) ? initialProvider : "recraft",
+	);
 
 	// Key input drafts (never pre-filled with secrets)
 	const [recraftKey, setRecraftKey] = useState("");
@@ -85,6 +91,7 @@ export default function AiEngineSettings() {
 	const [cliArgsText, setCliArgsText] = useState("");
 	const [cliTimeout, setCliTimeout] = useState(120);
 	const [cliModel, setCliModel] = useState("");
+	const [cliCustomModelMode, setCliCustomModelMode] = useState(false);
 	const [cliReasoning, setCliReasoning] = useState("");
 	const [cliModels, setCliModels] = useState<AiModelItem[]>([]);
 	const [cliModelStatus, setCliModelStatus] = useState("");
@@ -178,9 +185,12 @@ export default function AiEngineSettings() {
 				if (loaded.aiCliExecutable) {
 					void loadCliModelsFor(loaded.aiCliExecutable);
 				}
-				const initial: AiProvider = EXTERNAL_PROVIDERS.includes(loaded.aiProvider as AiProvider)
-					? (loaded.aiProvider as AiProvider)
-					: "recraft";
+				const initial: AiProvider =
+					initialProvider && EXTERNAL_PROVIDERS.includes(initialProvider)
+						? initialProvider
+						: EXTERNAL_PROVIDERS.includes(loaded.aiProvider as AiProvider)
+							? (loaded.aiProvider as AiProvider)
+							: "recraft";
 				setSelected(initial);
 				if (MODEL_PROVIDERS.includes(initial)) {
 					void loadModelsFor(initial, loaded);
@@ -190,7 +200,7 @@ export default function AiEngineSettings() {
 		return () => {
 			alive = false;
 		};
-	}, [loadModelsFor]);
+	}, [initialProvider, loadModelsFor, loadCliModelsFor]);
 
 	const handleSelectProvider = (prov: AiProvider) => {
 		setSelected(prov);
@@ -207,7 +217,7 @@ export default function AiEngineSettings() {
 		setSaving(true);
 		setFeedback(null);
 		try {
-			const updated = await saveAiConfig(patch);
+			const updated = await saveAiConfig({ aiProvider: selected, ...patch });
 			setCfg(updated);
 			setFeedback({ ok: true, text: t.aiConfigSaved });
 			if (reloadModelsProvider && MODEL_PROVIDERS.includes(reloadModelsProvider)) {
@@ -496,8 +506,13 @@ export default function AiEngineSettings() {
 						<button
 							className="small"
 							onClick={() => {
+								if (cliKind(cliExe) !== cliKind(CLI_PRESETS.python.executable)) {
+									setCliModel("");
+								}
+								setCliCustomModelMode(false);
 								setCliExe(CLI_PRESETS.python.executable);
 								setCliArgsText(CLI_PRESETS.python.args.join("\n"));
+								void loadCliModelsFor(CLI_PRESETS.python.executable);
 							}}
 						>
 							{t.aiCliPresetPython}
@@ -505,8 +520,13 @@ export default function AiEngineSettings() {
 						<button
 							className="small"
 							onClick={() => {
+								if (cliKind(cliExe) !== cliKind(CLI_PRESETS.claude.executable)) {
+									setCliModel("");
+								}
+								setCliCustomModelMode(false);
 								setCliExe(CLI_PRESETS.claude.executable);
 								setCliArgsText(CLI_PRESETS.claude.args.join("\n"));
+								void loadCliModelsFor(CLI_PRESETS.claude.executable);
 							}}
 						>
 							Claude CLI
@@ -514,8 +534,13 @@ export default function AiEngineSettings() {
 						<button
 							className="small"
 							onClick={() => {
+								if (cliKind(cliExe) !== cliKind(CLI_PRESETS.gemini.executable)) {
+									setCliModel("");
+								}
+								setCliCustomModelMode(false);
 								setCliExe(CLI_PRESETS.gemini.executable);
 								setCliArgsText(CLI_PRESETS.gemini.args.join("\n"));
+								void loadCliModelsFor(CLI_PRESETS.gemini.executable);
 							}}
 						>
 							Gemini CLI
@@ -523,6 +548,10 @@ export default function AiEngineSettings() {
 						<button
 							className="small"
 							onClick={() => {
+								if (cliKind(cliExe) !== cliKind(CLI_PRESETS.codex.executable)) {
+									setCliModel("");
+								}
+								setCliCustomModelMode(false);
 								setCliExe(CLI_PRESETS.codex.executable);
 								setCliArgsText(CLI_PRESETS.codex.args.join("\n"));
 								setCliReasoning("low");
@@ -534,6 +563,10 @@ export default function AiEngineSettings() {
 						<button
 							className="small"
 							onClick={() => {
+								if (cliKind(cliExe) !== cliKind(CLI_PRESETS.opencode.executable)) {
+									setCliModel("");
+								}
+								setCliCustomModelMode(false);
 								setCliExe(CLI_PRESETS.opencode.executable);
 								setCliArgsText(CLI_PRESETS.opencode.args.join("\n"));
 								void loadCliModelsFor(CLI_PRESETS.opencode.executable);
@@ -570,55 +603,80 @@ export default function AiEngineSettings() {
 						<div className="hint">{t.aiCliArgsHint}</div>
 					</div>
 
-					{cliKind(cliExe) !== "other" && (
-						<>
-							<div className="setting-row" style={{ marginTop: 8 }}>
-								<label htmlFor="ai-cli-model">{t.aiModelLabel}</label>
-								<div className="row" style={{ gap: 6, flex: 1 }}>
-									<input
-										id="ai-cli-model"
-										list="ai-cli-model-list"
-										type="text"
-										value={cliModel}
-										onChange={e => setCliModel(e.target.value)}
-										placeholder={t.aiCliModelPlaceholder}
-										style={{ flex: 1 }}
-									/>
-									<datalist id="ai-cli-model-list">
-										{cliModels.map(m => (
-											<option key={m.id} value={m.id}>
-												{m.label}
-											</option>
-										))}
-									</datalist>
-									<button
-										className="small"
-										disabled={loadingCliModels}
-										onClick={() => void loadCliModelsFor(cliExe)}
-									>
-										{loadingCliModels ? t.aiLoadingModels : t.aiReloadModelsBtn}
-									</button>
-								</div>
-							</div>
-							{cliModelStatus && <div className="hint">{cliModelStatus}</div>}
-
-							{cliKind(cliExe) !== "gemini" && (
+					{cliKind(cliExe) !== "other" && (() => {
+						const isListedModel = cliModel !== "" && cliModels.some(m => m.id === cliModel);
+						const showCustomInput = cliCustomModelMode || (cliModel !== "" && !isListedModel);
+						const selectVal = showCustomInput ? "__custom__" : cliModel;
+						return (
+							<>
 								<div className="setting-row" style={{ marginTop: 8 }}>
-									<label htmlFor="ai-cli-reasoning">{t.aiCliReasoningLabel}</label>
-									<select
-										id="ai-cli-reasoning"
-										value={cliReasoning}
-										onChange={e => setCliReasoning(e.target.value)}
-									>
-										<option value="">{t.aiCliReasoningDefault}</option>
-										<option value="low">{t.aiCliReasoningLow}</option>
-										<option value="medium">{t.aiCliReasoningMedium}</option>
-										<option value="high">{t.aiCliReasoningHigh}</option>
-									</select>
+									<label htmlFor="ai-cli-model-select">{t.aiModelLabel}</label>
+									<div className="row" style={{ gap: 6, flex: 1 }}>
+										<select
+											id="ai-cli-model-select"
+											value={selectVal}
+											onChange={e => {
+												const v = e.target.value;
+												if (v === "__custom__") {
+													setCliCustomModelMode(true);
+												} else {
+													setCliCustomModelMode(false);
+													setCliModel(v);
+												}
+											}}
+											style={{ flex: 1 }}
+										>
+											<option value="">{t.aiCliModelDefaultOption}</option>
+											{cliModels.map(m => (
+												<option key={m.id} value={m.id}>
+													{m.label}
+												</option>
+											))}
+											<option value="__custom__">{t.aiCliModelCustomOption}</option>
+										</select>
+										<button
+											className="small"
+											disabled={loadingCliModels}
+											onClick={() => void loadCliModelsFor(cliExe)}
+										>
+											{loadingCliModels ? t.aiLoadingModels : t.aiReloadModelsBtn}
+										</button>
+									</div>
 								</div>
-							)}
-						</>
-					)}
+								{showCustomInput && (
+									<div className="setting-row" style={{ marginTop: 6 }}>
+										<label htmlFor="ai-cli-model-custom" />
+										<input
+											id="ai-cli-model-custom"
+											type="text"
+											value={cliModel}
+											onChange={e => setCliModel(e.target.value)}
+											placeholder={t.aiCliModelCustomPlaceholder}
+											autoFocus
+											style={{ flex: 1 }}
+										/>
+									</div>
+								)}
+								{cliModelStatus && <div className="hint">{cliModelStatus}</div>}
+
+								{cliKind(cliExe) !== "gemini" && (
+									<div className="setting-row" style={{ marginTop: 8 }}>
+										<label htmlFor="ai-cli-reasoning">{t.aiCliReasoningLabel}</label>
+										<select
+											id="ai-cli-reasoning"
+											value={cliReasoning}
+											onChange={e => setCliReasoning(e.target.value)}
+										>
+											<option value="">{t.aiCliReasoningDefault}</option>
+											<option value="low">{t.aiCliReasoningLow}</option>
+											<option value="medium">{t.aiCliReasoningMedium}</option>
+											<option value="high">{t.aiCliReasoningHigh}</option>
+										</select>
+									</div>
+								)}
+							</>
+						);
+					})()}
 
 					<div className="setting-row" style={{ marginTop: 8 }}>
 						<label htmlFor="ai-cli-timeout">{t.aiCliTimeoutLabel}</label>
