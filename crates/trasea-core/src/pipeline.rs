@@ -9,7 +9,7 @@ use crate::clean::clean;
 use crate::export::{export_options_for_production, to_svg, Doc, ExportOptions, StrokeData, StrokeLayer};
 use crate::heatmap::{node_heatmap, NodeHeatmap};
 use crate::lines::{dilate_mask, line_colors, thin_mask, ThinMask, ThinParams};
-use crate::palette::{assign, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex, rgb_to_lab};
+use crate::palette::{assign, dehalo_label_borders, fill_masked, kmeans_palette, refine_thin_regions, remove_small_regions_ex, rgb_to_lab, smooth_label_jaggies};
 use crate::node_edit::{apply_node_edits, NodeEdit};
 use crate::path_edit::{apply_path_edits, PathEdit};
 use crate::preprocess::{apply_preprocess_rgb_with_mask, PreprocessOptions};
@@ -465,6 +465,9 @@ fn base<'a>(prep: &'a PreparedImage, params: &Params, notes: &mut Vec<String>) -
 
     fill_masked(&mut labels, &excl, ww, wh);
     refine_thin_regions(&mut labels, work, &palette, ww, wh, (REF_THIN_AREA * s * s) as usize);
+    if !is_shading {
+        dehalo_label_borders(&mut labels, work, &palette, ww, wh);
+    }
 
     // a colour the designer kept that covers very little is an accent on purpose: do not merge it away
     let mut protect = vec![false; palette.len()];
@@ -513,6 +516,7 @@ fn trace_fields(b: &Base, params: &Params, k: Knobs, with_text: bool) -> FieldsO
     let speck = 1.0 + (k.extra - 1.0) * 0.5;
     let min_area = (((40.0 + 200.0 * t) * s * s * speck).round()).max(8.0) as usize;
     remove_small_regions_ex(&mut labels, ww, wh, min_area, b.palette.len(), &b.palette, SPECK_BOOST, b.brush.as_ref().map(|m| m.zones.as_slice()), &b.protect);
+    smooth_label_jaggies(&mut labels, ww, wh, &b.protect);
 
     // Production micro-region cleanup (Standard keeps 0.4.0 behaviour unchanged).
     let micro_removed = match params.production.mode {
@@ -951,5 +955,101 @@ pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_
         budget_met: None,
         trace_fingerprint: trace_fp,
         edits_stale,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn t170_e2e_flat_illustration_with_aa_thin_outline() {
+        // Synthetic 4-colour flat illustration (240x240):
+        // Cream background (#FCF7EC), red circle/bag body (#B53B3B), olive accent panel (#89995A),
+        // and dark green 2-3 px anti-aliased outline (#1F4D36).
+        let (w, h) = (240u32, 240u32);
+        let cream = [0xFCu8, 0xF7, 0xEC];
+        let red = [0xB5u8, 0x3B, 0x3B];
+        let olive = [0x89u8, 0x99, 0x5A];
+        let dark = [0x1Fu8, 0x4D, 0x36];
+        let blend = |a: [u8; 3], b: [u8; 3], t: f32| -> image::Rgb<u8> {
+            image::Rgb([
+                (a[0] as f32 * (1.0 - t) + b[0] as f32 * t).round() as u8,
+                (a[1] as f32 * (1.0 - t) + b[1] as f32 * t).round() as u8,
+                (a[2] as f32 * (1.0 - t) + b[2] as f32 * t).round() as u8,
+            ])
+        };
+
+        let mut img = RgbImage::from_pixel(w, h, image::Rgb(cream));
+
+        // Red rounded body (x in 55..185, y in 50..195) with 2-px dark outline + 1-px AA rim
+        for y in 46..199 {
+            for x in 51..189 {
+                let in_outer = x >= 53 && x < 187 && y >= 48 && y < 197;
+                let in_inner = x >= 56 && x < 184 && y >= 51 && y < 194;
+                if in_inner {
+                    img.put_pixel(x, y, image::Rgb(red));
+                } else if in_outer {
+                    img.put_pixel(x, y, image::Rgb(dark));
+                } else {
+                    // 1-px anti-alias halo rim on outer edge
+                    img.put_pixel(x, y, blend(dark, cream, 0.55));
+                }
+            }
+        }
+
+        // Olive pocket panel inside the body (x in 78..162, y in 118..172) with 2-px dark outline
+        for y in 115..175 {
+            for x in 75..165 {
+                let in_outer = x >= 76 && x < 164 && y >= 116 && y < 174;
+                let in_inner = x >= 79 && x < 161 && y >= 119 && y < 171;
+                if in_inner {
+                    img.put_pixel(x, y, image::Rgb(olive));
+                } else if in_outer {
+                    img.put_pixel(x, y, image::Rgb(dark));
+                } else {
+                    img.put_pixel(x, y, blend(dark, red, 0.5));
+                }
+            }
+        }
+
+        // Thin 2-px diagonal strap extending into cream background with 1-px AA border
+        for i in 0..45i32 {
+            let cx = 186 + i;
+            let cy = 80 - i / 2;
+            for dy in -1..=2i32 {
+                let yy = cy + dy;
+                if cx >= 0 && yy >= 0 && (cx as u32) < w && (yy as u32) < h {
+                    if dy == 0 || dy == 1 {
+                        img.put_pixel(cx as u32, yy as u32, image::Rgb(dark));
+                    } else {
+                        img.put_pixel(cx as u32, yy as u32, blend(dark, cream, 0.55));
+                    }
+                }
+            }
+        }
+
+        let params = Params {
+            colors: 4,
+            smooth: 0.5,
+            keep_lines: true,
+            measure: true,
+            ..Params::default()
+        };
+        let out = vectorize(&img, &params, &|_, _| {}).expect("vectorize should succeed");
+        assert!(out.svg.contains("<svg") && out.svg.contains("</svg>"), "SVG must be valid");
+        let mae = out.stats.mae.expect("MAE must be measured");
+        eprintln!(
+            "T170_E2E_METRICS: paths={} nodes={} mae={:.3} thin_pixels={} palette={}",
+            out.stats.paths,
+            out.stats.nodes,
+            mae,
+            out.thin_pixels,
+            out.palette.len()
+        );
+        assert!(out.thin_pixels > 0, "thin outline should be detected");
+        assert!(out.stats.paths <= 60, "expected compact path count, got {}", out.stats.paths);
+        assert!(out.stats.nodes <= 400, "expected compact node count, got {}", out.stats.nodes);
+        assert!(mae <= 12.0, "expected low MAE <= 12.0, got {:.3}", mae);
     }
 }

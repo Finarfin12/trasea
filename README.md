@@ -4,7 +4,7 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.6.3 ("macOS Build & External AI Engine")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.7.0 ("Offline Core Quality Upgrade")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -48,6 +48,12 @@ Supported outputs:
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
 
+### New in 1.7.0 ("Offline Core Quality Upgrade")
+
+- **Anti-Alias Border Dehaloing (`dehalo_label_borders`).** Two fast Lab-space passes eliminate 1–2 px intermediate anti-alias halo fringes along flat colour borders while keeping genuine solid colour regions and `Shading` tonal bands untouched.
+- **Continuous Thin Outlines (`lines.rs`).** Added bounded one-sided ink continuation and color-verified 1-px gap closing to `thin_mask`, keeping dark outlines intact where they border medium/dark fills without absorbing large solid dark blocks.
+- **Label Jaggies Cleanup (`smooth_label_jaggies`).** A single-pass 4-neighbour filter flattens isolated 1-px staircase protrusions before contour extraction while preserving sharp 90° corners, protected accents, and thin 1–2 px strokes — producing smoother curves with fewer nodes.
+
 ### New in 1.6.3
 
 - **OpenCode CLI Preset & CLI Model / Reasoning Controls.** Added a 1-click `OpenCode CLI` preset (`opencode run --auto -f {input}`), automatic local CLI model detection (`fetch_cli_models`), and Model + Reasoning/Effort controls for `codex`, `claude`, `gemini`, and `opencode` (Codex preset sets `low` effort by default).
@@ -82,7 +88,7 @@ Supported outputs:
 - **Closed stroke corners & junctions.** Thin-line strokes now run a dark-mask-verified endpoint join pass (`join_stroke_endpoints`) with consistent round caps and round joins across SVG, PDF, and EPS — closing corner and T-junction gaps without false bridges across white gaps.
 - **Sticker Offset / Bleed (`StickerBacking`).** Add a solid backing layer (default `#FFFFFF`, configurable colour) with `0.0–3.0 mm` outer bleed concentric with `CutContour` in SVG, PDF (RGB & CMYK with pure `0 0 0 0 k` white), and EPS. Excluded from DXF so plotters receive only the `CUTCONTOUR` cut path. Available in the Export tab and CLI (`--sticker-backing`, `--sticker-backing-color`, `--sticker-bleed-mm`).
 - **Privacy-first update check.** Manual **Check for updates** button in **Settings → Privacy & Credits** (plus an optional startup check, Off by default) queries only the public GitHub Releases endpoint from the Rust backend (0 cookies, 0 telemetry, 8 s timeout; `trasea-core` stays at 0 network crates and WebView2 stays isolated).
-- **Windows Portable ZIP.** Extract `Trasea_1.6.3_x64-portable.zip` anywhere and run `trasea.exe` without installing: when `portable.flag` sits next to `trasea.exe`, settings and custom presets are stored locally in `./data/` instead of `%APPDATA%`.
+- **Windows Portable ZIP.** Extract `Trasea_1.7.0_x64-portable.zip` anywhere and run `trasea.exe` without installing: when `portable.flag` sits next to `trasea.exe`, settings and custom presets are stored locally in `./data/` instead of `%APPDATA%`.
 
 ### New in 1.4.0 ("All Features Unlocked")
 
