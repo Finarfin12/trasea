@@ -471,6 +471,7 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
             centerline_stroke_pt: 1.0,
             path_edits: vec![],
             node_edits: vec![],
+            edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
             lines_as: "stroke".into(),

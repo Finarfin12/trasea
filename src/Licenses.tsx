@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { activateLicense, deactivateLicense, type LicenseStatus } from "./api";
 import { useI18n } from "./i18n";
 
 interface Section {
@@ -73,107 +72,20 @@ function Table({ header, rows }: { header: string[]; rows: string[][] }) {
 
 interface Props {
 	markdown: string;
-	license: LicenseStatus;
-	initialTab?: "license" | "privacy" | "thirdParty";
-	promptHint?: string;
-	onLicenseChanged: (next: LicenseStatus) => void;
+	initialTab?: "privacy" | "thirdParty";
 }
 
-export default function Licenses({ markdown, license, initialTab = "license", promptHint = "", onLicenseChanged }: Props) {
+export default function Licenses({ markdown, initialTab = "privacy" }: Props) {
 	const { t } = useI18n();
-	const [tab, setTab] = useState<"license" | "privacy" | "thirdParty">(initialTab);
-	const [keyInput, setKeyInput] = useState("");
-	const [busy, setBusy] = useState(false);
-	const [err, setErr] = useState("");
-	const [okMsg, setOkMsg] = useState("");
+	const [tab, setTab] = useState<"privacy" | "thirdParty">(initialTab);
 	const doc = useMemo(() => parse(markdown), [markdown]);
-
-	const doActivate = async () => {
-		if (!keyInput.trim() || busy) return;
-		setBusy(true);
-		setErr("");
-		setOkMsg("");
-		try {
-			const next = await activateLicense(keyInput.trim());
-			onLicenseChanged(next);
-			setKeyInput("");
-			setOkMsg(`${t.licActivatedPrefix} ${next.info?.name ?? "User"} ${t.licLocalParen}.`);
-		} catch (e) {
-			setErr(typeof e === "string" ? e : e instanceof Error ? e.message : t.licInvalidErr);
-		} finally {
-			setBusy(false);
-		}
-	};
-
-	const doDeactivate = async () => {
-		if (busy) return;
-		setBusy(true);
-		setErr("");
-		setOkMsg("");
-		try {
-			const next = await deactivateLicense();
-			onLicenseChanged(next);
-			setOkMsg(t.licRemovedMsg);
-		} catch (e) {
-			setErr(typeof e === "string" ? e : e instanceof Error ? e.message : t.licRemoveErr);
-		} finally {
-			setBusy(false);
-		}
-	};
 
 	return (
 		<div className="lic-wrap">
-			<div className="seg" role="tablist" aria-label={t.privacyLicense} style={{ marginTop: 8 }}>
-				<button role="tab" aria-selected={tab === "license"} aria-pressed={tab === "license"} onClick={() => setTab("license")}>{t.licTabStatus}</button>
+			<div className="seg" role="tablist" aria-label={t.privacyCredits} style={{ marginTop: 8 }}>
 				<button role="tab" aria-selected={tab === "privacy"} aria-pressed={tab === "privacy"} onClick={() => setTab("privacy")}>{t.licTabPrivacy}</button>
 				<button role="tab" aria-selected={tab === "thirdParty"} aria-pressed={tab === "thirdParty"} onClick={() => setTab("thirdParty")}>{t.licTabThirdParty}</button>
 			</div>
-
-			{tab === "license" && (
-				<div className="lic-panel">
-					{promptHint && !license.active && <div className="warn">{promptHint}</div>}
-					<div className="lic-status-card">
-						<div className="row between">
-							<strong>{t.licCurrentStatus}</strong>
-							<span className={`badge ${license.active ? "badge-ok" : "badge-cancelled"}`}>
-								{license.active ? t.licProActiveBadge : t.licTrialBadge}
-							</span>
-						</div>
-						{license.active && license.info ? (
-							<>
-								<dl className="stats" style={{ marginTop: 10 }}>
-									<dt>{t.licOwner}</dt><dd>{license.info.name}</dd>
-									<dt>{t.licType}</dt><dd>{t.licTypeValue}</dd>
-									<dt>{t.licId}</dt><dd><code>{license.info.id}</code></dd>
-									<dt>{t.licIssued}</dt><dd>{license.info.issued}</dd>
-								</dl>
-								<button className="small danger" onClick={() => void doDeactivate()} disabled={busy}>{t.licRemoveBtn}</button>
-							</>
-						) : (
-							<div className="hint" style={{ marginTop: 8 }}>{t.licTrialDesc}</div>
-						)}
-					</div>
-
-					{!license.active && (
-						<div className="lic-form">
-							<label htmlFor="licenseKeyInput">{t.licInputLabel}</label>
-							<textarea
-								id="licenseKeyInput"
-								className="lic-input"
-								rows={3}
-								placeholder="TRSA1-..."
-								value={keyInput}
-								onChange={e => setKeyInput(e.target.value)}
-							/>
-							<button className="primary" onClick={() => void doActivate()} disabled={busy || !keyInput.trim()}>
-								{busy ? t.licVerifying : t.licActivateBtn}
-							</button>
-						</div>
-					)}
-					{err && <div className="error" role="alert">{err}</div>}
-					{okMsg && <div className="ok" role="status">{okMsg}</div>}
-				</div>
-			)}
 
 			{tab === "privacy" && (
 				<div className="lic-panel">

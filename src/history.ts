@@ -9,6 +9,7 @@ export interface EditorSnapshot {
 	strokes: BrushStroke[];
 	pathEdits: PathEdit[];
 	nodeEdits: NodeEdit[];
+	editFingerprint?: string | null;
 	targetChoice: TargetChoice;
 	customTarget: string;
 	exp: ExportOptions;
