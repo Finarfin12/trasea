@@ -4,7 +4,7 @@ import { APP_VERSION } from "../version";
 export const en: Record<keyof Dict, string> = {
 	langCode: "en",
 	// Header
-	headerOffline: `${APP_VERSION} · local-first`,
+	headerOffline: `v${APP_VERSION}`,
 	batchFolder: "Batch & Watch",
 	pasteImage: "Paste image",
 	pasteImageTip: "Paste image from clipboard",
