@@ -1,7 +1,9 @@
+import { APP_VERSION } from "../version";
+
 export const id = {
 	langCode: "id" as const,
 	// Header
-	headerOffline: "1.4.0 · lokal & privat",
+	headerOffline: `${APP_VERSION} · lokal & privat`,
 	batchFolder: "Batch folder",
 	pasteImage: "Tempel gambar",
 	pasteImageTip: "Tempel gambar dari clipboard",
@@ -237,7 +239,7 @@ export const id = {
 	dxfUnitLabel: "Satuan DXF (Laser / CNC)",
 	dxfUnitMm: "Milimeter (mm)",
 	dxfUnitPx: "Piksel (px)",
-	dxfTargetWidthLabel: "Lebar target DXF (mm, opsional)",
+	dxfTargetWidthLabel: "Lebar target DXF (mm)",
 	dxfTargetWidthPlaceholder: "Otomatis (DPI)",
 	includeAse: "Sertakan palet .ase",
 	copySvgBtn: "Salin SVG",
@@ -465,7 +467,7 @@ export const id = {
 	updateUpToDate: "Trasea sudah versi terbaru",
 	updateAvailable: "Versi baru tersedia",
 	updateDownloadBtn: "Buka halaman unduhan",
-	updateAutoCheckLabel: "Periksa otomatis saat dibuka (opsional, default Mati)",
+	updateAutoCheckLabel: "Periksa otomatis saat dibuka",
 	updateBannerText: "Versi baru tersedia:",
 	updateBannerBtn: "Unduh",
 	appModeLabel: "Mode",

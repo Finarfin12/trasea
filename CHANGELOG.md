@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.1] "Dynamic UI Version Hotfix"
+
+- **Single source of truth for UI version (`src/version.ts`, `src/i18n/id.ts`, `src/i18n/en.ts`, `src/colorUtils.ts`).** Exported `APP_VERSION` directly from `package.json` and replaced all hardcoded `"1.4.0"` strings in the app header (`id` & `en`) and palette export headers (GPL, JSON, CSS) so the displayed version stays in sync with the binary.
+- **Cleaner UI labels (`src/i18n/id.ts`, `src/i18n/en.ts`).** Removed redundant parenthetical `optional`/`default` wording from `updateAutoCheckLabel` and `dxfTargetWidthLabel`.
+- **Release notes cleanup.** Re-published GitHub Release `v1.5.0` notes via UTF-8 `--notes-file` without PowerShell backtick escaping artifacts.
+
 ## [1.5.0] "Vector Polish & Public Distribution"
 
 - **Cleaner curves & fewer nodes (Post-Fit Curve Merge, `fit.rs`).** Adaptive tangent window `(n / 12).clamp(5, 14)` in `fit_cubic` plus greedy `merge_adjacent_beziers` on smooth runs between real corners (skipped inside Detail brush zones) cuts redundant nodes on smooth icons (`G15-09`: 28 nodes, MAE 0.249) and benchmark illustrations/logos (-0.7% to -6.3%) while preserving sharp corners (`G15-10`).

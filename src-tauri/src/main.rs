@@ -138,7 +138,7 @@ struct UiParams {
     /// 1.3.0 node edits (move node / handle, delete node, toggle smooth, simplify), in source pixels.
     #[serde(default)]
     node_edits: Vec<NodeEdit>,
-    /// Fingerprint of the unedited trace the edits were made on; edits for another trace are skipped (1.4.0).
+    /// Fingerprint of the unedited trace the edits were made on; edits for another trace are skipped.
     #[serde(default)]
     edit_fingerprint: Option<String>,
 }
