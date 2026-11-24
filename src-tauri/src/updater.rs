@@ -135,9 +135,25 @@ pub fn open_download_url(url: &str) -> Result<(), String> {
             .map_err(|e| format!("Gagal membuka browser: {e}"))?;
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Gagal membuka browser: {e}"))?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Gagal membuka browser: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", unix)))]
     {
         let _ = url;
-        Err("Membuka browser hanya didukung di Windows.".to_string())
+        Err("Membuka browser tidak didukung di platform ini.".to_string())
     }
 }
