@@ -856,12 +856,14 @@ pub fn resolve_executable(exe: &str) -> Option<PathBuf> {
         } else {
             let pathext = std::env::var("PATHEXT")
                 .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string());
-            let mut list: Vec<String> = pathext
-                .split(';')
-                .filter(|s| !s.trim().is_empty())
-                .map(|s| s.trim().to_ascii_lowercase())
-                .collect();
-            list.insert(0, String::new());
+            let mut list: Vec<String> = vec![".exe".into(), ".cmd".into(), ".bat".into()];
+            for s in pathext.split(';') {
+                let norm = s.trim().to_ascii_lowercase();
+                if !norm.is_empty() && !list.contains(&norm) {
+                    list.push(norm);
+                }
+            }
+            list.push(String::new());
             list
         }
     };
@@ -877,6 +879,45 @@ pub fn resolve_executable(exe: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Build a `Command` for a local CLI executable, routing `.cmd`/`.bat` shims via `cmd /C` on Windows
+/// with `CREATE_NO_WINDOW` so npm-installed CLIs (`opencode.cmd`, `gemini.cmd`, etc.) run cleanly.
+fn build_cli_command(exe: &str, args: &[String]) -> Command {
+    let trimmed = exe.trim();
+    let resolved = resolve_executable(trimmed);
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(ref p) = resolved {
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .unwrap_or_default();
+            if ext == "cmd" || ext == "bat" {
+                let mut cmd = Command::new("cmd");
+                cmd.args(["/C", &p.to_string_lossy()]).args(args);
+                cmd.creation_flags(0x08000000);
+                return cmd;
+            }
+        }
+        let mut cmd = match resolved {
+            Some(ref p) => Command::new(p),
+            None => Command::new(trimmed),
+        };
+        cmd.args(args);
+        cmd.creation_flags(0x08000000);
+        cmd
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = match resolved {
+            Some(ref p) => Command::new(p),
+            None => Command::new(trimmed),
+        };
+        cmd.args(args);
+        cmd
+    }
 }
 
 /// Test configuration without spending paid vectorization credits.
@@ -1076,6 +1117,29 @@ fn user_home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+fn parse_gemini_cli_settings_models(txt: &str) -> Vec<String> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(txt) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(m) = json.get("model") {
+        if let Some(s) = m.as_str() {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                out.push(trimmed.to_string());
+            }
+        } else if let Some(obj) = m.as_object() {
+            if let Some(s) = obj.get("name").and_then(|v| v.as_str()) {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Detect available models for a local CLI executable without hardcoded stale lists.
 pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
     let base = cli_base_name(executable);
@@ -1165,6 +1229,26 @@ pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
                 models,
             }
         }
+        "gemini" => {
+            if let Some(home) = user_home_dir() {
+                if let Ok(txt) = std::fs::read_to_string(home.join(".gemini").join("settings.json")) {
+                    for m in parse_gemini_cli_settings_models(&txt) {
+                        push_unique(&m, &m);
+                    }
+                }
+            }
+            let message = if models.is_empty() {
+                "Tidak ada model terdeteksi di ~/.gemini/settings.json (pilih bawaan CLI atau Model kustom…).".to_string()
+            } else {
+                format!("Terdeteksi {} model dari konfigurasi Gemini CLI lokal.", models.len())
+            };
+            FetchAiModelsResult {
+                provider: "cli".into(),
+                status: if models.is_empty() { "empty".into() } else { "connected".into() },
+                message,
+                models,
+            }
+        }
         "opencode" => {
             let exe = executable.trim();
             if resolve_executable(exe).is_none() {
@@ -1175,13 +1259,10 @@ pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
                     models: Vec::new(),
                 };
             }
-            let mut cmd = Command::new(exe);
-            cmd.arg("models")
-                .stdin(Stdio::null())
+            let mut cmd = build_cli_command(exe, &[String::from("models")]);
+            cmd.stdin(Stdio::null())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            #[cfg(target_os = "windows")]
-            cmd.creation_flags(0x08000000);
+                .stderr(Stdio::null());
             let mut child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => {
@@ -1201,7 +1282,7 @@ pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
                 }
                 buf
             });
-            let deadline = Instant::now() + Duration::from_secs(12);
+            let deadline = Instant::now() + Duration::from_secs(25);
             let timed_out = loop {
                 match child.try_wait() {
                     Ok(Some(_)) => break false,
@@ -1221,7 +1302,7 @@ pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
                 return FetchAiModelsResult {
                     provider: "cli".into(),
                     status: "error".into(),
-                    message: "Perintah 'opencode models' melebihi batas waktu (12 detik).".into(),
+                    message: "Perintah 'opencode models' melebihi batas waktu (25 detik).".into(),
                     models: Vec::new(),
                 };
             }
@@ -1306,14 +1387,11 @@ fn run_cli_hook_with_options(
         cli_reasoning_effort,
     );
 
-    let mut cmd = Command::new(exe);
+    let mut cmd = build_cli_command(exe, &resolved_args);
     cmd.current_dir(tmp.path())
-        .args(&resolved_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     let mut child = cmd
         .spawn()
@@ -2132,5 +2210,20 @@ mod tests {
         let dxf = to_dxf(&out.doc, &eo);
         assert!(dxf.contains("CUTCONTOUR"), "DXF must contain CUTCONTOUR layer");
         assert!(!dxf.to_ascii_uppercase().contains("STICKERBACKING"), "DXF must exclude STICKERBACKING");
+    }
+
+    #[test]
+    fn t173_fetch_cli_models_gemini_settings_parsing() {
+        let flat = r#"{ "model": "gemini-2.5-pro" }"#;
+        assert_eq!(parse_gemini_cli_settings_models(flat), vec!["gemini-2.5-pro"]);
+
+        let nested = r#"{ "model": { "name": "gemini-2.5-flash" } }"#;
+        assert_eq!(parse_gemini_cli_settings_models(nested), vec!["gemini-2.5-flash"]);
+
+        let empty = r#"{ "theme": "dark" }"#;
+        assert!(parse_gemini_cli_settings_models(empty).is_empty());
+
+        let invalid = r#"not json"#;
+        assert!(parse_gemini_cli_settings_models(invalid).is_empty());
     }
 }

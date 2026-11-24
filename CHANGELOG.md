@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.7.3] "Native CLI Model Dropdown & Gemini CLI Detection"
+
+- **Pure `<select>` CLI model dropdown (`src/AiEngineSettings.tsx`, `src/i18n/{id,en}.ts`).** Replaced `<input list>` / `<datalist>` with `<select id="ai-cli-model-select">` for `codex`, `claude`, `gemini`, and `opencode`, always listing all detected models alongside `— Follow CLI default —` (`""`) and `Custom model…` (`"__custom__"`) with a conditional custom model text input. Switching CLI presets resets custom mode/model when changing executable and refreshes detected models.
+- **Gemini CLI local model detection & Windows `.cmd`/`.bat` CLI fix (`src-tauri/src/ai_engine.rs`).** Added `"gemini"` handling in `fetch_cli_models` reading `~/.gemini/settings.json` (`"model": "..."` and `"model": { "name": "..." }`) plus unit test `t173_fetch_cli_models_gemini_settings_parsing`. Prioritized `.exe`/`.cmd`/`.bat` before extensionless files in Windows `resolve_executable`, added `build_cli_command` (`cmd /C` with `CREATE_NO_WINDOW` for `.cmd`/`.bat`), switched `opencode models` stderr to `Stdio::null()`, and raised its timeout from `12 s` to `25 s` (`118/118` workspace tests pass).
+
 ## [1.7.2] "Opening Splash Timing & Animation Polish"
 
 - **WebView2 first-paint synced opening splash (`src/App.tsx`, `src/styles.css`).** Started splash phase timers after a double `requestAnimationFrame` (`950 ms` → `leaving`, `1250 ms` → `done`; `400 ms` / `650 ms` for `prefers-reduced-motion`) with a solid `#0f1117` backdrop, an `88×88 px` Trasea v2 logo pop-in (`trasea-splash-pop`), an expanding glow ring (`trasea-splash-ring`), and a `300 ms` fade-out with subtle stage scale (`1.04`).

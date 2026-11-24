@@ -2762,6 +2762,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				<SettingsModal
 					settings={appSettings}
 					initialTab={settingsModal.tab}
+					initialAiProvider={traceEngine !== "local" ? traceEngine : undefined}
 					onUpdate={onUpdateSettings}
 					onApplyExportDefaultsNow={next => {
 						setExp(ex => ({
