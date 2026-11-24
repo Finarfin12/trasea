@@ -45,10 +45,18 @@ struct CachedPrep {
     original: String,
 }
 
+struct CachedAiImport {
+    source_path: String,
+    used_provider: String,
+    original_data_url: String,
+    import: trasea_core::svg_import::SvgImport,
+}
+
 #[derive(Default)]
 struct Last {
     doc: Mutex<Option<Doc>>,
     prepared: Mutex<Option<CachedPrep>>,
+    ai_import: Mutex<Option<CachedAiImport>>,
 }
 
 struct BatchControl {
@@ -665,6 +673,7 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
     .await
     .map_err(|e| format!("the conversion stopped unexpectedly: {e}"))??;
     *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.ai_import.lock().map_err(|_| "internal error".to_string())? = None;
     if let Some(entry) = result.2 {
         *last.prepared.lock().map_err(|_| "internal error".to_string())? = Some(entry);
     }
@@ -1333,6 +1342,13 @@ async fn test_ai_config(
 }
 
 #[tauri::command]
+async fn fetch_cli_models(executable: String) -> Result<ai_engine::FetchAiModelsResult, String> {
+    tauri::async_runtime::spawn_blocking(move || ai_engine::fetch_cli_models(&executable))
+        .await
+        .map_err(|e| format!("Gagal memuat model CLI: {e}"))
+}
+
+#[tauri::command]
 async fn vectorize_with_ai(
     app: AppHandle,
     last: State<'_, Last>,
@@ -1341,29 +1357,122 @@ async fn vectorize_with_ai(
     provider: Option<String>,
 ) -> Result<Processed, String> {
     let dir = config_dir(&app)?;
+    let source_path = path.clone();
+    let result = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(Processed, Doc, CachedAiImport), String> {
+            let t0 = Instant::now();
+            let p = to_core_params(&params, None);
+            let eo = export_options_for_production(&p.production);
+            let raw_img = load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE)
+                .map_err(|e| e.to_string())?;
+            let pre_img = trasea_core::preprocess::apply_preprocess_rgb(&raw_img, &p.preprocess);
+            let original = png_data_url(&pre_img)?;
+
+            let mut png_bytes = Vec::new();
+            pre_img
+                .write_to(
+                    &mut std::io::Cursor::new(&mut png_bytes),
+                    image::ImageFormat::Png,
+                )
+                .map_err(|e| format!("Gagal mengodekan PNG untuk AI: {e}"))?;
+
+            let (used_provider, import) =
+                ai_engine::run_external_ai_to_svg_import(&dir, provider.as_deref(), &png_bytes)?;
+            let cached = CachedAiImport {
+                source_path,
+                used_provider: used_provider.clone(),
+                original_data_url: original.clone(),
+                import: import.clone(),
+            };
+            let (w, h) = (import.doc.width, import.doc.height);
+            let mut out = trasea_core::vectorize_svg(import, &p, &eo);
+            out.notes
+                .insert(0, format!("Vektorisasi melalui mesin AI ({used_provider})."));
+
+            let palette_proof: Vec<PaletteProofItem> = out
+                .palette
+                .iter()
+                .map(|&c| PaletteProofItem {
+                    hex: hex(c),
+                    proof_hex: hex(rgb_to_soft_proof_rgb(c[0], c[1], c[2])),
+                    out_of_gamut: is_out_of_cmyk_gamut(c[0], c[1], c[2]),
+                })
+                .collect();
+
+            let processed = Processed {
+                svg: out.svg.clone(),
+                original,
+                width: w,
+                height: h,
+                paths: out.stats.paths,
+                nodes: out.stats.nodes,
+                bytes: out.stats.bytes,
+                mae: out.stats.mae,
+                notes: out.notes.clone(),
+                palette: out.palette.iter().map(|c| hex(*c)).collect(),
+                palette_proof,
+                used_ai: true,
+                secs: t0.elapsed().as_secs_f64(),
+                thin_pixels: 0,
+                primitives: out.stats.primitives,
+                symmetry_applied: None,
+                text_regions: Vec::new(),
+                heatmap: out.heatmap.clone(),
+                effective_smooth: p.smooth * 100.0,
+                budget_met: None,
+                reused: false,
+                trace_fingerprint: out.trace_fingerprint.clone(),
+                edits_stale: out.edits_stale,
+            };
+            Ok((processed, out.doc, cached))
+        },
+    )
+    .await
+    .map_err(|e| format!("Proses AI terhenti tak terduga: {e}"))??;
+
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
+    *last.ai_import.lock().map_err(|_| "internal error".to_string())? = Some(result.2);
+    Ok(result.0)
+}
+
+#[tauri::command]
+async fn apply_ai_vector_edits(
+    last: State<'_, Last>,
+    path: String,
+    params: UiParams,
+) -> Result<Processed, String> {
+    let cached = {
+        let guard = last
+            .ai_import
+            .lock()
+            .map_err(|_| "internal error".to_string())?;
+        match guard.as_ref() {
+            Some(c) if c.source_path == path => CachedAiImport {
+                source_path: c.source_path.clone(),
+                used_provider: c.used_provider.clone(),
+                original_data_url: c.original_data_url.clone(),
+                import: c.import.clone(),
+            },
+            _ => {
+                return Err(
+                    "Cache vektor AI tidak ditemukan untuk gambar ini. Jalankan Vektorisasi (AI) terlebih dahulu."
+                        .to_string(),
+                )
+            }
+        }
+    };
+
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
         let t0 = Instant::now();
         let p = to_core_params(&params, None);
         let eo = export_options_for_production(&p.production);
-        let raw_img =
-            load::load_path(Path::new(&path), load::DEFAULT_MAX_SIDE).map_err(|e| e.to_string())?;
-        let pre_img = trasea_core::preprocess::apply_preprocess_rgb(&raw_img, &p.preprocess);
-        let original = png_data_url(&pre_img)?;
-
-        let mut png_bytes = Vec::new();
-        pre_img
-            .write_to(
-                &mut std::io::Cursor::new(&mut png_bytes),
-                image::ImageFormat::Png,
-            )
-            .map_err(|e| format!("Gagal mengodekan PNG untuk AI: {e}"))?;
-
-        let (used_provider, import) =
-            ai_engine::run_external_ai_to_svg_import(&dir, provider.as_deref(), &png_bytes)?;
-        let (w, h) = (import.doc.width, import.doc.height);
-        let mut out = trasea_core::vectorize_svg(import, &p, &eo);
-        out.notes
-            .insert(0, format!("Vektorisasi melalui mesin AI ({used_provider})."));
+        let (w, h) = (cached.import.doc.width, cached.import.doc.height);
+        let mut out = trasea_core::vectorize_svg(cached.import, &p, &eo);
+        out.notes.insert(
+            0,
+            format!("Vektorisasi melalui mesin AI ({}).", cached.used_provider),
+        );
 
         let palette_proof: Vec<PaletteProofItem> = out
             .palette
@@ -1377,7 +1486,7 @@ async fn vectorize_with_ai(
 
         let processed = Processed {
             svg: out.svg.clone(),
-            original,
+            original: cached.original_data_url,
             width: w,
             height: h,
             paths: out.stats.paths,
@@ -1396,17 +1505,16 @@ async fn vectorize_with_ai(
             heatmap: out.heatmap.clone(),
             effective_smooth: p.smooth * 100.0,
             budget_met: None,
-            reused: false,
+            reused: true,
             trace_fingerprint: out.trace_fingerprint.clone(),
             edits_stale: out.edits_stale,
         };
         Ok((processed, out.doc))
     })
     .await
-    .map_err(|e| format!("Proses AI terhenti tak terduga: {e}"))??;
+    .map_err(|e| format!("Gagal menerapkan edit vektor AI: {e}"))??;
 
     *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
-    *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
     Ok(result.0)
 }
 
@@ -1467,7 +1575,9 @@ fn main() {
             save_ai_config,
             fetch_ai_models,
             test_ai_config,
-            vectorize_with_ai
+            vectorize_with_ai,
+            fetch_cli_models,
+            apply_ai_vector_edits
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trasea");

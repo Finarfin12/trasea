@@ -500,6 +500,13 @@ export const id = {
 	traceEngineLabel: "Mesin pelacakan",
 	vectorizeAiBtn: "Vektorisasi (AI)",
 	aiConfigureBtn: "Atur",
+	aiCliModelPlaceholder: "Ikuti bawaan CLI",
+	aiCliReasoningLabel: "Reasoning / Effort",
+	aiCliReasoningDefault: "Bawaan CLI",
+	aiCliReasoningLow: "Rendah",
+	aiCliReasoningMedium: "Sedang",
+	aiCliReasoningHigh: "Tinggi",
+	aiRunningStatus: "Menjalankan Mesin AI / CLI…",
 };
 
 export type Dict = typeof id;

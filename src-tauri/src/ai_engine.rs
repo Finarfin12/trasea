@@ -60,6 +60,10 @@ pub struct AiConfig {
     pub ai_cli_args: Vec<String>,
     #[serde(default = "default_cli_timeout_sec")]
     pub ai_cli_timeout_sec: u64,
+    #[serde(default)]
+    pub ai_cli_model: String,
+    #[serde(default)]
+    pub ai_cli_reasoning_effort: String,
 }
 
 impl Default for AiConfig {
@@ -72,6 +76,8 @@ impl Default for AiConfig {
             ai_cli_executable: String::new(),
             ai_cli_args: Vec::new(),
             ai_cli_timeout_sec: default_cli_timeout_sec(),
+            ai_cli_model: String::new(),
+            ai_cli_reasoning_effort: String::new(),
         }
     }
 }
@@ -104,6 +110,8 @@ pub struct AiConfigPublic {
     pub ai_cli_executable: String,
     pub ai_cli_args: Vec<String>,
     pub ai_cli_timeout_sec: u64,
+    pub ai_cli_model: String,
+    pub ai_cli_reasoning_effort: String,
     pub has_recraft_key: bool,
     pub has_vectorizer_keys: bool,
     pub has_claude_key: bool,
@@ -125,6 +133,8 @@ pub struct SaveAiConfigInput {
     pub ai_cli_executable: Option<String>,
     pub ai_cli_args: Option<Vec<String>>,
     pub ai_cli_timeout_sec: Option<u64>,
+    pub ai_cli_model: Option<String>,
+    pub ai_cli_reasoning_effort: Option<String>,
     pub recraft_api_key: Option<String>,
     pub vectorizer_api_id: Option<String>,
     pub vectorizer_api_secret: Option<String>,
@@ -191,6 +201,30 @@ impl Drop for TempDirGuard {
     }
 }
 
+fn normalize_reasoning_effort(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "low" => "low",
+        "medium" => "medium",
+        "high" => "high",
+        _ => "",
+    }
+    .to_string()
+}
+
+fn cli_base_name(exe: &str) -> String {
+    let file_name = Path::new(exe.trim())
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(exe.trim())
+        .to_ascii_lowercase();
+    file_name
+        .strip_suffix(".exe")
+        .or_else(|| file_name.strip_suffix(".cmd"))
+        .or_else(|| file_name.strip_suffix(".bat"))
+        .unwrap_or(&file_name)
+        .to_string()
+}
+
 fn normalize_provider(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "recraft" => "recraft",
@@ -212,6 +246,8 @@ pub fn load_ai_config(dir: &Path) -> AiConfig {
         .unwrap_or_default();
     cfg.ai_provider = normalize_provider(&cfg.ai_provider);
     cfg.ai_cli_timeout_sec = cfg.ai_cli_timeout_sec.clamp(10, 300);
+    cfg.ai_cli_model = cfg.ai_cli_model.trim().to_string();
+    cfg.ai_cli_reasoning_effort = normalize_reasoning_effort(&cfg.ai_cli_reasoning_effort);
     cfg
 }
 
@@ -234,6 +270,8 @@ pub fn get_ai_config_public(dir: &Path) -> AiConfigPublic {
         ai_cli_executable: cfg.ai_cli_executable,
         ai_cli_args: cfg.ai_cli_args,
         ai_cli_timeout_sec: cfg.ai_cli_timeout_sec,
+        ai_cli_model: cfg.ai_cli_model,
+        ai_cli_reasoning_effort: cfg.ai_cli_reasoning_effort,
         has_recraft_key: !keys.recraft_api_key.trim().is_empty(),
         has_vectorizer_keys: !keys.vectorizer_api_id.trim().is_empty()
             && !keys.vectorizer_api_secret.trim().is_empty(),
@@ -268,6 +306,12 @@ pub fn save_ai_config(dir: &Path, input: SaveAiConfigInput) -> Result<AiConfigPu
     }
     if let Some(t) = input.ai_cli_timeout_sec {
         cfg.ai_cli_timeout_sec = t.clamp(10, 300);
+    }
+    if let Some(m) = input.ai_cli_model {
+        cfg.ai_cli_model = m.trim().to_string();
+    }
+    if let Some(eff) = input.ai_cli_reasoning_effort {
+        cfg.ai_cli_reasoning_effort = normalize_reasoning_effort(&eff);
     }
 
     let cfg_json = serde_json::to_string_pretty(&cfg)
@@ -941,30 +985,299 @@ pub fn run_cli_hook(
     run_cli_hook_with_prefix(executable, args_template, input_png, timeout_sec, keys, "trasea-ai-cli")
 }
 
-/// Defensively normalize CLI arguments (e.g. inject `--skip-git-repo-check` for `codex exec`).
-pub fn normalize_cli_args(exe: &str, mut args: Vec<String>) -> Vec<String> {
-    let file_name = Path::new(exe.trim())
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(exe.trim())
-        .to_ascii_lowercase();
-    let base = file_name
-        .strip_suffix(".exe")
-        .or_else(|| file_name.strip_suffix(".cmd"))
-        .or_else(|| file_name.strip_suffix(".bat"))
-        .unwrap_or(&file_name);
-    if base == "codex"
-        && args.first().map(|s| s.as_str()) == Some("exec")
-        && !args.iter().any(|a| a == "--skip-git-repo-check")
-    {
-        args.insert(1, "--skip-git-repo-check".to_string());
+/// Defensively normalize CLI arguments for codex, claude, gemini, and opencode.
+pub fn normalize_cli_args(exe: &str, args: Vec<String>) -> Vec<String> {
+    normalize_cli_args_with_options(exe, args, "", "")
+}
+
+pub fn normalize_cli_args_with_options(
+    exe: &str,
+    mut args: Vec<String>,
+    model: &str,
+    reasoning_effort: &str,
+) -> Vec<String> {
+    let base = cli_base_name(exe);
+    let model = model.trim();
+    let effort = normalize_reasoning_effort(reasoning_effort);
+
+    let has_model_flag = |list: &[String]| {
+        list.iter().any(|a| {
+            a == "-m"
+                || a == "--model"
+                || a.starts_with("--model=")
+                || a.starts_with("-m=")
+        })
+    };
+
+    match base.as_str() {
+        "codex" => {
+            if args.first().map(|s| s.as_str()) == Some("exec") {
+                let mut insert_at = 1usize;
+                if !args.iter().any(|a| a == "--skip-git-repo-check") {
+                    args.insert(insert_at, "--skip-git-repo-check".to_string());
+                    insert_at += 1;
+                }
+                if !model.is_empty() && !has_model_flag(&args) {
+                    args.insert(insert_at, "-m".to_string());
+                    args.insert(insert_at + 1, model.to_string());
+                    insert_at += 2;
+                }
+                if !effort.is_empty()
+                    && !args.iter().any(|a| a.contains("model_reasoning_effort"))
+                {
+                    args.insert(insert_at, "-c".to_string());
+                    args.insert(
+                        insert_at + 1,
+                        format!("model_reasoning_effort=\"{effort}\""),
+                    );
+                }
+            }
+        }
+        "claude" => {
+            let mut insert_at = 0usize;
+            if !model.is_empty() && !args.iter().any(|a| a == "--model" || a.starts_with("--model=")) {
+                args.insert(insert_at, "--model".to_string());
+                args.insert(insert_at + 1, model.to_string());
+                insert_at += 2;
+            }
+            if !effort.is_empty() && !args.iter().any(|a| a == "--effort" || a.starts_with("--effort=")) {
+                args.insert(insert_at, "--effort".to_string());
+                args.insert(insert_at + 1, effort);
+            }
+        }
+        "gemini" => {
+            if !model.is_empty() && !has_model_flag(&args) {
+                args.insert(0, "-m".to_string());
+                args.insert(1, model.to_string());
+            }
+        }
+        "opencode" => {
+            if args.first().map(|s| s.as_str()) == Some("run")
+                && !model.is_empty()
+                && !has_model_flag(&args)
+            {
+                let value = if !effort.is_empty() && !model.contains('#') {
+                    format!("{model}#{effort}")
+                } else {
+                    model.to_string()
+                };
+                args.insert(1, "-m".to_string());
+                args.insert(2, value);
+            }
+        }
+        _ => {}
     }
     args
+}
+
+fn user_home_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
+/// Detect available models for a local CLI executable without hardcoded stale lists.
+pub fn fetch_cli_models(executable: &str) -> FetchAiModelsResult {
+    let base = cli_base_name(executable);
+    let mut models: Vec<AiModelItem> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut push_unique = |id: &str, label: &str| {
+        let id = id.trim();
+        if !id.is_empty() && seen.insert(id.to_string()) {
+            models.push(AiModelItem {
+                id: id.to_string(),
+                label: label.trim().to_string(),
+            });
+        }
+    };
+
+    match base.as_str() {
+        "codex" => {
+            if let Some(home) = user_home_dir() {
+                let codex_dir = std::env::var_os("CODEX_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| home.join(".codex"));
+                if let Ok(toml_text) = std::fs::read_to_string(codex_dir.join("config.toml")) {
+                    for line in toml_text.lines() {
+                        let trimmed = line.trim();
+                        if let Some(rest) = trimmed.strip_prefix("model") {
+                            let rest = rest.trim_start();
+                            if let Some(val) = rest.strip_prefix('=') {
+                                let cleaned = val
+                                    .split('#')
+                                    .next()
+                                    .unwrap_or("")
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'');
+                                if !cleaned.is_empty() {
+                                    push_unique(cleaned, cleaned);
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Ok(cache_text) = std::fs::read_to_string(codex_dir.join("models_cache.json")) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&cache_text) {
+                        if let Some(arr) = json.get("models").and_then(|v| v.as_array()) {
+                            for item in arr {
+                                let vis = item.get("visibility").and_then(|v| v.as_str()).unwrap_or("");
+                                if vis == "hide" {
+                                    continue;
+                                }
+                                if let Some(slug) = item.get("slug").and_then(|v| v.as_str()) {
+                                    push_unique(slug, slug);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let message = if models.is_empty() {
+                "Tidak ada model terdeteksi di ~/.codex/config.toml (kosongkan untuk bawaan CLI).".to_string()
+            } else {
+                format!("Terdeteksi {} model dari konfigurasi Codex lokal.", models.len())
+            };
+            FetchAiModelsResult {
+                provider: "cli".into(),
+                status: if models.is_empty() { "empty".into() } else { "connected".into() },
+                message,
+                models,
+            }
+        }
+        "claude" => {
+            if let Some(home) = user_home_dir() {
+                if let Ok(txt) = std::fs::read_to_string(home.join(".claude").join("settings.json")) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&txt) {
+                        if let Some(m) = json.get("model").and_then(|v| v.as_str()) {
+                            push_unique(m, m);
+                        }
+                    }
+                }
+            }
+            for alias in ["sonnet", "haiku", "opus"] {
+                push_unique(alias, alias);
+            }
+            FetchAiModelsResult {
+                provider: "cli".into(),
+                status: "connected".into(),
+                message: format!("Tersedia {} alias/model Claude CLI.", models.len()),
+                models,
+            }
+        }
+        "opencode" => {
+            let exe = executable.trim();
+            if resolve_executable(exe).is_none() {
+                return FetchAiModelsResult {
+                    provider: "cli".into(),
+                    status: "offline".into(),
+                    message: format!("Executable '{exe}' tidak ditemukan di PATH."),
+                    models: Vec::new(),
+                };
+            }
+            let mut cmd = Command::new(exe);
+            cmd.arg("models")
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(0x08000000);
+            let mut child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    return FetchAiModelsResult {
+                        provider: "cli".into(),
+                        status: "error".into(),
+                        message: format!("Gagal menjalankan '{exe} models': {e}"),
+                        models: Vec::new(),
+                    };
+                }
+            };
+            let stdout_pipe = child.stdout.take();
+            let stdout_handle = std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                if let Some(mut s) = stdout_pipe {
+                    let _ = s.read_to_end(&mut buf);
+                }
+                buf
+            });
+            let deadline = Instant::now() + Duration::from_secs(12);
+            let timed_out = loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => break false,
+                    Ok(None) => {
+                        if Instant::now() >= deadline {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break true;
+                        }
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    Err(_) => break true,
+                }
+            };
+            let out_bytes = stdout_handle.join().unwrap_or_default();
+            if timed_out {
+                return FetchAiModelsResult {
+                    provider: "cli".into(),
+                    status: "error".into(),
+                    message: "Perintah 'opencode models' melebihi batas waktu (12 detik).".into(),
+                    models: Vec::new(),
+                };
+            }
+            let stdout_str = String::from_utf8_lossy(&out_bytes);
+            for line in stdout_str.lines() {
+                let trimmed = line.trim();
+                if trimmed.contains('/') && !trimmed.contains(char::is_whitespace) && !trimmed.starts_with('#') {
+                    push_unique(trimmed, trimmed);
+                }
+            }
+            let message = if models.is_empty() {
+                "Tidak ada model provider/model terdeteksi dari 'opencode models'.".to_string()
+            } else {
+                format!("Terdeteksi {} model dari OpenCode CLI.", models.len())
+            };
+            FetchAiModelsResult {
+                provider: "cli".into(),
+                status: if models.is_empty() { "empty".into() } else { "connected".into() },
+                message,
+                models,
+            }
+        }
+        _ => FetchAiModelsResult {
+            provider: "cli".into(),
+            status: "not_applicable".into(),
+            message: "Ketik ID model manual atau biarkan kosong untuk mengikuti bawaan CLI.".into(),
+            models: Vec::new(),
+        },
+    }
 }
 
 fn run_cli_hook_with_prefix(
     executable: &str,
     args_template: &[String],
+    input_png: &[u8],
+    timeout_sec: u64,
+    keys: &AiKeys,
+    temp_prefix: &str,
+) -> Result<String, String> {
+    run_cli_hook_with_options(
+        executable,
+        args_template,
+        "",
+        "",
+        input_png,
+        timeout_sec,
+        keys,
+        temp_prefix,
+    )
+}
+
+fn run_cli_hook_with_options(
+    executable: &str,
+    args_template: &[String],
+    cli_model: &str,
+    cli_reasoning_effort: &str,
     input_png: &[u8],
     timeout_sec: u64,
     keys: &AiKeys,
@@ -983,12 +1296,14 @@ fn run_cli_hook_with_prefix(
     let input_str = input_path.to_string_lossy().to_string();
     let output_str = output_path.to_string_lossy().to_string();
     let uses_output_placeholder = args_template.iter().any(|a| a.contains("{output}"));
-    let resolved_args = normalize_cli_args(
+    let resolved_args = normalize_cli_args_with_options(
         exe,
         args_template
             .iter()
             .map(|tok| tok.replace("{input}", &input_str).replace("{output}", &output_str))
             .collect(),
+        cli_model,
+        cli_reasoning_effort,
     );
 
     let mut cmd = Command::new(exe);
@@ -1387,12 +1702,15 @@ pub fn run_external_ai_to_svg_import(
         "claude" => call_claude_api(input_png, &cfg.ai_claude_model, &keys)?,
         "openai" => call_openai_api(input_png, &cfg.ai_openai_model, &keys)?,
         "gemini" => call_gemini_api(input_png, &cfg.ai_gemini_model, &keys)?,
-        "cli" => run_cli_hook(
+        "cli" => run_cli_hook_with_options(
             &cfg.ai_cli_executable,
             &cfg.ai_cli_args,
+            &cfg.ai_cli_model,
+            &cfg.ai_cli_reasoning_effort,
             input_png,
             cfg.ai_cli_timeout_sec,
             &keys,
+            "trasea-ai-cli",
         )?,
         _ => {
             return Err(
@@ -1710,6 +2028,64 @@ mod tests {
         assert_eq!(
             normalize_cli_args("claude", vec!["-p".into(), "prompt".into()]),
             vec!["-p", "prompt"]
+        );
+    }
+
+    /// T163-01: normalize_cli_args_with_options injects model & reasoning flags for codex, claude, gemini, and opencode without duplicating manual flags.
+    #[test]
+    fn t163_normalize_cli_args_with_options_all_clis() {
+        assert_eq!(
+            normalize_cli_args_with_options("codex", vec!["exec".into(), "prompt".into()], "gpt-5", "low"),
+            vec![
+                "exec",
+                "--skip-git-repo-check",
+                "-m",
+                "gpt-5",
+                "-c",
+                "model_reasoning_effort=\"low\"",
+                "prompt"
+            ]
+        );
+        assert_eq!(
+            normalize_cli_args_with_options(
+                "codex.exe",
+                vec![
+                    "exec".into(),
+                    "--skip-git-repo-check".into(),
+                    "-m".into(),
+                    "o4-mini".into(),
+                    "-c".into(),
+                    "model_reasoning_effort=\"high\"".into(),
+                    "prompt".into()
+                ],
+                "gpt-5",
+                "low"
+            ),
+            vec![
+                "exec",
+                "--skip-git-repo-check",
+                "-m",
+                "o4-mini",
+                "-c",
+                "model_reasoning_effort=\"high\"",
+                "prompt"
+            ]
+        );
+        assert_eq!(
+            normalize_cli_args_with_options("claude", vec!["-p".into(), "prompt".into()], "sonnet", "low"),
+            vec!["--model", "sonnet", "--effort", "low", "-p", "prompt"]
+        );
+        assert_eq!(
+            normalize_cli_args_with_options("opencode", vec!["run".into(), "prompt".into()], "openai/gpt-5", "low"),
+            vec!["run", "-m", "openai/gpt-5#low", "prompt"]
+        );
+        assert_eq!(
+            normalize_cli_args_with_options("opencode", vec!["run".into(), "prompt".into()], "openai/gpt-5#high", "low"),
+            vec!["run", "-m", "openai/gpt-5#high", "prompt"]
+        );
+        assert_eq!(
+            normalize_cli_args_with_options("gemini", vec!["-p".into(), "prompt".into()], "gemini-2.5-flash", "high"),
+            vec!["-m", "gemini-2.5-flash", "-p", "prompt"]
         );
     }
 
