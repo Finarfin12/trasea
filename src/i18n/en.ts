@@ -1,9 +1,10 @@
 import type { Dict } from "./id";
+import { APP_VERSION } from "../version";
 
 export const en: Record<keyof Dict, string> = {
 	langCode: "en",
 	// Header
-	headerOffline: "1.4.0 · local-first",
+	headerOffline: `${APP_VERSION} · local-first`,
 	batchFolder: "Batch & Watch",
 	pasteImage: "Paste image",
 	pasteImageTip: "Paste image from clipboard",
@@ -239,7 +240,7 @@ export const en: Record<keyof Dict, string> = {
 	dxfUnitLabel: "DXF Unit (Laser / CNC)",
 	dxfUnitMm: "Millimetres (mm)",
 	dxfUnitPx: "Pixels (px)",
-	dxfTargetWidthLabel: "DXF target width (mm, optional)",
+	dxfTargetWidthLabel: "DXF target width (mm)",
 	dxfTargetWidthPlaceholder: "Auto (DPI)",
 	includeAse: "Include .ase palette",
 	copySvgBtn: "Copy SVG",
@@ -467,7 +468,7 @@ export const en: Record<keyof Dict, string> = {
 	updateUpToDate: "Trasea is up to date",
 	updateAvailable: "New version available",
 	updateDownloadBtn: "Open download page",
-	updateAutoCheckLabel: "Check automatically on startup (optional, Off by default)",
+	updateAutoCheckLabel: "Check automatically on startup",
 	updateBannerText: "Update available:",
 	updateBannerBtn: "Download",
 	appModeLabel: "Mode",
