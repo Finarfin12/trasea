@@ -4563,7 +4563,7 @@ dependencies = [
 
 [[package]]
 name = "trasea"
-version = "1.5.1"
+version = "1.5.2"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -4578,7 +4578,7 @@ dependencies = [
 
 [[package]]
 name = "trasea-core"
-version = "1.5.1"
+version = "1.5.2"
 dependencies = [
  "image",
  "lopdf",

@@ -3,7 +3,7 @@ import { APP_VERSION } from "../version";
 export const id = {
 	langCode: "id" as const,
 	// Header
-	headerOffline: `${APP_VERSION} · lokal & privat`,
+	headerOffline: `v${APP_VERSION}`,
 	batchFolder: "Batch folder",
 	pasteImage: "Tempel gambar",
 	pasteImageTip: "Tempel gambar dari clipboard",

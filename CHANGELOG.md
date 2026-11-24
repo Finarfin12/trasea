@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.5.2] "Compact Header Version Hotfix"
+
+- **Compact header version (`src/i18n/id.ts`, `src/i18n/en.ts`).** Simplified `headerOffline` to `` `v${APP_VERSION}` `` (`v1.5.2`) by removing the `· lokal & privat` / `· local-first` suffix.
+
 ## [1.5.1] "Dynamic UI Version Hotfix"
 
 - **Single source of truth for UI version (`src/version.ts`, `src/i18n/id.ts`, `src/i18n/en.ts`, `src/colorUtils.ts`).** Exported `APP_VERSION` directly from `package.json` and replaced all hardcoded `"1.4.0"` strings in the app header (`id` & `en`) and palette export headers (GPL, JSON, CSS) so the displayed version stays in sync with the binary.
