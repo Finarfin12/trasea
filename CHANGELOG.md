@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.2] "Dynamic Local GPU/CPU Label & Codex CLI Fix"
+
+- **Dynamic Local Engine Label (`src/i18n/{id,en}.ts`, `src/App.tsx`).** The Trace engine dropdown now displays `Local · GPU · Offline` (`Lokal · GPU · Offline`) or `Local · CPU · Offline` (`Lokal · CPU · Offline`) reactively based on `preferMedianOnly`.
+- **Codex CLI Preset & Runner Fix (`src/AiEngineSettings.tsx`, `src-tauri/src/ai_engine.rs`).** Updated `CLI_PRESETS.codex` to pass `--skip-git-repo-check --ephemeral --sandbox read-only -i {input} -o {output}`, set `.current_dir(tmp.path())` on CLI hook execution, and added `normalize_cli_args` to automatically inject `--skip-git-repo-check` for saved `codex exec` configurations.
+
 ## [1.6.1] "v2 App Logo & README Banner"
 
 - **Refreshed v2 App Icon (`src-tauri/icons/*`, `src/assets/trasea-icon-mini.svg`, `public/favicon.svg`, `docs/branding/*`).** Regenerated all Windows (`.ico`), macOS (`.icns`), PNG, header, and favicon icons from the v2 white-card T-mark logo.

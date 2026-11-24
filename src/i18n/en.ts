@@ -478,6 +478,8 @@ export const en: Record<keyof Dict, string> = {
 	tabAiEngine: "AI Engine",
 	aiProviderLabel: "Provider",
 	aiProviderLocal: "Local",
+	aiProviderLocalGpu: "Local · GPU · Offline",
+	aiProviderLocalCpu: "Local · CPU · Offline",
 	aiProviderCli: "Local CLI",
 	aiGuidanceNote: "LLMs (Claude, GPT, Gemini) fit simple icons and logos; Recraft or Vectorizer.AI work best for complex illustrations.",
 	aiKeySavedBadge: "Saved",

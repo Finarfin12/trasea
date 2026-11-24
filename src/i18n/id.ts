@@ -477,6 +477,8 @@ export const id = {
 	tabAiEngine: "Mesin AI",
 	aiProviderLabel: "Penyedia",
 	aiProviderLocal: "Lokal",
+	aiProviderLocalGpu: "Lokal · GPU · Offline",
+	aiProviderLocalCpu: "Lokal · CPU · Offline",
 	aiProviderCli: "CLI Lokal",
 	aiGuidanceNote: "LLM (Claude, GPT, Gemini) cocok untuk ikon dan logo simpel; Recraft atau Vectorizer.AI lebih akurat untuk ilustrasi kompleks.",
 	aiKeySavedBadge: "Tersimpan",

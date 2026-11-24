@@ -37,7 +37,15 @@ const CLI_PRESETS = {
 		executable: "codex",
 		args: [
 			"exec",
-			"Convert the image at {input} into a clean standalone SVG vector graphic with flat hex fills and write it to {output}.",
+			"--skip-git-repo-check",
+			"--ephemeral",
+			"--sandbox",
+			"read-only",
+			"-i",
+			"{input}",
+			"-o",
+			"{output}",
+			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
 		],
 	},
 };
