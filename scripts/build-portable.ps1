@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$Version = "1.6.2",
+    [string]$Version = "1.6.3",
     [string]$TargetDir = "V:\target\x86_64-pc-windows-gnu\release",
     [string]$OutDir = "V:\releases"
 )

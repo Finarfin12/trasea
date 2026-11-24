@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
 	fetchAiModels,
+	fetchCliModels,
 	getAiConfig,
 	saveAiConfig,
 	testAiConfig,
@@ -48,7 +49,23 @@ const CLI_PRESETS = {
 			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
 		],
 	},
+	opencode: {
+		executable: "opencode",
+		args: [
+			"run",
+			"--auto",
+			"-f",
+			"{input}",
+			"Convert the attached image into a clean standalone SVG vector graphic with flat hex fills and return only <svg>...</svg>.",
+		],
+	},
 };
+
+function cliKind(exe: string): "codex" | "claude" | "gemini" | "opencode" | "other" {
+	const base = exe.trim().split(/[\\/]/).pop()?.toLowerCase().replace(/\.(exe|cmd|bat)$/, "") ?? "";
+	if (base === "codex" || base === "claude" || base === "gemini" || base === "opencode") return base;
+	return "other";
+}
 
 export default function AiEngineSettings() {
 	const { t } = useI18n();
@@ -67,6 +84,31 @@ export default function AiEngineSettings() {
 	const [cliExe, setCliExe] = useState("");
 	const [cliArgsText, setCliArgsText] = useState("");
 	const [cliTimeout, setCliTimeout] = useState(120);
+	const [cliModel, setCliModel] = useState("");
+	const [cliReasoning, setCliReasoning] = useState("");
+	const [cliModels, setCliModels] = useState<AiModelItem[]>([]);
+	const [cliModelStatus, setCliModelStatus] = useState("");
+	const [loadingCliModels, setLoadingCliModels] = useState(false);
+
+	const loadCliModelsFor = useCallback(async (exe: string) => {
+		const kind = cliKind(exe);
+		if (kind === "other") {
+			setCliModels([]);
+			setCliModelStatus("");
+			return;
+		}
+		setLoadingCliModels(true);
+		try {
+			const res = await fetchCliModels(exe);
+			setCliModels(res.models);
+			setCliModelStatus(res.message);
+		} catch (e) {
+			setCliModels([]);
+			setCliModelStatus(typeof e === "string" ? e : String(e));
+		} finally {
+			setLoadingCliModels(false);
+		}
+	}, []);
 
 	// Real dynamic model list (0 hardcoded models)
 	const [models, setModels] = useState<AiModelItem[]>([]);
@@ -131,6 +173,11 @@ export default function AiEngineSettings() {
 				setCliExe(loaded.aiCliExecutable);
 				setCliArgsText(loaded.aiCliArgs.join("\n"));
 				setCliTimeout(loaded.aiCliTimeoutSec || 120);
+				setCliModel(loaded.aiCliModel ?? "");
+				setCliReasoning(loaded.aiCliReasoningEffort ?? "");
+				if (loaded.aiCliExecutable) {
+					void loadCliModelsFor(loaded.aiCliExecutable);
+				}
 				const initial: AiProvider = EXTERNAL_PROVIDERS.includes(loaded.aiProvider as AiProvider)
 					? (loaded.aiProvider as AiProvider)
 					: "recraft";
@@ -478,9 +525,21 @@ export default function AiEngineSettings() {
 							onClick={() => {
 								setCliExe(CLI_PRESETS.codex.executable);
 								setCliArgsText(CLI_PRESETS.codex.args.join("\n"));
+								setCliReasoning("low");
+								void loadCliModelsFor(CLI_PRESETS.codex.executable);
 							}}
 						>
 							Codex CLI
+						</button>
+						<button
+							className="small"
+							onClick={() => {
+								setCliExe(CLI_PRESETS.opencode.executable);
+								setCliArgsText(CLI_PRESETS.opencode.args.join("\n"));
+								void loadCliModelsFor(CLI_PRESETS.opencode.executable);
+							}}
+						>
+							OpenCode CLI
 						</button>
 					</div>
 
@@ -511,6 +570,56 @@ export default function AiEngineSettings() {
 						<div className="hint">{t.aiCliArgsHint}</div>
 					</div>
 
+					{cliKind(cliExe) !== "other" && (
+						<>
+							<div className="setting-row" style={{ marginTop: 8 }}>
+								<label htmlFor="ai-cli-model">{t.aiModelLabel}</label>
+								<div className="row" style={{ gap: 6, flex: 1 }}>
+									<input
+										id="ai-cli-model"
+										list="ai-cli-model-list"
+										type="text"
+										value={cliModel}
+										onChange={e => setCliModel(e.target.value)}
+										placeholder={t.aiCliModelPlaceholder}
+										style={{ flex: 1 }}
+									/>
+									<datalist id="ai-cli-model-list">
+										{cliModels.map(m => (
+											<option key={m.id} value={m.id}>
+												{m.label}
+											</option>
+										))}
+									</datalist>
+									<button
+										className="small"
+										disabled={loadingCliModels}
+										onClick={() => void loadCliModelsFor(cliExe)}
+									>
+										{loadingCliModels ? t.aiLoadingModels : t.aiReloadModelsBtn}
+									</button>
+								</div>
+							</div>
+							{cliModelStatus && <div className="hint">{cliModelStatus}</div>}
+
+							{cliKind(cliExe) !== "gemini" && (
+								<div className="setting-row" style={{ marginTop: 8 }}>
+									<label htmlFor="ai-cli-reasoning">{t.aiCliReasoningLabel}</label>
+									<select
+										id="ai-cli-reasoning"
+										value={cliReasoning}
+										onChange={e => setCliReasoning(e.target.value)}
+									>
+										<option value="">{t.aiCliReasoningDefault}</option>
+										<option value="low">{t.aiCliReasoningLow}</option>
+										<option value="medium">{t.aiCliReasoningMedium}</option>
+										<option value="high">{t.aiCliReasoningHigh}</option>
+									</select>
+								</div>
+							)}
+						</>
+					)}
+
 					<div className="setting-row" style={{ marginTop: 8 }}>
 						<label htmlFor="ai-cli-timeout">{t.aiCliTimeoutLabel}</label>
 						<input
@@ -534,6 +643,8 @@ export default function AiEngineSettings() {
 									aiCliExecutable: cliExe.trim(),
 									aiCliArgs: args,
 									aiCliTimeoutSec: cliTimeout,
+									aiCliModel: cliModel.trim(),
+									aiCliReasoningEffort: cliReasoning,
 								});
 							}}
 						>

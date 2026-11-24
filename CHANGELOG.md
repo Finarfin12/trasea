@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.3] "OpenCode CLI, CLI Model/Reasoning & AI Vector Edit Fix"
+
+- **OpenCode CLI preset & CLI Model / Reasoning controls (`ai_engine.rs`, `AiEngineSettings.tsx`).** Added `aiCliModel` and `aiCliReasoningEffort` config fields, `normalize_cli_args_with_options` for `codex`, `claude`, `gemini`, and `opencode`, `fetch_cli_models` IPC command, and the 1-click `OpenCode CLI` preset (Codex preset sets `low` reasoning effort).
+- **Instant Node / Path / Colour editing on AI results (`main.rs`, `App.tsx`).** Added `CachedAiImport` in `Last.ai_import` and `apply_ai_vector_edits` IPC so Node tool, Select Path, Undo/Redo, and palette resets on AI vectors run directly on the cached AI SVG without falling back to offline raster tracing.
+- **Synced `traceEngine` & AI loading status (`App.tsx`).** Synchronized `run()` with `traceEngineRef` and updated the canvas loading overlay to display a dedicated AI/CLI status without the local `0%` progress bar.
+
 ## [1.6.2] "Dynamic Local GPU/CPU Label & Codex CLI Fix"
 
 - **Dynamic Local Engine Label (`src/i18n/{id,en}.ts`, `src/App.tsx`).** The Trace engine dropdown now displays `Local · GPU · Offline` (`Lokal · GPU · Offline`) or `Local · CPU · Offline` (`Lokal · CPU · Offline`) reactively based on `preferMedianOnly`.

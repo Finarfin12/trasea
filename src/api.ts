@@ -488,6 +488,8 @@ export interface AiConfigPublic {
 	aiCliExecutable: string;
 	aiCliArgs: string[];
 	aiCliTimeoutSec: number;
+	aiCliModel: string;
+	aiCliReasoningEffort: string;
 	hasRecraftKey: boolean;
 	hasVectorizerKeys: boolean;
 	hasClaudeKey: boolean;
@@ -503,6 +505,8 @@ export interface SaveAiConfigInput {
 	aiCliExecutable?: string;
 	aiCliArgs?: string[];
 	aiCliTimeoutSec?: number;
+	aiCliModel?: string;
+	aiCliReasoningEffort?: string;
 	recraftApiKey?: string;
 	vectorizerApiId?: string;
 	vectorizerApiSecret?: string;
@@ -539,3 +543,7 @@ export const testAiConfig = (provider?: string): Promise<AiTestResult> =>
 	invoke<AiTestResult>("test_ai_config", { provider: provider ?? null });
 export const vectorizeWithAi = (path: string, params: Options, provider?: string): Promise<Processed> =>
 	invoke<Processed>("vectorize_with_ai", { path, params, provider: provider ?? null });
+export const fetchCliModels = (executable: string): Promise<FetchAiModelsResult> =>
+	invoke<FetchAiModelsResult>("fetch_cli_models", { executable });
+export const applyAiVectorEdits = (path: string, params: Options): Promise<Processed> =>
+	invoke<Processed>("apply_ai_vector_edits", { path, params });

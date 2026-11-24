@@ -33,6 +33,7 @@ import {
 	copySvgToClipboard,
 	checkForUpdate,
 	vectorizeWithAi,
+	applyAiVectorEdits,
 	type AiProvider,
 	DEFAULT_APP_SETTINGS,
 	openExternalUrl,
@@ -282,6 +283,10 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [view, setView] = useState<View>("editor");
 	const [panelTab, setPanelTab] = useState<PanelTab>("trace");
 	const [traceEngine, setTraceEngine] = useState<AiProvider>("local");
+	const traceEngineRef = useRef<AiProvider>("local");
+	traceEngineRef.current = traceEngine;
+	const activeResultSourceRef = useRef<"local" | "ai">("local");
+	const [activeRunIsAi, setActiveRunIsAi] = useState(false);
 	const [batchInitialFiles, setBatchInitialFiles] = useState<string[]>([]);
 	const [path, setPath] = useState<string | null>(null);
 	const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -435,13 +440,16 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	);
 
 	const run = useCallback(
-		async (p: string, o: Options, engineOverride: AiProvider = "local") => {
+		async (p: string, o: Options, engineOverride?: AiProvider) => {
 			if (busyRef.current) return;
+			const effectiveEngine = engineOverride ?? traceEngineRef.current;
+			const useExternalAi = effectiveEngine !== "local" && !p.toLowerCase().endsWith(".svg");
 			busyRef.current = true;
+			setActiveRunIsAi(useExternalAi);
 			setBusy(true);
 			setError("");
 			setInfo("");
-			setStage(t.loadingImage);
+			setStage(useExternalAi ? t.aiRunningStatus : t.loadingImage);
 			setFraction(0);
 			setPath(p);
 			const hasEdits = o.pathEdits.length + o.nodeEdits.length > 0;
@@ -450,8 +458,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				editFingerprint: hasEdits ? editFpRef.current : null,
 			};
 			try {
-				const useExternalAi = engineOverride !== "local" && !p.toLowerCase().endsWith(".svg");
-				const r = useExternalAi ? await vectorizeWithAi(p, effectiveOpts, engineOverride) : await processImage(p, effectiveOpts);
+				const r = useExternalAi ? await vectorizeWithAi(p, effectiveOpts, effectiveEngine) : await processImage(p, effectiveOpts);
+				activeResultSourceRef.current = useExternalAi ? "ai" : "local";
 				if (hasEdits && !r.editsStale) {
 					// legacy projects have no fingerprint: adopt the one of the trace they were just applied to
 					if (editFpRef.current === null) editFpRef.current = r.traceFingerprint;
@@ -468,9 +476,48 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			} finally {
 				busyRef.current = false;
 				setBusy(false);
+				setActiveRunIsAi(false);
 			}
 		},
-		[errText, t.loadingImage, appSettings.preferMedianOnly],
+		[errText, t.loadingImage, t.aiRunningStatus, appSettings.preferMedianOnly],
+	);
+
+	const applyVectorEdits = useCallback(
+		async (p: string, o: Options) => {
+			if (activeResultSourceRef.current !== "ai") {
+				return run(p, o, "local");
+			}
+			if (busyRef.current) return;
+			busyRef.current = true;
+			setActiveRunIsAi(false);
+			setBusy(true);
+			setError("");
+			const hasEdits = o.pathEdits.length + o.nodeEdits.length > 0;
+			const effectiveOpts: Options = {
+				...(appSettings.preferMedianOnly ? { ...o, aiClean: false } : o),
+				editFingerprint: hasEdits ? editFpRef.current : null,
+			};
+			try {
+				const r = await applyAiVectorEdits(p, effectiveOpts);
+				activeResultSourceRef.current = "ai";
+				if (hasEdits && !r.editsStale) {
+					if (editFpRef.current === null) editFpRef.current = r.traceFingerprint;
+					lastEditRunRef.current = { ...effectiveOpts, editFingerprint: editFpRef.current };
+				}
+				setResult(r);
+				setLiveSvg(null);
+				setHiddenLayers(new Set());
+				if (!keepSelectionRef.current) setSelectedPathId(null);
+				keepSelectionRef.current = false;
+				setAppliedSig(JSON.stringify(effectiveOpts));
+			} catch (e) {
+				setError(errText(e));
+			} finally {
+				busyRef.current = false;
+				setBusy(false);
+			}
+		},
+		[run, errText, appSettings.preferMedianOnly],
 	);
 
 	const restoreSnapshot = useCallback(
@@ -501,7 +548,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 					snap.targetChoice === "auto"
 						? null
 						: Number.parseInt(snap.targetChoice === "custom" ? snap.customTarget : snap.targetChoice, 10) || null;
-				void run(path, {
+				void applyVectorEdits(path, {
 					...normOpts,
 					customPalette: snap.palette,
 					paletteMerges: snap.paletteMerges,
@@ -805,7 +852,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			const nextEdits = [...pathEdits, edit];
 			setPathEdits(nextEdits);
 			setSelectedPathId(null);
-			void run(path, {
+			void applyVectorEdits(path, {
 				...opts,
 				customPalette: palette,
 				paletteMerges,
@@ -840,7 +887,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		if (nodeEdits.length === 0) editFpRef.current = null;
 		setPathEdits([]);
 		setSelectedPathId(null);
-		void run(path, {
+		void applyVectorEdits(path, {
 			...opts,
 			customPalette: palette,
 			paletteMerges,
@@ -911,7 +958,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			const next = [...nodeEdits, edit];
 			setNodeEdits(next);
 			keepSelectionRef.current = true;
-			void run(path, {
+			void applyVectorEdits(path, {
 				...opts,
 				customPalette: palette,
 				paletteMerges,
@@ -968,7 +1015,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		setNodeEdits([]);
 		setNodeSel(null);
 		keepSelectionRef.current = true;
-		void run(path, {
+		void applyVectorEdits(path, {
 			...opts,
 			customPalette: palette,
 			paletteMerges,
@@ -1217,7 +1264,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		setMergeSource(null);
 		setInspectedColor(null);
 		if (path && !busyRef.current)
-			void run(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
+			void applyVectorEdits(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
 		};
 
 		const apply = () => {
@@ -1628,9 +1675,15 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 						)}
 						{busy && (
 							<div className="progress" role="status" aria-live="polite">
-								<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
-								<div>{stage}… {Math.round(fraction * 100)}%</div>
-								<div className="muted">{t.aiWaitHint}</div>
+								{activeRunIsAi ? (
+									<div>{t.aiRunningStatus}</div>
+								) : (
+									<>
+										<div className="bar"><div className="fill" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
+										<div>{stage}… {Math.round(fraction * 100)}%</div>
+										<div className="muted">{t.aiWaitHint}</div>
+									</>
+								)}
 							</div>
 						)}
 						{result && !busy && (

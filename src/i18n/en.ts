@@ -501,4 +501,11 @@ export const en: Record<keyof Dict, string> = {
 	traceEngineLabel: "Trace engine",
 	vectorizeAiBtn: "Vectorize (AI)",
 	aiConfigureBtn: "Configure",
+	aiCliModelPlaceholder: "Follow CLI default",
+	aiCliReasoningLabel: "Reasoning / Effort",
+	aiCliReasoningDefault: "CLI default",
+	aiCliReasoningLow: "Low",
+	aiCliReasoningMedium: "Medium",
+	aiCliReasoningHigh: "High",
+	aiRunningStatus: "Running AI / CLI engine…",
 };
