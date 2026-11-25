@@ -58,6 +58,8 @@ Supported outputs:
 
 ### New in 1.9.0
 
+See both features and find the installer for your platform on the [Trasea website](https://finarfin12.github.io/trasea/).
+
 - **Brand Palette Lock.** Paste a HEX list or import an ASE, GPL, JSON, or CSS swatch. Save a named preset and reuse it in Batch Folder.
 - **In-app updates.** Open Settings → Updates to check for a new release and download the installer for your platform. Trasea verifies SHA-256 when the release supplies a checksum. Automatic checks remain off until enabled.
 

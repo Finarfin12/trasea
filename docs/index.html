@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1.1.1">
+  <link rel="stylesheet" href="styles.css?v=1.2">
 </head>
 <body>
   <a class="skip-link" href="#main" data-i18n="a11y.skip">Skip to main content</a>
@@ -70,7 +70,7 @@
               <span class="dot dot-m"></span>
               <span class="dot dot-y"></span>
             </span>
-            <span class="mono" id="hero-version">v1.8.2</span>
+            <span class="mono" id="hero-version">v1.9.0</span>
             <span class="pill-sep" aria-hidden="true">·</span>
             <span data-i18n="hero.badge">Free &amp; Open Source · MIT</span>
           </div>
@@ -93,13 +93,13 @@
           </div>
 
           <div class="hero-meta mono" id="hero-download-meta">
-            <span id="hero-asset-meta">v1.8.2 · Windows &amp; macOS</span>
+            <span id="hero-asset-meta">v1.9.0 · Windows &amp; macOS</span>
             <span class="meta-sep" aria-hidden="true">·</span>
             <a id="hero-alt-link" href="#download" data-i18n="hero.altLinkDefault">See all 4 installers</a>
           </div>
 
           <div class="hero-proof-strip mono" id="hero-proof-strip" data-i18n="hero.proof">
-            16 public releases · 122 automated Rust tests · 8 export formats · MIT open source
+            17 public releases · 129 automated Rust tests · 8 export formats · MIT open source
           </div>
         </div>
 
@@ -110,7 +110,7 @@
               <span class="dot dot-m"></span>
               <span class="dot dot-y"></span>
             </div>
-            <div class="chrome-title mono">trasea-studio — <span id="chrome-version">v1.8.2</span> · 100% offline</div>
+            <div class="chrome-title mono">trasea-studio — <span id="chrome-version">v1.9.0</span> · 100% offline</div>
             <div class="chrome-badge mono">SVG · PDF · EPS · DXF</div>
           </div>
           <div class="studio-viewport">
@@ -165,7 +165,7 @@
         <div class="feature-tabs" role="tablist" aria-label="Trasea features" data-i18n-aria="a11y.featureTabs">
           <button type="button" class="tab-btn is-active" role="tab" id="tab-studio" aria-selected="true" aria-controls="panel-studio" data-tab="studio" data-i18n="tabs.studio.label">Studio Editor &amp; Nodes</button>
           <button type="button" class="tab-btn" role="tab" id="tab-mockup" aria-selected="false" aria-controls="panel-mockup" data-tab="mockup" data-i18n="tabs.mockup.label">Photorealistic Mockups</button>
-          <button type="button" class="tab-btn" role="tab" id="tab-recolor" aria-selected="false" aria-controls="panel-recolor" data-tab="recolor" data-i18n="tabs.recolor.label">Smart Recolor &amp; Brand Kit</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-recolor" aria-selected="false" aria-controls="panel-recolor" data-tab="recolor" data-i18n="tabs.recolor.label">Brand Palette Lock &amp; Brand Kit</button>
           <button type="button" class="tab-btn" role="tab" id="tab-audit" aria-selected="false" aria-controls="panel-audit" data-tab="audit" data-i18n="tabs.audit.label">Pre-Flight Audit</button>
           <button type="button" class="tab-btn" role="tab" id="tab-compare" aria-selected="false" aria-controls="panel-compare" data-tab="compare" data-i18n="tabs.compare.label">Compare Offline vs AI</button>
           <button type="button" class="tab-btn" role="tab" id="tab-production" aria-selected="false" aria-controls="panel-production" data-tab="production" data-i18n="tabs.production.label">Die-Cut, Centerline &amp; CMYK</button>
@@ -231,18 +231,24 @@
         <div class="tab-panel" role="tabpanel" id="panel-recolor" aria-labelledby="tab-recolor" hidden>
           <div class="panel-header">
             <div>
-              <h3 class="panel-title" data-i18n="tabs.recolor.title">0 ms Smart Recolor &amp; 1-Click Brand Kit ZIP</h3>
+              <h3 class="panel-title" data-i18n="tabs.recolor.title">Brand Palette Lock &amp; Brand Kit</h3>
               <p class="panel-desc" data-i18n="tabs.recolor.desc">
-                Switch between Original, All-Black, All-White, and Duotone variations in zero milliseconds, isolate any ink with Solo view, and bundle the entire brand delivery into one structured ZIP archive.
+                Lock tracing to a brand palette, create color variants with 0 ms Smart Recolor, and package the results as a Brand Kit ZIP.
               </p>
             </div>
             <ul class="panel-points">
-              <li data-i18n="tabs.recolor.p1">Instant Original, Black, White, and Duotone colorways</li>
-              <li data-i18n="tabs.recolor.p2">Solo ink isolation (Alt+Click eye) without touching CutContour or Registration</li>
-              <li data-i18n="tabs.recolor.p3">1-click Brand Kit (.zip) containing all colorways, PNGs, and palettes</li>
+              <li data-i18n="tabs.recolor.p1">Paste HEX or import .ase, .gpl, .json, or .css swatches</li>
+              <li data-i18n="tabs.recolor.p2">Save named brand palette presets and reuse them across a Batch Folder</li>
+              <li data-i18n="tabs.recolor.p3">Create instant color variants, isolate inks with Solo, and export a Brand Kit ZIP</li>
             </ul>
           </div>
-          <div class="panel-gallery gallery-1">
+          <div class="panel-gallery gallery-2">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_brand_palette_lock.png" alt="Trasea editor with three locked colors and a saved brand palette" width="1550" height="1037">
+              </div>
+              <figcaption data-i18n="tabs.recolor.capLock">Brand Palette Lock with three exact colors and a named preset</figcaption>
+            </figure>
             <figure class="shot-card">
               <div class="shot-frame">
                 <img src="screenshots/app_brand_kit_recolor.png" alt="Smart Recolor Duotone mode and Solo color isolation in Trasea" width="1440" height="900">
@@ -412,7 +418,7 @@
           <h2 class="section-title" data-i18n="download.title">Install natively on Windows or macOS.</h2>
           <p class="section-subtitle">
             <span data-i18n="download.subtitlePrefix">Latest release</span>
-            <span class="mono release-tag-inline" id="download-version">v1.8.2</span>
+            <span class="mono release-tag-inline" id="download-version">v1.9.0</span>
             <span data-i18n="download.subtitleSuffix">· Free, open source, zero telemetry.</span>
           </p>
         </div>
@@ -425,8 +431,8 @@
             </div>
             <h3 data-i18n="download.winSetupTitle">Windows Installer</h3>
             <p data-i18n="download.winSetupDesc">Standard NSIS setup for Windows 10 and Windows 11 with Start Menu shortcut and clean uninstaller.</p>
-            <div class="dl-file mono" id="meta-win-setup">Trasea_1.8.2_x64-setup.exe · 14.5 MB</div>
-            <a id="link-win-setup" class="btn btn-primary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-setup.exe">
+            <div class="dl-file mono" id="meta-win-setup">Trasea_1.9.0_x64-setup.exe · 14.5 MB</div>
+            <a id="link-win-setup" class="btn btn-primary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-setup.exe">
               <span data-i18n="download.btnWinSetup">Download .exe</span>
             </a>
           </article>
@@ -437,8 +443,8 @@
             </div>
             <h3 data-i18n="download.winPortableTitle">Windows Portable</h3>
             <p data-i18n="download.winPortableDesc">Standalone ZIP archive — extract anywhere and launch without administrator privileges.</p>
-            <div class="dl-file mono" id="meta-win-portable">Trasea_1.8.2_x64-portable.zip · 17.3 MB</div>
-            <a id="link-win-portable" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-portable.zip">
+            <div class="dl-file mono" id="meta-win-portable">Trasea_1.9.0_x64-portable.zip · 17.3 MB</div>
+            <a id="link-win-portable" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-portable.zip">
               <span data-i18n="download.btnWinPortable">Download .zip</span>
             </a>
           </article>
@@ -450,8 +456,8 @@
             </div>
             <h3 data-i18n="download.macArmTitle">macOS (M1 / M2 / M3 / M4)</h3>
             <p data-i18n="download.macArmDesc">Native ARM64 disk image optimized for Apple Silicon Macs.</p>
-            <div class="dl-file mono" id="meta-mac-arm">Trasea_1.8.2_aarch64.dmg · 6.9 MB</div>
-            <a id="link-mac-arm" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_aarch64.dmg">
+            <div class="dl-file mono" id="meta-mac-arm">Trasea_1.9.0_aarch64.dmg · 7.0 MB</div>
+            <a id="link-mac-arm" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_aarch64.dmg">
               <span data-i18n="download.btnMacArm">Download Apple Silicon .dmg</span>
             </a>
           </article>
@@ -462,14 +468,18 @@
             </div>
             <h3 data-i18n="download.macIntelTitle">macOS (Intel)</h3>
             <p data-i18n="download.macIntelDesc">Native x86_64 disk image for Intel-based Mac computers.</p>
-            <div class="dl-file mono" id="meta-mac-intel">Trasea_1.8.2_x64.dmg · 7.3 MB</div>
-            <a id="link-mac-intel" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64.dmg">
+            <div class="dl-file mono" id="meta-mac-intel">Trasea_1.9.0_x64.dmg · 7.4 MB</div>
+            <a id="link-mac-intel" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64.dmg">
               <span data-i18n="download.btnMacIntel">Download Intel .dmg</span>
             </a>
           </article>
         </div>
 
         <div class="install-note">
+          <div class="install-note-col">
+            <h4 data-i18n="download.noteUpdaterTitle">1-Click In-App Updater</h4>
+            <p data-i18n="download.noteUpdaterDesc">Open Settings and check for updates. Trasea downloads the matching installer and verifies SHA-256 when a checksum is published. Automatic checks are off by default.</p>
+          </div>
           <div class="install-note-col">
             <h4 data-i18n="download.noteWinTitle">Windows SmartScreen</h4>
             <p data-i18n="download.noteWinDesc">Community builds are unsigned. If SmartScreen appears, choose More info → Run anyway.</p>
@@ -551,6 +561,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=1.1.1" defer></script>
+  <script src="app.js?v=1.2" defer></script>
 </body>
 </html>

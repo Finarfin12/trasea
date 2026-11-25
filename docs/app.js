@@ -10,28 +10,28 @@
   var LANG_KEY = "trasea_lang";
 
   var FALLBACK_RELEASE = {
-    tag: "v1.8.2",
-    htmlUrl: "https://github.com/Finarfin12/trasea/releases/tag/v1.8.2",
+    tag: "v1.9.0",
+    htmlUrl: "https://github.com/Finarfin12/trasea/releases/tag/v1.9.0",
     assets: {
       winSetup: {
-        name: "Trasea_1.8.2_x64-setup.exe",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-setup.exe",
-        size: 15195543
+        name: "Trasea_1.9.0_x64-setup.exe",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-setup.exe",
+        size: 15217727
       },
       winPortable: {
-        name: "Trasea_1.8.2_x64-portable.zip",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-portable.zip",
-        size: 18124418
+        name: "Trasea_1.9.0_x64-portable.zip",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-portable.zip",
+        size: 18162887
       },
       macArm: {
-        name: "Trasea_1.8.2_aarch64.dmg",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_aarch64.dmg",
-        size: 7256324
+        name: "Trasea_1.9.0_aarch64.dmg",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_aarch64.dmg",
+        size: 7314564
       },
       macIntel: {
-        name: "Trasea_1.8.2_x64.dmg",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64.dmg",
-        size: 7678593
+        name: "Trasea_1.9.0_x64.dmg",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64.dmg",
+        size: 7726884
       }
     }
   };
@@ -56,7 +56,7 @@
       "hero.altWin": "Portable (.zip) & macOS",
       "hero.altMac": "Intel Mac (.dmg)",
       "hero.altLinkDefault": "See all 4 installers",
-      "hero.proof": "16 public releases · 122 automated Rust tests · 8 export formats · MIT open source",
+      "hero.proof": "17 public releases · 129 automated Rust tests · 8 export formats · MIT open source",
       "hero.proofStars": "GitHub stars",
       "github.starFallback": "★ Star",
       "trust.offlineTitle": "Your artwork stays on disk",
@@ -85,12 +85,13 @@
       "tabs.mockup.p2": "Natural fabric & paper multiply blending with drag-to-reposition",
       "tabs.mockup.p3": "1-click 1600×1200 PNG export for instant client sign-off",
       "tabs.mockup.cap1": "Photorealistic studio mockup — natural multiply blend and 1600×1200 PNG export",
-      "tabs.recolor.label": "Smart Recolor & Brand Kit",
-      "tabs.recolor.title": "0 ms Smart Recolor & 1-Click Brand Kit ZIP",
-      "tabs.recolor.desc": "Switch between Original, All-Black, All-White, and Duotone variations in zero milliseconds, isolate any ink with Solo view, and bundle the entire brand delivery into one structured ZIP archive.",
-      "tabs.recolor.p1": "Instant Original, Black, White, and Duotone colorways",
-      "tabs.recolor.p2": "Solo ink isolation (Alt+Click eye) without touching CutContour or Registration",
-      "tabs.recolor.p3": "1-click Brand Kit (.zip) containing all colorways, PNGs, and palettes",
+      "tabs.recolor.label": "Brand Palette Lock & Brand Kit",
+      "tabs.recolor.title": "Brand Palette Lock & Brand Kit",
+      "tabs.recolor.desc": "Lock tracing to a brand palette, create color variants with 0 ms Smart Recolor, and package the results as a Brand Kit ZIP.",
+      "tabs.recolor.p1": "Paste HEX or import .ase, .gpl, .json, or .css swatches",
+      "tabs.recolor.p2": "Save named brand palette presets and reuse them across a Batch Folder",
+      "tabs.recolor.p3": "Create instant color variants, isolate inks with Solo, and export a Brand Kit ZIP",
+      "tabs.recolor.capLock": "Brand Palette Lock with three exact colors and a named preset",
       "tabs.recolor.cap1": "Smart Recolor & Solo isolation — instant brand colorways ready to package",
       "tabs.audit.label": "Pre-Flight Audit",
       "tabs.audit.title": "Automated Pre-Flight Vector Audit & Auto-Fix",
@@ -155,6 +156,8 @@
       "download.noteWinDesc": "Community builds are unsigned. If SmartScreen appears, choose More info → Run anyway.",
       "download.noteMacTitle": "macOS Gatekeeper",
       "download.noteMacDesc": "If macOS blocks the first launch, run <code>xattr -cr /Applications/Trasea.app</code> in Terminal or allow it in Privacy &amp; Security.",
+      "download.noteUpdaterTitle": "1-Click In-App Updater",
+      "download.noteUpdaterDesc": "Open Settings and check for updates. Trasea downloads the matching installer and verifies SHA-256 when a checksum is published. Automatic checks are off by default.",
       "download.noteVerifyTitle": "Checksums & Releases",
       "download.noteReleasesLink": "GitHub Releases & SHA-256",
       "download.noteSigningLink": "Verification guide",
@@ -195,7 +198,7 @@
       "hero.altWin": "Versi Portabel (.zip) & macOS",
       "hero.altMac": "macOS Intel (.dmg)",
       "hero.altLinkDefault": "Lihat semua 4 installer",
-      "hero.proof": "16 rilis publik · 122 uji otomatis Rust · 8 format ekspor · Open source MIT",
+      "hero.proof": "17 rilis publik · 129 uji otomatis Rust · 8 format ekspor · Open source MIT",
       "hero.proofStars": "bintang GitHub",
       "github.starFallback": "★ Bintang",
       "trust.offlineTitle": "Karya tetap di komputermu",
@@ -224,12 +227,13 @@
       "tabs.mockup.p2": "Blending multiply alami menyatu dengan tekstur kain & kertas plus seret posisi",
       "tabs.mockup.p3": "Ekspor PNG 1600×1200 sekali klik untuk persetujuan klien lebih cepat",
       "tabs.mockup.cap1": "Mockup studio fotorealistis — tekstur kain menyatu alami dan ekspor PNG 1600×1200",
-      "tabs.recolor.label": "Smart Recolor & Brand Kit",
-      "tabs.recolor.title": "Smart Recolor 0 ms & Brand Kit ZIP 1-Klik",
-      "tabs.recolor.desc": "Ganti variasi warna Asli, Hitam Penuh, Putih Penuh, dan Duotone dalam nol milidetik, isolasi satu tinta dengan mode Solo, lalu kemas seluruh paket identitas ke satu arsip ZIP rapi.",
-      "tabs.recolor.p1": "Variasi warna instan: Asli, Hitam, Putih, dan Duotone tanpa trace ulang",
-      "tabs.recolor.p2": "Isolasi warna Solo (Alt+Klik mata) sambil menjaga layer CutContour & Registrasi",
-      "tabs.recolor.p3": "Ekspor Brand Kit (.zip) 1-klik berisi seluruh variasi warna, PNG, dan palet",
+      "tabs.recolor.label": "Kunci Palet Brand & Brand Kit",
+      "tabs.recolor.title": "Kunci Palet Brand & Brand Kit",
+      "tabs.recolor.desc": "Kunci hasil trace ke palet brand, buat variasi warna dengan Smart Recolor 0 ms, lalu kemas hasilnya sebagai Brand Kit ZIP.",
+      "tabs.recolor.p1": "Tempel HEX atau impor swatch .ase, .gpl, .json, atau .css",
+      "tabs.recolor.p2": "Simpan preset palet brand bernama dan pakai lagi di Batch Folder",
+      "tabs.recolor.p3": "Buat variasi warna instan, isolasi tinta dengan Solo, dan ekspor Brand Kit ZIP",
+      "tabs.recolor.capLock": "Kunci Palet Brand dengan tiga warna dan preset bernama",
       "tabs.recolor.cap1": "Smart Recolor & isolasi Solo — variasi warna brand instan siap kemas",
       "tabs.audit.label": "Audit Pra-Cetak",
       "tabs.audit.title": "Audit Vektor Pra-Cetak & Perbaikan Otomatis",
@@ -294,6 +298,8 @@
       "download.noteWinDesc": "Build komunitas belum bertanda tangan digital. Jika SmartScreen muncul, pilih More info → Run anyway.",
       "download.noteMacTitle": "macOS Gatekeeper",
       "download.noteMacDesc": "Jika macOS menahan pembukaan pertama, jalankan <code>xattr -cr /Applications/Trasea.app</code> di Terminal atau izinkan lewat Privacy &amp; Security.",
+      "download.noteUpdaterTitle": "Pembaruan 1-Klik dalam Aplikasi",
+      "download.noteUpdaterDesc": "Buka Pengaturan dan periksa pembaruan. Trasea mengunduh installer yang sesuai dan memverifikasi SHA-256 jika checksum tersedia. Pemeriksaan otomatis baru berjalan setelah diaktifkan.",
       "download.noteVerifyTitle": "Checksum & Rilis",
       "download.noteReleasesLink": "GitHub Releases & SHA-256",
       "download.noteSigningLink": "Panduan verifikasi",
@@ -407,7 +413,7 @@
         applyReleaseUI();
       })
       .catch(function () {
-        // Silent fallback to FALLBACK_RELEASE (v1.8.2)
+        // Silent fallback to FALLBACK_RELEASE (v1.9.0)
       });
   }
 

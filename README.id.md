@@ -58,6 +58,8 @@ Format keluaran yang didukung:
 
 ### Baru di 1.9.0
 
+Lihat kedua fitur dan temukan installer yang sesuai di [situs Trasea](https://finarfin12.github.io/trasea/).
+
 - **Kunci Palet Brand.** Tempel daftar HEX atau impor swatch ASE, GPL, JSON, atau CSS. Simpan sebagai preset bernama untuk dipakai lagi di Batch Folder.
 - **Pembaruan dalam aplikasi.** Buka Pengaturan → Pembaruan untuk memeriksa rilis baru dan mengunduh installer yang sesuai. Trasea memverifikasi SHA-256 bila rilis menyediakan checksum. Pemeriksaan otomatis bisa diaktifkan dari pengaturan.
 
