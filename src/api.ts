@@ -349,6 +349,9 @@ export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 /** Single-file open also accepts vector .svg (1.3.0); batch stays raster-only. */
 export const OPEN_EXTENSIONS = [...IMAGE_EXTENSIONS, "svg"];
 
+export const applyLocalVectorEdits = (path: string, params: Options): Promise<Processed | null> =>
+	invoke("apply_local_vector_edits", { path, params });
+
 export const processImage = (path: string, params: Options): Promise<Processed> => invoke<Processed>("process", { path, params });
 export const renderPreviewSvg = (options: ExportOptions): Promise<string> => invoke<string>("render_preview_svg", { options });
 export const loadRawImagePreview = (path: string): Promise<RawImagePreview> => invoke<RawImagePreview>("load_raw_image_preview", { path });

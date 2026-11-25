@@ -50,6 +50,8 @@ pub struct Params {
     /// The designer's own palette. With at least two different colours it replaces the automatic one.
     pub custom_palette: Option<Vec<Rgb>>,
     pub brand_palette_locked: bool,
+    /// Keep the unedited vector document for the interactive editor.
+    pub retain_base_doc: bool,
     /// Explicit colour merges `(from, to)`: pixels matching `from` are remapped to `to` instead of nearest remaining colour.
     pub palette_merges: Vec<(Rgb, Rgb)>,
     /// Stop smoothing when the drawing has at most this many nodes (`None` = just use `smooth`).
@@ -85,6 +87,7 @@ impl Default for Params {
             detect_text: true,
             custom_palette: None,
             brand_palette_locked: false,
+            retain_base_doc: false,
             palette_merges: Vec::new(),
             target_nodes: None,
             brush_strokes: Vec::new(),
@@ -101,6 +104,7 @@ impl Default for Params {
 pub struct Output {
     pub svg: String,
     pub doc: Doc,
+    pub base_doc: Option<Doc>,
     pub stats: Stats,
     /// Palette actually used (RGB).
     pub palette: Vec<[u8; 3]>,
@@ -144,14 +148,19 @@ fn apply_edits_guarded(doc: Doc, params: &Params) -> (Doc, String, bool) {
     if !has_edits || stale {
         return (apply_brand_palette(doc, params), fp, stale);
     }
-    let mut doc = doc;
+    (replay_vector_edits(&doc, params), fp, false)
+}
+
+/// Replay edits on a base document whose fingerprint has already been checked.
+pub fn replay_vector_edits(base: &Doc, params: &Params) -> Doc {
+    let mut doc = base.clone();
     if !params.path_edits.is_empty() {
         doc = apply_path_edits(&doc, &params.path_edits);
     }
     if !params.node_edits.is_empty() {
         doc = apply_node_edits(&doc, &params.node_edits);
     }
-    (apply_brand_palette(doc, params), fp, false)
+    apply_brand_palette(doc, params)
 }
 
 fn apply_brand_palette(mut doc: Doc, params: &Params) -> Doc {
@@ -785,6 +794,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
             line_fallback: Vec::new(),
             strokes,
         };
+        let base_doc = params.retain_base_doc.then(|| doc.clone());
         let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
         progress("Writing SVG", 0.95);
         let svg = to_svg(&doc, &exp_opts);
@@ -803,6 +813,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         return Ok(Output {
             svg,
             doc,
+            base_doc,
             stats,
             palette,
             notes,
@@ -912,7 +923,8 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
     }
 
     // Apply non-destructive per-path and node edits before stats, SVG, and export (skipped when they belong to another trace).
-    let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
+    let base_doc = params.retain_base_doc.then(|| doc.clone());
+        let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
 
     let svg = to_svg(&doc, &exp_opts);
     // Measure MAE without registration margins so the comparison aligns pixel-for-pixel with the source.
@@ -936,6 +948,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
     Ok(Output {
         svg,
         doc,
+        base_doc,
         stats,
         palette: b.palette.clone(),
         notes,
@@ -956,7 +969,8 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
 /// pipeline runs, so there is no MAE (`stats.mae == None`).
 pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_opts: &ExportOptions) -> Output {
     let crate::svg_import::SvgImport { doc, notes } = import;
-    let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
+    let base_doc = params.retain_base_doc.then(|| doc.clone());
+        let (doc, trace_fp, edits_stale) = apply_edits_guarded(doc, params);
     let svg = to_svg(&doc, exp_opts);
     let (paths, nodes) = count_svg(&svg);
     let stats = Stats { paths, nodes, bytes: svg.len(), mae: None, primitives: count_primitives(&svg) };
@@ -975,6 +989,7 @@ pub fn vectorize_svg(import: crate::svg_import::SvgImport, params: &Params, exp_
     Output {
         svg,
         doc,
+        base_doc,
         stats,
         palette,
         notes,

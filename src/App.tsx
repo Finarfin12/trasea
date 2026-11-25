@@ -37,6 +37,7 @@ import {
 	checkForUpdate,
 	vectorizeWithAi,
 	applyAiVectorEdits,
+	applyLocalVectorEdits,
 	auditActiveVector,
 	autoFixActiveVector,
 	exportBrandKitZip,
@@ -212,6 +213,14 @@ const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 const fmtKb = (n: number): string => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 const heatColor = (r: number): string => `hsl(${Math.round(120 * (1 - Math.min(1, Math.max(0, r))))}, 90%, 50%)`;
+
+function buildSignature({ editFingerprint: _fingerprint, ...options }: Options): string {
+	return JSON.stringify(Object.entries(options).filter(([, value]) => value !== undefined)
+		.sort(([a], [b]) => a.localeCompare(b)).reduce<Record<string, unknown>>((ordered, [key, value]) => {
+			ordered[key] = value;
+			return ordered;
+		}, {}));
+}
 
 const normalizeOptions = (po: Partial<Options>): Options => ({
 	...DEFAULTS,
@@ -443,6 +452,32 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [addingPreset, setAddingPreset] = useState(false);
 	const [history, setHistory] = useState<HistoryState>(emptyHistory);
 	const [appliedSig, setAppliedSig] = useState("");
+	const svgStageRef = useRef<HTMLDivElement>(null);
+	const livePathRef = useRef<{ id: string; path: SVGPathElement; restore: () => void } | null>(null);
+	const onLivePathD = useCallback((id: string, d: string | null) => {
+		let live = livePathRef.current;
+		if (live?.id !== id || d === null || !svgStageRef.current?.contains(live.path)) {
+			live?.restore();
+			livePathRef.current = null;
+			if (d === null) return;
+			const shape = svgStageRef.current?.querySelector<SVGElement>(`[data-trasea-id="${CSS.escape(id)}"]`);
+			if (!shape) return;
+			if (shape instanceof SVGPathElement) {
+				const original = shape.getAttribute("d") ?? "";
+				live = { id, path: shape, restore: () => shape.setAttribute("d", original) };
+			} else {
+				const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				for (const name of ["data-trasea-id", "fill", "fill-rule", "stroke", "stroke-width", "stroke-linejoin"]) {
+					const value = shape.getAttribute(name);
+					if (value !== null) path.setAttribute(name, value);
+				}
+				shape.replaceWith(path);
+				live = { id, path, restore: () => path.replaceWith(shape) };
+			}
+			livePathRef.current = live;
+		}
+		live.path.setAttribute("d", d);
+	}, []);
 	const [recentFiles, setRecentFiles] = useState<RecentFile[]>(() => loadRecentFiles());
 	const [canvasZoom, setCanvasZoom] = useState(1);
 
@@ -583,7 +618,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				void auditActiveVector().then(setAuditReport).catch(() => {});
 				if (!keepSelectionRef.current) setSelectedPathId(null);
 				keepSelectionRef.current = false;
-				setAppliedSig(JSON.stringify(effectiveOpts));
+				setAppliedSig(buildSignature(r.editsStale ? { ...effectiveOpts, pathEdits: [], nodeEdits: [] } : effectiveOpts));
 			} catch (e) {
 				setError(errText(e));
 			} finally {
@@ -597,13 +632,9 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 
 	const applyVectorEdits = useCallback(
 		async (p: string, o: Options) => {
-			if (activeResultSourceRef.current !== "ai") {
-				return run(p, o, "local");
-			}
 			if (busyRef.current) return;
+			const isAi = activeResultSourceRef.current === "ai";
 			busyRef.current = true;
-			setActiveRunIsAi(false);
-			setBusy(true);
 			setError("");
 			const hasEdits = o.pathEdits.length + o.nodeEdits.length > 0;
 			const effectiveOpts: Options = {
@@ -611,8 +642,13 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				editFingerprint: hasEdits ? editFpRef.current : null,
 			};
 			try {
-				const r = await applyAiVectorEdits(p, effectiveOpts);
-				activeResultSourceRef.current = "ai";
+				const r = isAi ? await applyAiVectorEdits(p, effectiveOpts) : await applyLocalVectorEdits(p, effectiveOpts);
+				if (!r) {
+					busyRef.current = false;
+					await run(p, o, "local");
+					return;
+				}
+				activeResultSourceRef.current = isAi ? "ai" : "local";
 				if (hasEdits && !r.editsStale) {
 					if (editFpRef.current === null) editFpRef.current = r.traceFingerprint;
 					lastEditRunRef.current = { ...effectiveOpts, editFingerprint: editFpRef.current };
@@ -620,18 +656,19 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setResult(r);
 				setLiveSvg(null);
 				setHiddenLayers(new Set());
-				setAiSnap({
+				const setSnapshot = isAi ? setAiSnap : setOfflineSnap;
+				setSnapshot({
 					svg: r.svg,
 					paths: r.paths,
 					nodes: r.nodes,
 					bytes: r.bytes,
-					label: "AI",
+					label: isAi ? "AI" : "Offline",
 				});
-				setActiveVectorSourceState("ai");
+				setActiveVectorSourceState(isAi ? "ai" : "offline");
 				void auditActiveVector().then(setAuditReport).catch(() => {});
 				if (!keepSelectionRef.current) setSelectedPathId(null);
 				keepSelectionRef.current = false;
-				setAppliedSig(JSON.stringify(effectiveOpts));
+				setAppliedSig(buildSignature(r.editsStale ? { ...effectiveOpts, pathEdits: [], nodeEdits: [] } : effectiveOpts));
 			} catch (e) {
 				setError(errText(e));
 			} finally {
@@ -682,10 +719,11 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				});
 			}
 		},
-		[path, run],
+		[path, applyVectorEdits],
 	);
 
 	const doUndo = useCallback(() => {
+		if (busyRef.current) return;
 		const res = stepUndo(history, makeSnapshot(t.undo), appSettings.undoLimit);
 		if (!res) return;
 		const prevEdits = pathEdits;
@@ -695,6 +733,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, nodeEdits, restoreSnapshot, t.undo]);
 
 	const doRedo = useCallback(() => {
+		if (busyRef.current) return;
 		const res = stepRedo(history, makeSnapshot(t.redo), appSettings.undoLimit);
 		if (!res) return;
 		const prevEdits = pathEdits;
@@ -704,7 +743,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	}, [history, makeSnapshot, appSettings.undoLimit, pathEdits, nodeEdits, restoreSnapshot, t.redo]);
 
 	const signature = useMemo(
-		() => JSON.stringify({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }),
+		() => buildSignature({ ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }),
 		[opts, palette, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits],
 	);
 
@@ -1049,7 +1088,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				nodeEdits,
 			});
 		},
-		[path, recordHistory, pathEdits, nodeEdits, result, run, opts, palette, paletteMerges, targetNodes, strokes],
+		[path, recordHistory, pathEdits, nodeEdits, result, applyVectorEdits, opts, palette, paletteMerges, targetNodes, strokes],
 	);
 
 	const deleteSelectedPath = useCallback(() => {
@@ -1083,7 +1122,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 							pathEdits: [],
 							nodeEdits,
 						});
-					}, [path, pathEdits.length, nodeEdits, recordHistory, t.pathResetEdits, run, opts, palette, paletteMerges, targetNodes, strokes]);
+					}, [path, pathEdits.length, nodeEdits, recordHistory, t.pathResetEdits, applyVectorEdits, opts, palette, paletteMerges, targetNodes, strokes]);
 
 	// An edit belongs to the trace it was made on. When the backend reports the sent edits stale (the trace changed), they were not
 	// applied; drop them here, keep a history step that brings the old trace and its edits back, and tell the user.
@@ -1155,7 +1194,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				nodeEdits: next,
 			});
 		},
-		[path, recordHistory, nodeEdits, result, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
+		[path, recordHistory, nodeEdits, result, applyVectorEdits, opts, palette, paletteMerges, targetNodes, strokes, pathEdits],
 	);
 
 	const onNodeMove = useCallback(
@@ -1211,7 +1250,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			pathEdits,
 			nodeEdits: [],
 		});
-	}, [path, nodeEdits.length, recordHistory, t.nodeResetLabel, run, opts, palette, paletteMerges, targetNodes, strokes, pathEdits]);
+	}, [path, nodeEdits.length, recordHistory, t.nodeResetLabel, applyVectorEdits, opts, palette, paletteMerges, targetNodes, strokes, pathEdits]);
 
 	// Global keyboard shortcuts driven by SettingsModal (`activeShortcuts`)
 	useEffect(() => {
@@ -2126,6 +2165,20 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										<button className="small danger" onClick={deleteSelectedPath}>{t.pathDeleteBtn}</button>
 										<span className="muted">{t.pathRecolorLabel}</span>
 										<div className="recolor-row">
+											<input
+												className="recolor-chip"
+												type="color"
+												aria-label={t.pathRecolorLabel}
+												title={t.pathRecolorLabel}
+												defaultValue="#6d8cff"
+												key={selectedPathId}
+												ref={input => {
+													if (!input) return;
+													const commit = () => recolorSelectedPath(input.value);
+													input.addEventListener("change", commit);
+													return () => input.removeEventListener("change", commit);
+												}}
+											/>
 											{currentPalette().map(hex => (
 												<button
 													key={hex}
@@ -2193,7 +2246,8 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 									>
 										{tool === "selectPath" || tool === "node" ? (
 											<div
-												className="layer vec interactive-svg"
+												ref={svgStageRef}
+											className="layer vec interactive-svg"
 												onClick={onInteractiveSvgClick}
 												dangerouslySetInnerHTML={{ __html: previewSvg }}
 											/>
@@ -2238,6 +2292,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 												selected={nodeSel}
 												onSelect={setNodeSel}
 												onMoveNode={onNodeMove}
+												onLivePathD={onLivePathD}
 												onMoveHandle={onNodeMoveHandle}
 												onToggleSmooth={onNodeToggle}
 											/>

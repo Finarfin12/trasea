@@ -22,6 +22,7 @@ interface Props {
 	showAllHandles: boolean;
 	selected: NodeSelection | null;
 	onSelect: (sel: NodeSelection | null) => void;
+	onLivePathD?: (targetId: string, d: string | null) => void;
 	onMoveNode: (sub: number, idx: number, x: number, y: number) => void;
 	onMoveHandle: (sub: number, idx: number, which: "in" | "out", x: number, y: number, mirrorSmooth: boolean) => void;
 	onToggleSmooth: (sub: number, idx: number) => void;
@@ -104,7 +105,7 @@ function subpathD(nodes: NodePoint[], closed: boolean): string {
 	return d;
 }
 
-export function NodeOverlay({ geometry, width, height, showAllHandles, selected, onSelect, onMoveNode, onMoveHandle, onToggleSmooth }: Props) {
+export function NodeOverlay({ geometry, width, height, showAllHandles, selected, onSelect, onMoveNode, onMoveHandle, onToggleSmooth, onLivePathD }: Props) {
 	const svgRef = useRef<SVGSVGElement | null>(null);
 	const [pxScale, setPxScale] = useState(1); // screen px per source px
 	const [drag, setDrag] = useState<Drag | null>(null);
@@ -124,12 +125,27 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 		return () => ro.disconnect();
 	}, [width]);
 
-	useEffect(
-		() => () => {
-			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-		},
-		[],
-	);
+	const targetId = geometry?.targetId;
+	const cancelDrag = useCallback(() => {
+		dragRef.current = null;
+		if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+		rafRef.current = null;
+		if (targetId) onLivePathD?.(targetId, null);
+		setDrag(null);
+	}, [targetId, onLivePathD]);
+
+	useEffect(() => {
+		const onEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || !dragRef.current) return;
+			event.stopImmediatePropagation();
+			cancelDrag();
+		};
+		window.addEventListener("keydown", onEscape, true);
+		return () => {
+			window.removeEventListener("keydown", onEscape, true);
+			cancelDrag();
+		};
+	}, [cancelDrag]);
 
 	const toImage = useCallback(
 		(clientX: number, clientY: number): Pt => {
@@ -141,8 +157,12 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 
 	const flush = useCallback(() => {
 		rafRef.current = null;
-		setDrag(dragRef.current ? { ...dragRef.current } : null);
-	}, []);
+		const active = dragRef.current;
+		if (!active?.moved || !geometry) return;
+		const live = applyDrag(geometry, active);
+		onLivePathD?.(geometry.targetId, live.subpaths.map(sp => subpathD(sp.nodes, sp.closed)).join(" "));
+		setDrag({ ...active });
+	}, [geometry, onLivePathD]);
 
 	const begin = (e: ReactPointerEvent<SVGElement>, kind: Drag["kind"], sub: number, idx: number, x: number, y: number) => {
 		if (e.button !== 0) return;
@@ -163,12 +183,7 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 
 	const end = (e: ReactPointerEvent<SVGElement>) => {
 		const d = dragRef.current;
-		dragRef.current = null;
-		if (rafRef.current !== null) {
-			cancelAnimationFrame(rafRef.current);
-			rafRef.current = null;
-		}
-		setDrag(null);
+		cancelDrag();
 		if (!d || !d.moved) return;
 		const [x, y] = toImage(e.clientX, e.clientY);
 		if (d.kind === "node") onMoveNode(d.sub, d.idx, x, y);
@@ -214,7 +229,8 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 											onPointerDown={e => begin(e, "in", sp.subpathIndex, n.index, n.handleIn![0], n.handleIn![1])}
 											onPointerMove={move}
 											onPointerUp={end}
-											onPointerCancel={end}
+											onPointerCancel={cancelDrag}
+									onLostPointerCapture={cancelDrag}
 										/>
 									</g>
 								)}
@@ -230,7 +246,8 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 											onPointerDown={e => begin(e, "out", sp.subpathIndex, n.index, n.handleOut![0], n.handleOut![1])}
 											onPointerMove={move}
 											onPointerUp={end}
-											onPointerCancel={end}
+											onPointerCancel={cancelDrag}
+									onLostPointerCapture={cancelDrag}
 										/>
 									</g>
 								)}
@@ -245,7 +262,8 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 										onPointerDown={e => begin(e, "node", sp.subpathIndex, n.index, n.x, n.y)}
 										onPointerMove={move}
 										onPointerUp={end}
-										onPointerCancel={end}
+										onPointerCancel={cancelDrag}
+									onLostPointerCapture={cancelDrag}
 										onDoubleClick={() => onToggleSmooth(sp.subpathIndex, n.index)}
 									/>
 								) : (
@@ -260,7 +278,8 @@ export function NodeOverlay({ geometry, width, height, showAllHandles, selected,
 										onPointerDown={e => begin(e, "node", sp.subpathIndex, n.index, n.x, n.y)}
 										onPointerMove={move}
 										onPointerUp={end}
-										onPointerCancel={end}
+										onPointerCancel={cancelDrag}
+									onLostPointerCapture={cancelDrag}
 										onDoubleClick={() => onToggleSmooth(sp.subpathIndex, n.index)}
 									/>
 								)}

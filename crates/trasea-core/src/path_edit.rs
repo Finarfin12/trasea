@@ -183,10 +183,13 @@ pub fn group_contours_into_compounds(contours: &[Contour]) -> Vec<Vec<usize>> {
 
 /// Apply a sequence of `PathEdit` operations non-destructively to `doc`, returning a new `Doc`.
 ///
-/// All `target_id`s are resolved against the input `doc` deterministically so deleting one path
-/// never shifts IDs of subsequent edits in the same batch. Stale/unknown IDs and invalid hex colours
-/// are safely ignored without panicking.
+/// Each target is resolved against the document shown when that edit was made.
 pub fn apply_path_edits(doc: &Doc, edits: &[PathEdit]) -> Doc {
+    edits.iter().fold(doc.clone(), |current, edit| apply_single_path_edit(&current, edit))
+}
+
+fn apply_single_path_edit(doc: &Doc, edit: &PathEdit) -> Doc {
+    let edits = std::slice::from_ref(edit);
     if edits.is_empty() {
         return doc.clone();
     }

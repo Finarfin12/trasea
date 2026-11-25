@@ -49,6 +49,13 @@ struct CachedPrep {
     original: String,
 }
 
+struct CachedBaseDoc {
+    path: String,
+    trace_key: serde_json::Value,
+    base_doc: Doc,
+    processed: Processed,
+}
+
 struct CachedAiImport {
     source_path: String,
     used_provider: String,
@@ -70,6 +77,7 @@ struct Last {
     ai_doc: Mutex<Option<Doc>>,
     active_source: Mutex<ActiveVectorSource>,
     prepared: Mutex<Option<CachedPrep>>,
+    local_base_doc: Mutex<Option<CachedBaseDoc>>,
     ai_import: Mutex<Option<CachedAiImport>>,
 }
 
@@ -156,7 +164,7 @@ fn default_sticker_backing_color() -> String {
     "#FFFFFF".to_string()
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct UiParams {
     colors: usize,
@@ -211,7 +219,7 @@ struct PaletteProofItem {
     out_of_gamut: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Processed {
     svg: String,
@@ -660,13 +668,14 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             })
             .map(|c| (c.prep.clone(), c.original.clone()))
     };
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc, Option<CachedPrep>), String> {
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc, Option<CachedPrep>, CachedBaseDoc), String> {
         let t0 = Instant::now();
         let emit = |stage: &str, fraction: f32| {
             let _ = handle.emit("progress", ProgressEvent { stage: stage.to_string(), fraction });
         };
         let progress = |s: &str, f: f32| emit(s, f);
-        let p = to_core_params(&params, sidecar);
+        let mut p = to_core_params(&params, sidecar);
+        p.retain_base_doc = true;
         let (prep, original, reused, fresh) = match cached {
             Some((prep, original)) => (prep, original, true, None),
             None => {
@@ -720,13 +729,20 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
             trace_fingerprint: out.trace_fingerprint.clone(),
             edits_stale: out.edits_stale,
         };
-        Ok((processed, out.doc, fresh))
+        let base = CachedBaseDoc {
+            path,
+            trace_key: trace_key(params)?,
+            base_doc: out.base_doc.expect("interactive trace retained its base document"),
+            processed: processed.clone(),
+        };
+        Ok((processed, out.doc, fresh, base))
     })
     .await
     .map_err(|e| format!("the conversion stopped unexpectedly: {e}"))??;
     *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1.clone());
     *last.offline_doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
     *last.active_source.lock().map_err(|_| "internal error".to_string())? = ActiveVectorSource::Offline;
+    *last.local_base_doc.lock().map_err(|e| e.to_string())? = Some(result.3);
     if let Some(entry) = result.2 {
         let new_path = entry.path.clone();
         *last.prepared.lock().map_err(|_| "internal error".to_string())? = Some(entry);
@@ -740,11 +756,52 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
     Ok(result.0)
 }
 
+fn trace_key(mut params: UiParams) -> Result<serde_json::Value, String> {
+    params.path_edits.clear();
+    params.node_edits.clear();
+    params.edit_fingerprint = None;
+    serde_json::to_value(params).map_err(|e| e.to_string())
+}
+
+fn edit_cached_base(base: &CachedBaseDoc, params: &UiParams) -> (Processed, Doc) {
+    let t0 = Instant::now();
+    let p = to_core_params(params, None);
+    let doc = trasea_core::pipeline::replay_vector_edits(&base.base_doc, &p);
+    let svg = to_svg(&doc, &export_options_for_production(&p.production));
+    let mut result = base.processed.clone();
+    (result.paths, result.nodes) = trasea_core::stats::count_svg(&svg);
+    result.primitives = trasea_core::stats::count_primitives(&svg);
+    result.bytes = svg.len();
+    result.svg = svg;
+    result.edits_stale = false;
+    result.reused = true;
+    result.secs = t0.elapsed().as_secs_f64();
+    (result, doc)
+}
+
+#[tauri::command]
+fn apply_local_vector_edits(last: State<'_, Last>, path: String, params: UiParams) -> Result<Option<Processed>, String> {
+    let key = trace_key(params.clone())?;
+    let guard = last.local_base_doc.lock().map_err(|e| e.to_string())?;
+    let Some(base) = guard.as_ref().filter(|base| {
+        base.path == path && base.trace_key == key
+            && params.edit_fingerprint.as_ref().is_none_or(|fp| *fp == base.processed.trace_fingerprint)
+    }) else {
+        return Ok(None);
+    };
+    let (result, doc) = edit_cached_base(base, &params);
+    *last.doc.lock().map_err(|e| e.to_string())? = Some(doc.clone());
+    *last.offline_doc.lock().map_err(|e| e.to_string())? = Some(doc);
+    *last.active_source.lock().map_err(|e| e.to_string())? = ActiveVectorSource::Offline;
+    Ok(Some(result))
+}
+
 /// Open an .svg as vectors (no tracing): path edits and node edits are applied, the original is rendered for the compare view.
 async fn process_svg(last: &State<'_, Last>, path: String, params: UiParams) -> Result<Processed, String> {
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc), String> {
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(Processed, Doc, CachedBaseDoc), String> {
         let t0 = Instant::now();
-        let p = to_core_params(&params, None);
+        let mut p = to_core_params(&params, None);
+        p.retain_base_doc = true;
         let eo = export_options_for_production(&p.production);
         let import = load_svg_doc(Path::new(&path)).map_err(|e| e.to_string())?;
         let (w, h) = (import.doc.width, import.doc.height);
@@ -788,11 +845,20 @@ async fn process_svg(last: &State<'_, Last>, path: String, params: UiParams) -> 
             trace_fingerprint: out.trace_fingerprint.clone(),
             edits_stale: out.edits_stale,
         };
-        Ok((processed, out.doc))
+        let base = CachedBaseDoc {
+            path,
+            trace_key: trace_key(params)?,
+            base_doc: out.base_doc.expect("interactive SVG retained its base document"),
+            processed: processed.clone(),
+        };
+        Ok((processed, out.doc, base))
     })
     .await
     .map_err(|e| format!("the SVG import stopped unexpectedly: {e}"))??;
-    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.doc.lock().map_err(|e| e.to_string())? = Some(result.1.clone());
+    *last.offline_doc.lock().map_err(|e| e.to_string())? = Some(result.1);
+    *last.active_source.lock().map_err(|e| e.to_string())? = ActiveVectorSource::Offline;
+    *last.local_base_doc.lock().map_err(|e| e.to_string())? = Some(result.2);
     // there is no raster to sample colours from
     *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
     Ok(result.0)
@@ -1874,6 +1940,7 @@ fn main() {
             test_ai_config,
             vectorize_with_ai,
             fetch_cli_models,
+            apply_local_vector_edits,
             apply_ai_vector_edits
         ])
         .run(tauri::generate_context!())
