@@ -170,6 +170,7 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
         source_path: img_path.to_string_lossy().to_string(),
         source_sha256: sha,
         options: ProjectOptions {
+            brand_palette_locked: false,
             colors: 6,
             smooth: 65.0,
             keep_lines: true,
@@ -235,6 +236,7 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
         source_path: img_path.to_string_lossy().to_string(),
         source_sha256: sha,
         options: ProjectOptions {
+            brand_palette_locked: false,
             colors: 4,
             smooth: 70.0,
             keep_lines: true,

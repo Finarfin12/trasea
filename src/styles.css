@@ -1072,3 +1072,20 @@ button.danger { background: var(--danger-bg); border-color: var(--danger-border)
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0) 52%);
 	pointer-events: none;
 }
+.brand-palette,
+.update-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.brand-palette .row { flex-wrap: wrap; }
+.brand-palette input,
+.brand-palette select,
+.brand-palette textarea { max-width: 100%; }
+.brand-swatches span {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+.update-actions small { overflow-wrap: anywhere; }

@@ -500,6 +500,7 @@ fn g12_09_project_compat_and_roundtrip_120() {
         source_path: "sticker.png".to_string(),
         source_sha256: "123456".to_string(),
         options: ProjectOptions {
+            brand_palette_locked: false,
             colors: 6,
             smooth: 50.0,
             keep_lines: true,

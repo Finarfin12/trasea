@@ -52,6 +52,8 @@ pub struct ProjectOptions {
     pub detect_text: bool,
     #[serde(default)]
     pub custom_palette: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub brand_palette_locked: bool,
     #[serde(default)]
     pub palette_merges: Vec<(String, String)>,
     #[serde(default)]

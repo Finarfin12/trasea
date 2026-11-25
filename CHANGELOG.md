@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.0] "1-Click In-App Updater & Brand Color Locking"
+
+- Download the matching Windows or macOS release asset from Settings or the update banner, verify the published checksum when supplied, and open the installer or reveal the portable ZIP.
+- Lock tracing to a brand palette from HEX or a swatch file, save named presets, and use the active palette or a preset in batch tracing.
+
 ## [1.8.2] "Toolbar Brush Icons Polish"
 
 - **Toolbar Icon Clarity (`src/ToolbarIcons.tsx`).** Moved the classic Pen Tool nib to `IconNode` (Node Tool) and redesigned `IconDetailBrush` (diagonal paintbrush with a small `+` badge) and `IconSmoothBrush` (matching diagonal paintbrush with a smooth S-curve) so both correction brushes read clearly as a matching pair at `16×16`.

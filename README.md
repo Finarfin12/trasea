@@ -4,7 +4,7 @@
 
 *Website & Download: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.2 ("Toolbar Brush Icons Polish")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.9.0 ("1-Click In-App Updater & Brand Color Locking")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -55,6 +55,13 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.9.0
+
+- **Brand Palette Lock.** Paste a HEX list or import an ASE, GPL, JSON, or CSS swatch. Save a named preset and reuse it in Batch Folder.
+- **In-app updates.** Open Settings → Updates to check for a new release and download the installer for your platform. Trasea verifies SHA-256 when the release supplies a checksum. Automatic checks remain off until enabled.
+
+![Three locked brand colors and a saved palette preset in the Trasea editor](docs/screenshots/app_brand_palette_lock.png)
 
 ### New in 1.8.2 ("Toolbar Brush Icons Polish")
 

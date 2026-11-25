@@ -6,7 +6,7 @@ import {
 	DEFAULT_SHORTCUTS,
 	checkForUpdate,
 	getAppMode,
-	openExternalUrl,
+
 	licenses as fetchLicenses,
 	type AiProvider,
 	type AppModeInfo,
@@ -20,6 +20,7 @@ import {
 } from "./api";
 import { effectiveShortcuts, eventToShortcutString } from "./colorUtils";
 import { useI18n, type Lang } from "./i18n";
+import { UpdateActions } from "./UpdateActions";
 
 export type SettingsTab = "general" | "export" | "performance" | "ai" | "shortcuts" | "privacy";
 
@@ -392,9 +393,7 @@ export default function SettingsModal({
 									<div className="update-available" role="status" style={{ marginTop: 8 }}>
 										<div className="row between">
 											<strong>{t.updateAvailable}: v{updateInfo.latestVersion}</strong>
-											<button className="small primary" onClick={() => void openExternalUrl(updateInfo.downloadUrl).catch(() => {})}>
-												{t.updateDownloadBtn}
-											</button>
+											<UpdateActions info={updateInfo} />
 										</div>
 										{updateInfo.releaseNotes && (
 											<pre className="update-notes">{updateInfo.releaseNotes}</pre>

@@ -49,6 +49,7 @@ pub struct Params {
     pub detect_text: bool,
     /// The designer's own palette. With at least two different colours it replaces the automatic one.
     pub custom_palette: Option<Vec<Rgb>>,
+    pub brand_palette_locked: bool,
     /// Explicit colour merges `(from, to)`: pixels matching `from` are remapped to `to` instead of nearest remaining colour.
     pub palette_merges: Vec<(Rgb, Rgb)>,
     /// Stop smoothing when the drawing has at most this many nodes (`None` = just use `smooth`).
@@ -83,6 +84,7 @@ impl Default for Params {
             symmetry: SymmetryMode::Off,
             detect_text: true,
             custom_palette: None,
+            brand_palette_locked: false,
             palette_merges: Vec::new(),
             target_nodes: None,
             brush_strokes: Vec::new(),
@@ -140,7 +142,7 @@ fn apply_edits_guarded(doc: Doc, params: &Params) -> (Doc, String, bool) {
     let has_edits = !params.path_edits.is_empty() || !params.node_edits.is_empty();
     let stale = has_edits && params.edit_fingerprint.as_deref().map_or(false, |f| f != fp);
     if !has_edits || stale {
-        return (doc, fp, stale);
+        return (apply_brand_palette(doc, params), fp, stale);
     }
     let mut doc = doc;
     if !params.path_edits.is_empty() {
@@ -149,7 +151,29 @@ fn apply_edits_guarded(doc: Doc, params: &Params) -> (Doc, String, bool) {
     if !params.node_edits.is_empty() {
         doc = apply_node_edits(&doc, &params.node_edits);
     }
-    (doc, fp, false)
+    (apply_brand_palette(doc, params), fp, false)
+}
+
+fn apply_brand_palette(mut doc: Doc, params: &Params) -> Doc {
+    let Some(palette) = params.custom_palette.as_ref().filter(|p| params.brand_palette_locked && p.len() >= 2) else {
+        return doc;
+    };
+    let max_colors = if params.production.mode == ProductionMode::ScreenPrint { 8 } else { 16 };
+    let colors: Vec<_> = dedupe(palette).into_iter().take(max_colors)
+        .map(|color| (color, crate::palette::rgb_to_lab(color))).collect();
+    let nearest = |color: Rgb| {
+        let lab = crate::palette::rgb_to_lab(color);
+        let distance = |other: [f32; 3]| (0..3).map(|i| (lab[i] - other[i]).powi(2)).sum::<f32>();
+        colors.iter().min_by(|a, b| distance(a.1).total_cmp(&distance(b.1)))
+            .map_or(color, |entry| entry.0)
+    };
+    for layer in doc.fields.iter_mut().chain(&mut doc.line_shapes).chain(&mut doc.line_fallback) {
+        layer.color = nearest(layer.color);
+    }
+    for layer in &mut doc.strokes {
+        layer.color = nearest(layer.color);
+    }
+    doc
 }
 
 /// The expensive first half of the pipeline, kept in memory: the loaded picture, its cleaned copy at working size and the
@@ -747,7 +771,6 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
             scale,
             params.smooth,
         );
-        let ink_color = stroke_layer.color;
         let strokes = if stroke_layer.strokes.is_empty() {
             Vec::new()
         } else {
@@ -775,7 +798,7 @@ pub fn vectorize_prepared(prep: &PreparedImage, params: &Params, progress: Progr
         };
         let stats = Stats { paths, nodes, bytes: svg.len(), mae, primitives: count_primitives(&svg) };
         let heatmap = node_heatmap(&doc);
-        let palette = if doc.strokes.is_empty() { Vec::new() } else { vec![ink_color] };
+        let palette = doc.strokes.first().map(|layer| vec![layer.color]).unwrap_or_default();
         progress("Done", 1.0);
         return Ok(Output {
             svg,

@@ -460,6 +460,7 @@ fn g13_06_project_roundtrip_and_export_propagation() {
         source_path: "logo.svg".into(),
         source_sha256: "abc".into(),
         options: ProjectOptions {
+            brand_palette_locked: false,
             colors: 6,
             smooth: 50.0,
             keep_lines: true,

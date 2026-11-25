@@ -47,7 +47,7 @@ import {
 	type RecolorMode,
 	type RecolorSpec,
 	DEFAULT_APP_SETTINGS,
-	openExternalUrl,
+
 	DEFAULT_PREPROCESS,
 	deletePreset,
 	deleteSavedPalette,
@@ -108,6 +108,8 @@ import {
 } from "./colorUtils";
 import { emptyHistory, pushSnapshot, stepRedo, stepUndo, type EditorSnapshot, type HistoryState, type TargetChoice } from "./history";
 import { I18nProvider, useI18n, type Lang } from "./i18n";
+import { BrandPalette } from "./BrandPalette";
+import { UpdateActions } from "./UpdateActions";
 
 const DEFAULTS: Options = {
 	colors: 10,
@@ -423,6 +425,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	// The options of the last run whose edits were valid (so Undo can bring the old trace and its edits back).
 	const lastEditRunRef = useRef<Options | null>(null);
 	const [palette, setPalette] = useState<string[] | null>(null);
+	const brandLocked = palette !== null && opts.brandPaletteLocked === true;
 	const [paletteMerges, setPaletteMerges] = useState<Array<[string, string]>>([]);
 	const [mergeSource, setMergeSource] = useState<string | null>(null);
 	const [inspectedColor, setInspectedColor] = useState<string | null>(null);
@@ -513,6 +516,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				},
 			},
 			palette: palette ? [...palette] : null,
+
 			paletteMerges: paletteMerges.map(m => [m[0], m[1]]),
 			strokes: strokes.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) })),
 			pathEdits: pathEdits.map(pe => ({ ...pe })),
@@ -536,7 +540,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const run = useCallback(
 		async (p: string, o: Options, engineOverride?: AiProvider) => {
 			if (busyRef.current) return;
-			const effectiveEngine = engineOverride ?? traceEngineRef.current;
+			const effectiveEngine = o.brandPaletteLocked && o.customPalette ? "local" : (engineOverride ?? traceEngineRef.current);
 			const useExternalAi = effectiveEngine !== "local" && !p.toLowerCase().endsWith(".svg");
 			busyRef.current = true;
 			setActiveRunIsAi(useExternalAi);
@@ -646,6 +650,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			const restoredNodeEdits = snap.nodeEdits ?? [];
 			setOpts(normOpts);
 			setPalette(snap.palette);
+			if (normOpts.brandPaletteLocked) setTraceEngine("local");
 			setPaletteMerges(snap.paletteMerges);
 			setStrokes(snap.strokes);
 			setPathEdits(restoredEdits);
@@ -796,6 +801,7 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 			const nextOpts: Options = {
 				...optsRef.current,
 				customPalette: null,
+				brandPaletteLocked: false,
 				paletteMerges: [],
 				brushStrokes: [],
 				pathEdits: [],
@@ -824,6 +830,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setExp(pe);
 				setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
 				setPalette(po.customPalette);
+
+				if (po.brandPaletteLocked) setTraceEngine("local");
 				setPaletteMerges(po.paletteMerges ?? []);
 				setStrokes(po.brushStrokes ?? []);
 				setPathEdits(po.pathEdits ?? []);
@@ -844,7 +852,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 				if (loaded.sourceExists) {
 					setMissingSourceProject(null);
-					await run(loaded.project.sourcePath, po);
+					await run(loaded.project.sourcePath, po, po.brandPaletteLocked ? "local" : undefined);
 					setInfo(!loaded.hashMatches ? t.projectOpenedChanged : `${t.projectOpened} ${projFile}`);
 				} else {
 					setPath(null);
@@ -877,14 +885,14 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				const dest = !saveAs && projectPath ? projectPath : await pickProjectSavePath(`${baseName(path)}.trasea`);
 				if (!dest) return;
 				const fullOpts: Options = { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits, editFingerprint: pathEdits.length + nodeEdits.length > 0 ? editFpRef.current : null };
-				await saveProjectFile(dest, path, fullOpts, effectiveExport());
+				await saveProjectFile(dest, path, { ...fullOpts, brandPaletteLocked: brandLocked }, effectiveExport());
 				setProjectPath(dest);
 				setInfo(`${t.projectSaved} ${dest}`);
 			} catch (e) {
 				setError(errText(e));
 			}
 		},
-		[path, projectPath, opts, palette, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits, effectiveExport, errText, t.projectSaved],
+		[path, projectPath, opts, palette, brandLocked, paletteMerges, targetNodes, strokes, pathEdits, nodeEdits, effectiveExport, errText, t.projectSaved],
 	);
 
 	const openSample = async () => {
@@ -1380,7 +1388,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		if (po.productionMode === "standard") {
 			standardBackupRef.current = { colors: po.colors, smooth: po.smooth };
 		}
-		setOpts({ ...po, customPalette: palette, paletteMerges, brushStrokes: strokes, pathEdits, nodeEdits, preprocess: opts.preprocess });
+		setOpts({ ...po, customPalette: palette, brandPaletteLocked: brandLocked, paletteMerges, brushStrokes: strokes, pathEdits, nodeEdits, preprocess: opts.preprocess });
 		setExp(pe);
 		setDxfWidthInput(pe.dxfTargetWidthMm ? String(pe.dxfTargetWidthMm) : "");
 		setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.preprocess.removeBackground);
@@ -1436,14 +1444,30 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		}
 	};
 
+	const lockBrandPalette = (colors: string[]) => {
+		if (!path || busyRef.current) return;
+		recordHistory(t.brandLock);
+
+		setOpts(prev => ({ ...prev, brandPaletteLocked: true }));
+		setTraceEngine("local");
+		setPalette(colors);
+		setPaletteMerges([]);
+		setMergeSource(null);
+		setInspectedColor(null);
+		setRecolorSpec(prev => ({ ...prev, mode: "original" }));
+		void run(path, { ...opts, customPalette: colors, brandPaletteLocked: true, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }, "local");
+	};
+
 	const resetPalette = () => {
 		recordHistory(t.resetPalette);
+
+		setOpts(prev => ({ ...prev, brandPaletteLocked: false }));
 		setPalette(null);
 		setPaletteMerges([]);
 		setMergeSource(null);
 		setInspectedColor(null);
 		if (path && !busyRef.current)
-			void applyVectorEdits(path, { ...opts, customPalette: null, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
+			void applyVectorEdits(path, { ...opts, customPalette: null, brandPaletteLocked: false, paletteMerges: [], targetNodes, brushStrokes: strokes, pathEdits, nodeEdits });
 		};
 
 		const apply = () => {
@@ -1630,6 +1654,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 	const applySavedPalette = (sp: SavedPalette) => {
 		recordHistory(`${t.paletteLibTitle}: ${sp.name}`);
 		setSelectedSavedPaletteId(sp.id);
+		setOpts(prev => ({ ...prev, brandPaletteLocked: false }));
 		setPalette(sp.colors.map(c => c.hex.toUpperCase()));
 		setPaletteMerges([]);
 		const nextSpots: SpotColorMapping[] = sp.colors
@@ -1687,6 +1712,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
 	const removeColor = (hex: string) => {
+		if (brandLocked) return;
 		const base = currentPalette();
 		if (base.length <= 2) return;
 		recordHistory(`${t.removeBtn} ${hex}`);
@@ -1707,6 +1733,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			});
 	};
 	const mergeColorInto = (fromHex: string, targetHex: string) => {
+		if (brandLocked) return;
 		const base = currentPalette();
 		if (base.length <= 2 || fromHex === targetHex) return;
 		recordHistory(`${t.mergeBtn} ${fromHex} → ${targetHex}`);
@@ -1716,6 +1743,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		setInfo(`${t.colorExistsPrefix} ${fromHex} ${t.colorMergedMid} ${targetHex}. ${t.colorMergedSuffix}`);
 	};
 	const addColor = (hex: string) => {
+		if (brandLocked) return;
 		const base = currentPalette();
 		if (base.includes(hex)) {
 			setInfo(`${t.colorExistsPrefix} ${hex} ${t.colorExistsSuffix}`);
@@ -1802,7 +1830,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 					{updateBanner && (
 						<span className="update-pill" role="status">
 							{t.updateBannerText} v{updateBanner.latestVersion}
-							<button className="small primary" onClick={() => void openExternalUrl(updateBanner.downloadUrl).catch(() => {})}>{t.updateBannerBtn}</button>
+							<UpdateActions info={updateBanner} />
 							<button className="small ghost" onClick={() => setUpdateBanner(null)} aria-label={t.close}>×</button>
 						</span>
 					)}
@@ -1836,6 +1864,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 					opts={opts}
 					exp={effectiveExport()}
 					initialFiles={batchInitialFiles}
+					activePalette={brandLocked ? palette : null}
 					presets={presets}
 					onApplyPreset={applyPreset}
 					onChangeMode={switchProductionMode}
@@ -2290,6 +2319,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 												id="trace-engine-select"
 												value={traceEngine}
 												onChange={e => setTraceEngine(e.target.value as AiProvider)}
+										disabled={brandLocked}
 												style={{ flex: 1 }}
 											>
 												<option value="local">{appSettings.preferMedianOnly ? t.aiProviderLocalCpu : t.aiProviderLocalGpu}</option>
@@ -2565,6 +2595,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 
 							{panelTab === "colors" && (
 								<div className="panel-section-stack">
+									<BrandPalette colors={brandLocked ? palette : null} disabled={!path || path.toLowerCase().endsWith(".svg") || busy} onLock={lockBrandPalette} onUnlock={resetPalette} />
 									{!result ? (
 										<div className="mode-box muted" style={{ textAlign: "center", padding: "20px 12px" }}>
 											{t.noImageTabHint}
@@ -2586,6 +2617,7 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 														<button
 															key={mode}
 															aria-pressed={recolorSpec.mode === mode}
+												disabled={brandLocked && mode !== "original"}
 															onClick={() => setRecolorSpec(prev => ({ ...prev, mode }))}
 														>
 															{label}
