@@ -528,6 +528,8 @@ export const id = {
 	mockupLight: "Terang",
 	mockupDark: "Gelap",
 	mockupScaleLabel: "Ukuran",
+	mockupResetPos: "Reset posisi",
+	mockupDragHint: "Seret untuk atur posisi",
 	mockupSavePng: "Simpan PNG",
 	savingLabel: "Menyimpan…",
 	recolorTitle: "Variasi warna",

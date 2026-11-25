@@ -4,7 +4,7 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.0 ("Studio Production, Brand Kit & Visual Audit")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.1 ("Photorealistic Studio Mockups")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -55,6 +55,11 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.8.1 ("Photorealistic Studio Mockups")
+
+- **Photorealistic Studio Mockup Preview.** Upgraded all 5 presets in **Mockup Preview** with bundled MIT-safe studio photography (`tshirt-light`, `tshirt-dark`, `totebag-light`, `card-light`, `card-dark`, `sticker-surface`), natural `multiply` fabric/paper ink blending on light materials, subtle soft-light fold texture overlay on dark materials, realistic thick white vinyl die-cut border + diagonal gloss on stickers, and a 3-layer ambient shadow macOS/iOS squircle for App Icons.
+- **Interactive Drag-to-Reposition & Matching 1600×1200 PNG Export.** Drag artwork directly on the 4:3 mockup stage, adjust scale (`30%–100%`), reset position in 1 click, and export a high-resolution `1600×1200 px` PNG matching the live photorealistic composite.
 
 ### New in 1.8.0 ("Studio Production, Brand Kit & Visual Audit")
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.1] "Photorealistic Studio Mockups"
+
+- **Photorealistic Studio Mockup Preview (`src/MockupModal.tsx`, `src/assets/mockups/*.webp`, `src/styles.css`, `src/i18n/{id,en}.ts`).** Replaced flat polygon outlines with 6 bundled MIT-safe studio WebP photos (`tshirt-light`, `tshirt-dark`, `totebag-light`, `card-light`, `card-dark`, `sticker-surface`), natural `multiply` ink-to-fabric/paper blending on light surfaces, subtle `soft-light` fold texture overlay on dark surfaces, SVG `feMorphology` thick white die-cut vinyl border + diagonal gloss on stickers, and a 3-layer ambient shadow macOS/iOS squircle for App Icons.
+- **Interactive Reposition & Matching 1600×1200 PNG Export.** Added direct pointer drag-to-reposition on the 4:3 mockup stage, **Reset position** button, and matching offscreen `1600×1200 px` PNG rendering.
+- **Documentation & Screenshots (`docs/screenshots/app_mockup_preview.png`, `README.md`, `README.id.md`).** Updated `app_mockup_preview.png` to showcase the photorealistic studio T-shirt mockup and synchronized version `1.8.1` across all project manifests.
+
 ## [1.8.0] "Studio Production, Brand Kit & Visual Audit"
 
 - **Pre-Flight Vector Audit & Auto Fix (`crates/trasea-core/src/audit.rs`, `src-tauri/src/main.rs`, `src/App.tsx`).** Added `audit_doc` and `auto_fix_doc` detecting strokes `< 0.5 pt`, high node counts (`> 3,000`), near-duplicate colors (`ΔE < 10`), and micro-path dust (`< 4 px²`), surfaced in the Export tab with 1-click **Auto fix** (`audit_active_vector` / `auto_fix_active_vector`).
