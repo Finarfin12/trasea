@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.1] "Real-Time Vector Editing & Recolor Fixes"
+
+- Update vector fills during node and handle drags. Reuse the last traced vector for edits, undo, redo, and resets.
+- Replay path edits in order so repeated recoloring follows the selected shape. Add a custom color picker.
+- Keep applied edit signatures in sync so completed edits clear the pending-changes notice.
+
 ## [1.9.0] "1-Click In-App Updater & Brand Color Locking"
 
 - Download the matching Windows or macOS release asset from Settings or the update banner, verify the published checksum when supplied, and open the installer or reveal the portable ZIP.

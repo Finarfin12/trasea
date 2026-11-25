@@ -299,9 +299,14 @@ fn g12_05_path_edits_delete_and_reassign_color() {
     assert!(fg_ids.len() >= 3, "expected at least 3 foreground path IDs, got {:?}", fg_ids);
 
     let paths_before = count_svg(&svg_before).0;
+    let deletion = PathEdit::Delete { target_id: fg_ids[0].clone() };
+    let after_delete = apply_path_edits(&out.doc, std::slice::from_ref(&deletion));
+    let next_target = extract_trasea_ids(&to_svg(&after_delete, &eo)).into_iter()
+        .find(|id| id.starts_with("f:") && !id.starts_with("f:0:"))
+        .expect("a foreground path remains after deletion");
     let edits = vec![
-        PathEdit::Delete { target_id: fg_ids[0].clone() },
-        PathEdit::ReassignColor { target_id: fg_ids[1].clone(), to_hex: "#00AA55".to_string() },
+        deletion,
+        PathEdit::ReassignColor { target_id: next_target, to_hex: "#00AA55".to_string() },
         // Stale ID and invalid hex must be safely ignored without panic
         PathEdit::Delete { target_id: "f:99:42".to_string() },
         PathEdit::ReassignColor { target_id: fg_ids[2].clone(), to_hex: "not-a-color".to_string() },
