@@ -3,7 +3,9 @@
   "use strict";
 
   var RELEASE_API = "https://api.github.com/repos/Finarfin12/trasea/releases/latest";
+  var REPO_API = "https://api.github.com/repos/Finarfin12/trasea";
   var CACHE_KEY = "trasea_latest_release_v1";
+  var REPO_CACHE_KEY = "trasea_repo_meta_v1";
   var CACHE_TTL_MS = 15 * 60 * 1000;
   var LANG_KEY = "trasea_lang";
 
@@ -54,16 +56,19 @@
       "hero.altWin": "Portable (.zip) & macOS",
       "hero.altMac": "Intel Mac (.dmg)",
       "hero.altLinkDefault": "See all 4 installers",
-      "trust.offlineTitle": "100% Offline & Private",
-      "trust.offlineDesc": "All tracing, node editing, and exports run locally on your machine with zero cloud uploads.",
+      "hero.proof": "16 public releases · 122 automated Rust tests · 8 export formats · MIT open source",
+      "hero.proofStars": "GitHub stars",
+      "github.starFallback": "★ Star",
+      "trust.offlineTitle": "Your artwork stays on disk",
+      "trust.offlineDesc": "Client logos and NDA drafts never leave your machine — trace and export instantly with no server queue.",
       "trust.freeTitle": "Zero Subscription",
       "trust.freeDesc": "Completely free and open source. Every pro print tool unlocked without accounts or watermarks.",
       "trust.formatsTitle": "RGB · CMYK · Spot · DXF",
       "trust.formatsDesc": "Built for Illustrator, Affinity, CorelDraw, Roland/Mimaki RIPs, screen printing, and laser/CNC.",
-      "trust.osTitle": "Windows & macOS",
-      "trust.osDesc": "Lightweight native binary for Windows 10/11 (Installer & Portable) and macOS (Apple Silicon & Intel).",
+      "trust.aiTitle": "Compare Offline & AI SVG",
+      "trust.aiDesc": "Import SVG output from a local AI CLI tool and compare it side-by-side against Rust/VTracer with live path, node, and KB metrics.",
       "features.eyebrow": "STUDIO SHOWCASE",
-      "features.title": "Built for real production workflows",
+      "features.title": "Edit nodes, preview mockups, and audit before export.",
       "features.subtitle": "Inspect every stage from pixel cleanup and node editing to photorealistic mockups, brand kits, and pre-flight print checks.",
       "tabs.studio.label": "Studio Editor & Nodes",
       "tabs.studio.title": "Precision Node Editing & Brush Corrections",
@@ -111,8 +116,8 @@
       "tabs.production.cap2": "Centerline Single-Line (Laser / CNC)",
       "tabs.production.cap3": "CMYK Soft-Proof & Named Spot Ink",
       "formats.eyebrow": "PRODUCTION OUTPUTS",
-      "formats.title": "Every vector format your shop expects",
-      "formats.subtitle": "Clean pure-Rust generators — no Ghostscript, Inkscape, or external converters required.",
+      "formats.title": "From web-ready SVG to press-ready CMYK and CAD DXF.",
+      "formats.subtitle": "For web & brand designers, print shops, and laser workshops — pure-Rust generators with no Ghostscript or Inkscape required.",
       "formats.svgTitle": "Layered Vector & Clipboard",
       "formats.svgDesc": "Named layers (Background, Colour Fields, Thin Lines, CutContour, Registration) plus 1-click Copy SVG (Ctrl+Shift+C).",
       "formats.pdfTitle": "RGB, DeviceCMYK & Spot",
@@ -130,7 +135,7 @@
       "formats.sepTitle": "100%-K Screen Films",
       "formats.sepDesc": "Generate individual 100%-black / 100%-K separation films per ink color with registration marks ready for exposure.",
       "download.eyebrow": "DOWNLOAD",
-      "download.title": "Get Trasea for your desktop",
+      "download.title": "Install natively on Windows or macOS.",
       "download.subtitlePrefix": "Latest release",
       "download.subtitleSuffix": "· Free, open source, zero telemetry.",
       "download.recommended": "Recommended",
@@ -157,7 +162,7 @@
       "faq.q1": "Is Trasea completely free and open source?",
       "faq.a1": "Yes. Trasea is released under the MIT License. Every feature — including CMYK/Spot PDF, AutoCAD DXF, Photorealistic Mockups, Brand Kit ZIP, and Pre-Flight Audit — is unlocked with no account, watermark, or subscription.",
       "faq.q2": "Does Trasea upload my artwork to any server?",
-      "faq.a2": "No. Trasea is local-first and private. All image preprocessing, tracing, node edits, and exports happen directly on your computer and continue working with no internet connection.",
+      "faq.a2": "No. Preprocessing, VTracer curve fitting, node editing, and PDF/DXF generation all execute natively in Rust on your CPU/GPU—even with Wi-Fi switched off.",
       "faq.q3": "What is the difference between Offline Tracing and AI CLI Import?",
       "faq.a3": "Offline Tracing uses Trasea's built-in Rust/VTracer engine for instant, fully local vectorization. AI CLI Import lets you bring in SVG output from a local AI CLI tool and compare both results side-by-side with live path, node, and KB metrics.",
       "faq.q4": "Which operating systems are supported?",
@@ -190,16 +195,19 @@
       "hero.altWin": "Versi Portabel (.zip) & macOS",
       "hero.altMac": "macOS Intel (.dmg)",
       "hero.altLinkDefault": "Lihat semua 4 installer",
-      "trust.offlineTitle": "100% Offline & Privat",
-      "trust.offlineDesc": "Seluruh pelacakan, edit node, dan ekspor berjalan lokal di komputer tanpa unggah ke server mana pun.",
+      "hero.proof": "16 rilis publik · 122 uji otomatis Rust · 8 format ekspor · Open source MIT",
+      "hero.proofStars": "bintang GitHub",
+      "github.starFallback": "★ Bintang",
+      "trust.offlineTitle": "Karya tetap di komputermu",
+      "trust.offlineDesc": "Logo klien dan draf rahasia tidak pernah keluar dari perangkat — trace dan ekspor instan tanpa antre server.",
       "trust.freeTitle": "Tanpa Langganan",
       "trust.freeDesc": "Gratis penuh dan open source. Semua fitur cetak profesional terbuka tanpa akun maupun watermark.",
       "trust.formatsTitle": "RGB · CMYK · Spot · DXF",
       "trust.formatsDesc": "Siap masuk Illustrator, Affinity, CorelDraw, RIP Roland/Mimaki, sablon, serta mesin laser dan CNC.",
-      "trust.osTitle": "Windows & macOS",
-      "trust.osDesc": "Aplikasi desktop ringan berbasis Rust untuk Windows 10/11 (Installer & Portabel) dan macOS (Apple Silicon & Intel).",
+      "trust.aiTitle": "Bandingkan Offline & AI SVG",
+      "trust.aiDesc": "Impor hasil SVG dari CLI AI lokal lalu bandingkan berdampingan dengan Rust/VTracer lewat metrik path, node, dan KB secara langsung.",
       "features.eyebrow": "PAMERAN STUDIO",
-      "features.title": "Dirancang untuk alur produksi nyata",
+      "features.title": "Edit node, cek mockup, dan audit vektor sebelum ekspor.",
       "features.subtitle": "Lihat setiap tahap mulai dari pembersihan gambar dan edit node hingga mockup fotorealistis, Brand Kit ZIP, dan audit pra-cetak.",
       "tabs.studio.label": "Editor Studio & Node",
       "tabs.studio.title": "Edit Node Presisi & Koreksi Kuas",
@@ -247,8 +255,8 @@
       "tabs.production.cap2": "Garis Tengah Tunggal (Laser / CNC)",
       "tabs.production.cap3": "Soft-Proof CMYK & Tinta Spot Bernama",
       "formats.eyebrow": "KELUARAN PRODUKSI",
-      "formats.title": "Semua format vektor yang dibutuhkan bengkel cetak",
-      "formats.subtitle": "Generator Rust murni — tanpa perlu menginstal Ghostscript, Inkscape, atau konverter tambahan.",
+      "formats.title": "Dari SVG siap web sampai CMYK siap cetak dan DXF CAD.",
+      "formats.subtitle": "Untuk desainer web & brand, print shop, dan workshop laser — generator Rust murni tanpa perlu Ghostscript atau Inkscape.",
       "formats.svgTitle": "Vektor Berlayer & Clipboard",
       "formats.svgDesc": "Layer bernama (Latar, Bidang Warna, Garis Tipis, CutContour, Registrasi) plus Salin SVG 1-klik (Ctrl+Shift+C).",
       "formats.pdfTitle": "RGB, DeviceCMYK & Spot",
@@ -266,7 +274,7 @@
       "formats.sepTitle": "Film Sablon Hitam 100%-K",
       "formats.sepDesc": "Hasilkan film separasi hitam 100% / K=100% terpisah per warna tinta lengkap dengan tanda registrasi siap afdruk.",
       "download.eyebrow": "UNDUH",
-      "download.title": "Pasang Trasea di komputer desktop",
+      "download.title": "Pasang native di Windows atau macOS.",
       "download.subtitlePrefix": "Rilis terbaru",
       "download.subtitleSuffix": "· Gratis, open source, tanpa telemetri.",
       "download.recommended": "Rekomendasi",
@@ -293,7 +301,7 @@
       "faq.q1": "Apakah Trasea benar-benar gratis dan open source?",
       "faq.a1": "Ya. Trasea dirilis di bawah lisensi MIT. Seluruh fitur — termasuk PDF CMYK/Spot, AutoCAD DXF, Mockup Fotorealistis, Brand Kit ZIP, dan Audit Pra-Cetak — terbuka penuh tanpa akun, watermark, atau biaya langganan.",
       "faq.q2": "Apakah Trasea mengunggah gambar ke server luar?",
-      "faq.a2": "Tidak. Trasea bekerja lokal dan privat. Seluruh pra-proses gambar, pelacakan vektor, edit node, dan ekspor dijalankan langsung di komputer dan tetap berfungsi tanpa koneksi internet.",
+      "faq.a2": "Tidak. Praproses gambar, pelacakan kurva VTracer, edit node, hingga pembuatan PDF/DXF semuanya dieksekusi native oleh Rust di CPU/GPU kamu—tetap lancar meski Wi-Fi dimatikan.",
       "faq.q3": "Apa perbedaan Offline Tracing dan Impor AI CLI?",
       "faq.a3": "Offline Tracing memakai mesin Rust/VTracer bawaan Trasea untuk vektorisasi lokal seketika. Impor AI CLI memungkinkan pembandingan langsung hasil SVG dari tool AI CLI lokal berdampingan dengan metrik path, node, dan KB.",
       "faq.q4": "Sistem operasi apa saja yang didukung?",
@@ -312,7 +320,8 @@
   var state = {
     lang: "en",
     os: "other",
-    release: FALLBACK_RELEASE
+    release: FALLBACK_RELEASE,
+    stars: null
   };
 
   function formatSize(bytes) {
@@ -399,6 +408,60 @@
       })
       .catch(function () {
         // Silent fallback to FALLBACK_RELEASE (v1.8.2)
+      });
+  }
+
+  function applyRepoMetaUI() {
+    var starPill = document.getElementById("github-star-pill");
+    var proofStrip = document.getElementById("hero-proof-strip");
+    var hasStars = typeof state.stars === "number" && state.stars >= 1;
+
+    if (starPill) {
+      starPill.textContent = hasStars ? "★ " + state.stars : t("github.starFallback");
+    }
+
+    if (proofStrip) {
+      var baseProof = t("hero.proof");
+      proofStrip.textContent = hasStars
+        ? baseProof + " · ★ " + state.stars + " " + t("hero.proofStars")
+        : baseProof;
+    }
+  }
+
+  function loadRepoMeta() {
+    try {
+      var raw = sessionStorage.getItem(REPO_CACHE_KEY);
+      if (raw) {
+        var cached = JSON.parse(raw);
+        if (cached && cached.ts && Date.now() - cached.ts < CACHE_TTL_MS && typeof cached.stars === "number") {
+          state.stars = cached.stars;
+          applyRepoMetaUI();
+          return;
+        }
+      }
+    } catch (_) {
+      // Ignore storage errors
+    }
+
+    if (typeof fetch !== "function") return;
+
+    fetch(REPO_API, { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (res) {
+        if (!res.ok) throw new Error("GitHub Repo API status " + res.status);
+        return res.json();
+      })
+      .then(function (json) {
+        if (!json || typeof json.stargazers_count !== "number") return;
+        state.stars = json.stargazers_count;
+        try {
+          sessionStorage.setItem(REPO_CACHE_KEY, JSON.stringify({ ts: Date.now(), stars: state.stars }));
+        } catch (_) {
+          // Ignore storage quota errors
+        }
+        applyRepoMetaUI();
+      })
+      .catch(function () {
+        // Silent fallback without showing ★ 0 or console errors
       });
   }
 
@@ -528,6 +591,7 @@
     });
 
     applyReleaseUI();
+    applyRepoMetaUI();
   }
 
   function initTabs() {
@@ -589,6 +653,7 @@
     initTabs();
     initLanguageToggle();
     loadLatestRelease();
+    loadRepoMeta();
   }
 
   if (document.readyState === "loading") {

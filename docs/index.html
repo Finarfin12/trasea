@@ -52,6 +52,7 @@
             <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.84c.85 0 1.71.12 2.51.35 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.64 1.03 2.76 0 3.95-2.34 4.82-4.57 5.07.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.26 10.26 0 0 0 22 12.26C22 6.58 17.52 2 12 2z"/>
           </svg>
           <span>GitHub</span>
+          <span class="github-star-pill mono" id="github-star-pill">★ Star</span>
         </a>
         <a class="btn btn-primary btn-sm" href="#download" data-i18n="nav.getTrasea">Download</a>
       </div>
@@ -96,6 +97,10 @@
             <span class="meta-sep" aria-hidden="true">·</span>
             <a id="hero-alt-link" href="#download" data-i18n="hero.altLinkDefault">See all 4 installers</a>
           </div>
+
+          <div class="hero-proof-strip mono" id="hero-proof-strip" data-i18n="hero.proof">
+            16 public releases · 122 automated Rust tests · 8 export formats · MIT open source
+          </div>
         </div>
 
         <div class="studio-frame hero-frame">
@@ -125,8 +130,8 @@
       <div class="container spec-grid">
         <div class="spec-item">
           <div class="spec-kicker mono">01 · LOCAL-FIRST</div>
-          <h2 class="spec-title" data-i18n="trust.offlineTitle">100% Offline &amp; Private</h2>
-          <p class="spec-desc" data-i18n="trust.offlineDesc">All tracing, node editing, and exports run locally on your machine with zero cloud uploads.</p>
+          <h2 class="spec-title" data-i18n="trust.offlineTitle">Your artwork stays on disk</h2>
+          <p class="spec-desc" data-i18n="trust.offlineDesc">Client logos and NDA drafts never leave your machine — trace and export instantly with no server queue.</p>
         </div>
         <div class="spec-item">
           <div class="spec-kicker mono">02 · MIT LICENSE</div>
@@ -139,9 +144,9 @@
           <p class="spec-desc" data-i18n="trust.formatsDesc">Built for Illustrator, Affinity, CorelDraw, Roland/Mimaki RIPs, screen printing, and laser/CNC.</p>
         </div>
         <div class="spec-item">
-          <div class="spec-kicker mono">04 · NATIVE RUST + TAURI</div>
-          <h2 class="spec-title" data-i18n="trust.osTitle">Windows &amp; macOS</h2>
-          <p class="spec-desc" data-i18n="trust.osDesc">Lightweight native binary for Windows 10/11 (Installer &amp; Portable) and macOS (Apple Silicon &amp; Intel).</p>
+          <div class="spec-kicker mono">04 · OFFLINE + AI CLI</div>
+          <h2 class="spec-title" data-i18n="trust.aiTitle">Compare Offline &amp; AI SVG</h2>
+          <p class="spec-desc" data-i18n="trust.aiDesc">Import SVG output from a local AI CLI tool and compare it side-by-side against Rust/VTracer with live path, node, and KB metrics.</p>
         </div>
       </div>
     </section>
@@ -151,7 +156,7 @@
       <div class="container">
         <div class="section-head">
           <div class="section-eyebrow mono" data-i18n="features.eyebrow">STUDIO SHOWCASE</div>
-          <h2 class="section-title" data-i18n="features.title">Built for real production workflows</h2>
+          <h2 class="section-title" data-i18n="features.title">Edit nodes, preview mockups, and audit before export.</h2>
           <p class="section-subtitle" data-i18n="features.subtitle">
             Inspect every stage from pixel cleanup and node editing to photorealistic mockups, brand kits, and pre-flight print checks.
           </p>
@@ -341,9 +346,9 @@
       <div class="container">
         <div class="section-head">
           <div class="section-eyebrow mono" data-i18n="formats.eyebrow">PRODUCTION OUTPUTS</div>
-          <h2 class="section-title" data-i18n="formats.title">Every vector format your shop expects</h2>
+          <h2 class="section-title" data-i18n="formats.title">From web-ready SVG to press-ready CMYK and CAD DXF.</h2>
           <p class="section-subtitle" data-i18n="formats.subtitle">
-            Clean pure-Rust generators — no Ghostscript, Inkscape, or external converters required.
+            For web &amp; brand designers, print shops, and laser workshops — pure-Rust generators with no Ghostscript or Inkscape required.
           </p>
         </div>
 
@@ -404,7 +409,7 @@
       <div class="container">
         <div class="section-head">
           <div class="section-eyebrow mono" data-i18n="download.eyebrow">DOWNLOAD</div>
-          <h2 class="section-title" data-i18n="download.title">Get Trasea for your desktop</h2>
+          <h2 class="section-title" data-i18n="download.title">Install natively on Windows or macOS.</h2>
           <p class="section-subtitle">
             <span data-i18n="download.subtitlePrefix">Latest release</span>
             <span class="mono release-tag-inline" id="download-version">v1.8.2</span>
@@ -501,7 +506,7 @@
 
           <details class="faq-item">
             <summary data-i18n="faq.q2">Does Trasea upload my artwork to any server?</summary>
-            <p data-i18n="faq.a2">No. Trasea is local-first and private. All image preprocessing, tracing, node edits, and exports happen directly on your computer and continue working with no internet connection.</p>
+            <p data-i18n="faq.a2">No. Preprocessing, VTracer curve fitting, node editing, and PDF/DXF generation all execute natively in Rust on your CPU/GPU—even with Wi-Fi switched off.</p>
           </details>
 
           <details class="faq-item">

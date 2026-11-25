@@ -261,6 +261,31 @@ a:hover {
   color: var(--text);
 }
 
+.github-star-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.hero-proof-strip {
+  margin-top: 16px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(28, 31, 37, 0.85);
+  border: 1px solid var(--border);
+  font-size: 0.77rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 100%;
+  text-align: center;
+}
+
 /* CMY Registration Dots */
 .cmy-dots,
 .chrome-dots {
@@ -920,6 +945,12 @@ a:hover {
 
   .hero-cta-row .btn {
     width: 100%;
+  }
+
+  .hero-proof-strip {
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.72rem;
   }
 
   .chrome-badge {
