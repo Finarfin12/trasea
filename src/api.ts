@@ -359,7 +359,8 @@ export const saveFile = (kind: ExportKind, path: string, options: ExportOptions)
 export const saveTextFile = (path: string, content: string): Promise<void> => invoke<void>("save_text_file", { path, content });
 export const exportDxf = (path: string, options: ExportOptions): Promise<void> => invoke<void>("export_dxf", { path, options });
 export const pasteClipboardImage = (): Promise<string> => invoke<string>("paste_clipboard_image");
-export const copySvgToClipboard = (options: ExportOptions): Promise<number> => invoke<number>("copy_svg_to_clipboard", { options });
+export const copySvgToClipboard = (options: ExportOptions, recolor?: RecolorSpec): Promise<number> =>
+	invoke<number>("copy_svg_to_clipboard", { options, recolor: recolor ?? null });
 export const saveSeparations = (dir: string, baseName: string, kind: "svg" | "pdf" | "both", options: ExportOptions): Promise<string[]> =>
 	invoke<string[]>("save_separations", { dir, baseName, kind, options });
 
@@ -547,3 +548,71 @@ export const fetchCliModels = (executable: string): Promise<FetchAiModelsResult>
 	invoke<FetchAiModelsResult>("fetch_cli_models", { executable });
 export const applyAiVectorEdits = (path: string, params: Options): Promise<Processed> =>
 	invoke<Processed>("apply_ai_vector_edits", { path, params });
+
+// --- v1.8.0: Pre-Flight Audit, Smart Recolor, Brand Kit ZIP, Compare Engines, Mockup ---
+export type RecolorMode = "original" | "monoBlack" | "monoWhite" | "duotone";
+
+export interface RecolorSpec {
+	mode: RecolorMode;
+	primary?: string | null;
+	secondary?: string | null;
+}
+
+export interface AuditIssue {
+	code: string;
+	severity: "warn" | "info" | string;
+	count: number;
+	detail: string;
+	fixable: boolean;
+}
+
+export interface AuditReport {
+	ok: boolean;
+	totalPaths: number;
+	totalNodes: number;
+	totalColors: number;
+	issues: AuditIssue[];
+}
+
+export interface AutoFixResult {
+	fixes: number;
+	svg: string;
+	paths: number;
+	nodes: number;
+	bytes: number;
+	palette: string[];
+	report: AuditReport;
+}
+
+export interface SwitchSourceResult {
+	source: "offline" | "ai";
+	svg: string;
+	paths: number;
+	nodes: number;
+	bytes: number;
+	palette: string[];
+	report: AuditReport;
+}
+
+export const auditActiveVector = (): Promise<AuditReport> =>
+	invoke<AuditReport>("audit_active_vector");
+
+export const autoFixActiveVector = (options: ExportOptions): Promise<AutoFixResult> =>
+	invoke<AutoFixResult>("auto_fix_active_vector", { options });
+
+export const exportBrandKitZip = (path: string, baseName: string, options: ExportOptions): Promise<number> =>
+	invoke<number>("export_brand_kit_zip", { path, baseName, options });
+
+export const setActiveVectorSource = (source: "offline" | "ai", options: ExportOptions): Promise<SwitchSourceResult> =>
+	invoke<SwitchSourceResult>("set_active_vector_source", { source, options });
+
+export const saveMockupPng = (path: string, pngBase64: string): Promise<number> =>
+	invoke<number>("save_mockup_png", { path, pngBase64 });
+
+export async function pickBrandKitZipSavePath(suggested: string): Promise<string | null> {
+	return save({ defaultPath: suggested, filters: [{ name: "Brand Kit ZIP", extensions: ["zip"] }] });
+}
+
+export async function pickMockupPngSavePath(suggested: string): Promise<string | null> {
+	return save({ defaultPath: suggested, filters: [{ name: "PNG Image", extensions: ["png"] }] });
+}
