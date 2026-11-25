@@ -4,11 +4,11 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.1 ("Photorealistic Studio Mockups")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.2 ("Toolbar Brush Icons Polish")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
-![Trasea 1.8.0 — Studio Editor: artboard dot-grid, node tools, and floating zoom bar](docs/screenshots/app_node_edit.png)
+![Trasea 1.8.2 — Studio Editor: artboard dot-grid, node tools, and floating zoom bar](docs/screenshots/app_node_edit.png)
 
 | Live Product Mockup Preview (5 Presets + High-Res PNG) | Smart Recolor (0 ms) & Solo Color Isolation |
 | :---: | :---: |
@@ -55,6 +55,10 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.8.2 ("Toolbar Brush Icons Polish")
+
+- **Clearer Toolbar Tool Icons (`src/ToolbarIcons.tsx`).** Assigned the classic Pen Tool nib to **Node Tool** (`IconNode`) and redesigned **Detail Brush** (`IconDetailBrush`, diagonal paintbrush with a small `+` badge) and **Smooth Brush** (`IconSmoothBrush`, matching diagonal paintbrush with a smooth S-curve) so both correction brushes read clearly as a matching pair at `16×16`.
 
 ### New in 1.8.1 ("Photorealistic Studio Mockups")
 

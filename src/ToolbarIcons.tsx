@@ -39,18 +39,8 @@ export function IconPointer() {
 	);
 }
 
-/** Node tool: an anchor square with a Bezier handle line. */
+/** Node tool: classic Pen Tool nib. */
 export function IconNode() {
-	return (
-		<Svg>
-			<rect x="3" y="14" width="5" height="5" rx="0.5" />
-			<path d="M8 16.5C11 16.5 11 7.5 15 7.5" />
-			<circle cx="18" cy="7.5" r="2.5" />
-		</Svg>
-	);
-}
-
-export function IconDetailBrush() {
 	return (
 		<Svg>
 			<path d="M12 19l7-7 3 3-7 7-3-3z" />
@@ -61,12 +51,27 @@ export function IconDetailBrush() {
 	);
 }
 
+/** Detail brush: diagonal paintbrush with a '+' badge in the bottom-right corner. */
+export function IconDetailBrush() {
+	return (
+		<Svg>
+			<path d="M18.2 2.8a2.12 2.12 0 0 1 3 3L12.2 14.8l-3-3 9-9z" />
+			<path d="M11.2 9.8l3 3" />
+			<path d="M9.2 11.8c-2.2 0-4.2 1.6-4.2 4.2 0 1.4-.6 2.6-2 3.5 1.8.8 4.2.5 5.8-.7 1.7-1.2 2.9-2.4 3.4-4" />
+			<path d="M18.5 15.5v6" />
+			<path d="M15.5 18.5h6" />
+		</Svg>
+	);
+}
+
+/** Smooth brush: diagonal paintbrush with a smooth S-curve in the bottom-right corner. */
 export function IconSmoothBrush() {
 	return (
 		<Svg>
-			<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
-			<line x1="16" y1="8" x2="2" y2="22" />
-			<line x1="17.5" y1="15" x2="9" y2="15" />
+			<path d="M18.2 2.8a2.12 2.12 0 0 1 3 3L12.2 14.8l-3-3 9-9z" />
+			<path d="M11.2 9.8l3 3" />
+			<path d="M9.2 11.8c-2.2 0-4.2 1.6-4.2 4.2 0 1.4-.6 2.6-2 3.5 1.8.8 4.2.5 5.8-.7 1.7-1.2 2.9-2.4 3.4-4" />
+			<path d="M13.5 20c1.4-2.4 2.8-2.4 4.2 0s2.8 2.4 4.3 0" />
 		</Svg>
 	);
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.2] "Toolbar Brush Icons Polish"
+
+- **Toolbar Icon Clarity (`src/ToolbarIcons.tsx`).** Moved the classic Pen Tool nib to `IconNode` (Node Tool) and redesigned `IconDetailBrush` (diagonal paintbrush with a small `+` badge) and `IconSmoothBrush` (matching diagonal paintbrush with a smooth S-curve) so both correction brushes read clearly as a matching pair at `16×16`.
+- **Documentation & Screenshots (`docs/screenshots/*.png`, `README.md`, `README.id.md`).** Refreshed toolbar screenshots and synchronized version `1.8.2` across all project manifests.
+
 ## [1.8.1] "Photorealistic Studio Mockups"
 
 - **Photorealistic Studio Mockup Preview (`src/MockupModal.tsx`, `src/assets/mockups/*.webp`, `src/styles.css`, `src/i18n/{id,en}.ts`).** Replaced flat polygon outlines with 6 bundled MIT-safe studio WebP photos (`tshirt-light`, `tshirt-dark`, `totebag-light`, `card-light`, `card-dark`, `sticker-surface`), natural `multiply` ink-to-fabric/paper blending on light surfaces, subtle `soft-light` fold texture overlay on dark surfaces, SVG `feMorphology` thick white die-cut vinyl border + diagonal gloss on stickers, and a 3-layer ambient shadow macOS/iOS squircle for App Icons.
