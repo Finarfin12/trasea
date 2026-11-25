@@ -58,7 +58,7 @@ Format keluaran yang didukung:
 
 ### Baru di 1.9.1
 
-- Lihat isi bentuk vektor ikut bergerak saat node atau handle Bézier digeser. Edit, Undo, dan Redo memakai hasil vektor terakhir jika setelan trace cocok.
+- Lihat isi bentuk vektor ikut bergerak saat node atau handle Bézier digeser. Edit, Undo, dan Redo memakai hasil vektor terakhir jika setelan trace cocok. Dengan pintasan standar, Ctrl+Y mengulang edit yang bisa dipulihkan atau beralih ke Outline jika tidak ada.
 - Ganti warna bentuk dengan swatch palet atau pemilih warna bebas. Perubahan warna berulang tetap mengenai bentuk yang dipilih.
 
 ### Baru di 1.9.0

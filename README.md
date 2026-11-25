@@ -58,7 +58,7 @@ Supported outputs:
 
 ### New in 1.9.1
 
-- See vector fills move while dragging nodes or Bézier handles. Edits, undo, and redo reuse the last vector result when the trace settings match.
+- See vector fills move while dragging nodes or Bézier handles. Edits, undo, and redo reuse the last vector result when the trace settings match. With the standard shortcuts, Ctrl+Y redoes an available edit and toggles Outline otherwise.
 - Recolor a selected shape with a palette swatch or the custom color picker. Repeated changes follow the selected shape.
 
 ### New in 1.9.0

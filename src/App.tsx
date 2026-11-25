@@ -1274,7 +1274,10 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			if (matchShortcut(e, activeShortcuts.openSettings)) {
 				e.preventDefault();
 				setSettingsModal({ tab: "general" });
-			} else if (matchShortcut(e, activeShortcuts.redo) && !editingText && view === "editor") {
+			} else if (!editingText && view === "editor" && (
+				matchShortcut(e, activeShortcuts.redo) ||
+				(history.future.length > 0 && activeShortcuts.toggleOutline === "Ctrl+Y" && matchShortcut(e, "Ctrl+Y"))
+			)) {
 				e.preventDefault();
 				doRedo();
 			} else if (matchShortcut(e, activeShortcuts.undo) && !editingText && view === "editor") {
