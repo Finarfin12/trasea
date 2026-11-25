@@ -8,9 +8,12 @@ import {
 	type PointerEvent as ReactPointerEvent,
 } from "react";
 import BatchView from "./BatchView";
+import { CompareEngineModal, type EngineSnapshot } from "./CompareEngineModal";
 import CropModal from "./CropModal";
 import logoIcon from "./assets/trasea-icon-mini.svg";
+import { MockupModal } from "./MockupModal";
 import { NodeOverlay, type NodeSelection } from "./NodeOverlay";
+import { applyClientRecolor } from "./recolor";
 import SettingsModal, { type SettingsTab } from "./SettingsModal";
 import {
 	IconChecker,
@@ -34,7 +37,15 @@ import {
 	checkForUpdate,
 	vectorizeWithAi,
 	applyAiVectorEdits,
+	auditActiveVector,
+	autoFixActiveVector,
+	exportBrandKitZip,
+	pickBrandKitZipSavePath,
+	setActiveVectorSource,
 	type AiProvider,
+	type AuditReport,
+	type RecolorMode,
+	type RecolorSpec,
 	DEFAULT_APP_SETTINGS,
 	openExternalUrl,
 	DEFAULT_PREPROCESS,
@@ -366,6 +377,18 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [outlineView, setOutlineView] = useState(false);
 	const [softProof, setSoftProof] = useState(false);
 	const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(() => new Set());
+	const [recolorSpec, setRecolorSpec] = useState<RecolorSpec>({
+		mode: "original",
+		primary: "#111827",
+		secondary: "#6D8CFF",
+	});
+	const [mockupOpen, setMockupOpen] = useState(false);
+	const [compareOpen, setCompareOpen] = useState(false);
+	const [offlineSnap, setOfflineSnap] = useState<EngineSnapshot | null>(null);
+	const [aiSnap, setAiSnap] = useState<EngineSnapshot | null>(null);
+	const [activeVectorSource, setActiveVectorSourceState] = useState<"offline" | "ai">("offline");
+	const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
+	const [auditFixing, setAuditFixing] = useState(false);
 	const [cropOpen, setCropOpen] = useState(false);
 	const [settingsModal, setSettingsModal] = useState<{
 		tab: SettingsTab;
@@ -539,6 +562,21 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setResult(r);
 				setLiveSvg(null);
 				setHiddenLayers(new Set());
+				const snap: EngineSnapshot = {
+					svg: r.svg,
+					paths: r.paths,
+					nodes: r.nodes,
+					bytes: r.bytes,
+					label: useExternalAi ? "AI" : "Offline",
+				};
+				if (useExternalAi) {
+					setAiSnap(snap);
+					setActiveVectorSourceState("ai");
+				} else {
+					setOfflineSnap(snap);
+					setActiveVectorSourceState("offline");
+				}
+				void auditActiveVector().then(setAuditReport).catch(() => {});
 				if (!keepSelectionRef.current) setSelectedPathId(null);
 				keepSelectionRef.current = false;
 				setAppliedSig(JSON.stringify(effectiveOpts));
@@ -578,6 +616,15 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 				setResult(r);
 				setLiveSvg(null);
 				setHiddenLayers(new Set());
+				setAiSnap({
+					svg: r.svg,
+					paths: r.paths,
+					nodes: r.nodes,
+					bytes: r.bytes,
+					label: "AI",
+				});
+				setActiveVectorSourceState("ai");
+				void auditActiveVector().then(setAuditReport).catch(() => {});
 				if (!keepSelectionRef.current) setSelectedPathId(null);
 				keepSelectionRef.current = false;
 				setAppliedSig(JSON.stringify(effectiveOpts));
@@ -868,12 +915,69 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		setError("");
 		setInfo("");
 		try {
-			const bytes = await copySvgToClipboard(effectiveExport());
+			const bytes = await copySvgToClipboard(effectiveExport(), recolorSpec);
 			setInfo(`${t.copiedSvgMsg} (${fmtKb(bytes)}).`);
 		} catch (e) {
 			setError(errText(e));
 		}
-	}, [result, effectiveExport, errText, t.copiedSvgMsg]);
+	}, [result, effectiveExport, recolorSpec, errText, t.copiedSvgMsg]);
+
+	const doAutoFixAudit = useCallback(async () => {
+		if (!result || auditFixing) return;
+		setAuditFixing(true);
+		setError("");
+		try {
+			const res = await autoFixActiveVector(effectiveExport());
+			setResult(prev =>
+				prev
+					? { ...prev, svg: res.svg, paths: res.paths, nodes: res.nodes, bytes: res.bytes, palette: res.palette }
+					: prev,
+			);
+			setLiveSvg(null);
+			setAuditReport(res.report);
+			setInfo(`${res.fixes} ${t.auditFixedMsg}`);
+		} catch (e) {
+			setError(errText(e));
+		} finally {
+			setAuditFixing(false);
+		}
+	}, [result, auditFixing, effectiveExport, errText, t.auditFixedMsg]);
+
+	const doExportBrandKit = useCallback(async () => {
+		if (!result) return;
+		setError("");
+		try {
+			const stem = (path ? path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") : "trasea") || "trasea";
+			const dest = await pickBrandKitZipSavePath(`${stem}-brand-kit.zip`);
+			if (!dest) return;
+			const count = await exportBrandKitZip(dest, stem, effectiveExport());
+			setInfo(`${t.brandKitSavedMsg} ${dest} (${count} file)`);
+		} catch (e) {
+			setError(errText(e));
+		}
+	}, [result, path, effectiveExport, errText, t.brandKitSavedMsg]);
+
+	const doSwitchEngineSource = useCallback(
+		async (source: "offline" | "ai") => {
+			setError("");
+			try {
+				const res = await setActiveVectorSource(source, effectiveExport());
+				activeResultSourceRef.current = source === "ai" ? "ai" : "local";
+				setActiveVectorSourceState(source);
+				setResult(prev =>
+					prev
+						? { ...prev, svg: res.svg, paths: res.paths, nodes: res.nodes, bytes: res.bytes, palette: res.palette }
+						: prev,
+				);
+				setLiveSvg(null);
+				setAuditReport(res.report);
+				setCompareOpen(false);
+			} catch (e) {
+				setError(errText(e));
+			}
+		},
+		[effectiveExport, errText],
+	);
 
 	const choose = useCallback(async () => {
 		const p = await pickImageOrProject();
@@ -1550,9 +1654,13 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 	};
 
 	const baseSvg = liveSvg ?? result?.svg ?? "";
+	const recoloredBaseSvg = useMemo(
+		() => (baseSvg ? applyClientRecolor(baseSvg, recolorSpec) : ""),
+		[baseSvg, recolorSpec],
+	);
 	const previewSvg = useMemo(
-		() => (baseSvg ? buildPreviewSvg(baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool === "selectPath" || tool === "node" ? selectedPathId : null) : ""),
-		[baseSvg, outlineView, hiddenLayers, softProof, proofMap, tool, selectedPathId],
+		() => (recoloredBaseSvg ? buildPreviewSvg(recoloredBaseSvg, outlineView, hiddenLayers, softProof, proofMap, tool === "selectPath" || tool === "node" ? selectedPathId : null) : ""),
+		[recoloredBaseSvg, outlineView, hiddenLayers, softProof, proofMap, tool, selectedPathId],
 	);
 	const svgUrl = useMemo(() => (previewSvg ? URL.createObjectURL(new Blob([previewSvg], { type: "image/svg+xml" })) : ""), [previewSvg]);
 	useEffect(() => () => { if (svgUrl) URL.revokeObjectURL(svgUrl); }, [svgUrl]);
@@ -1564,6 +1672,17 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 			else next.add(key);
 			return next;
 		});
+	};
+
+	const soloLayer = (hex: string) => {
+		const allColors = currentPalette();
+		const others = allColors.filter(c => c !== hex);
+		const alreadySolo = !hiddenLayers.has(hex) && others.every(c => hiddenLayers.has(c));
+		if (alreadySolo) {
+			setHiddenLayers(new Set());
+		} else {
+			setHiddenLayers(new Set(others));
+		}
 	};
 
 	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
@@ -1945,6 +2064,20 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 											<IconChecker />
 										</button>
 									</div>
+
+									{result && (
+										<>
+											<span className="tb-sep" aria-hidden="true" />
+											<div className="tb-group">
+												<button className="small tb-pill-btn" onClick={() => setMockupOpen(true)}>
+													{t.mockupBtn}
+												</button>
+												<button className="small tb-pill-btn" onClick={() => setCompareOpen(true)}>
+													{t.compareEnginesBtn}
+												</button>
+											</div>
+										</>
+									)}
 								</div>
 
 								{tool === "pipet" && <div className="hint">{t.pipetHint}</div>}
@@ -2438,7 +2571,46 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										</div>
 									) : (
 										<>
-											<div className="palette-head" style={{ marginTop: 0 }}>
+											{/* v1.8.0 Smart Recolor 0 ms */}
+											<div className="recolor-bar">
+												<span className="field-title">{t.recolorTitle}</span>
+												<div className="seg seg4" role="group" aria-label={t.recolorTitle}>
+													{(
+														[
+															["original", t.recolorOriginal],
+															["monoBlack", t.recolorBlack],
+															["monoWhite", t.recolorWhite],
+															["duotone", t.recolorDuotone],
+														] as Array<[RecolorMode, string]>
+													).map(([mode, label]) => (
+														<button
+															key={mode}
+															aria-pressed={recolorSpec.mode === mode}
+															onClick={() => setRecolorSpec(prev => ({ ...prev, mode }))}
+														>
+															{label}
+														</button>
+													))}
+												</div>
+												{recolorSpec.mode === "duotone" && (
+													<div className="duotone-pickers">
+														<input
+															type="color"
+															value={recolorSpec.primary || "#111827"}
+															onChange={e => setRecolorSpec(prev => ({ ...prev, primary: e.target.value }))}
+															aria-label="Duotone primary"
+														/>
+														<input
+															type="color"
+															value={recolorSpec.secondary || "#6D8CFF"}
+															onChange={e => setRecolorSpec(prev => ({ ...prev, secondary: e.target.value }))}
+															aria-label="Duotone secondary"
+														/>
+													</div>
+												)}
+											</div>
+
+											<div className="palette-head" style={{ marginTop: 4 }}>
 												<span className="field-title">{t.paletteTitle}</span>
 												<div className="row">
 													{hiddenLayers.size > 0 && (
@@ -2462,8 +2634,8 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 																<button
 																	className="small icon-btn"
 																	aria-pressed={isHidden}
-																	onClick={() => toggleLayer(c)}
-																	title={isHidden ? t.toggleLayerShow : t.toggleLayerHide}
+																	onClick={e => (e.altKey ? soloLayer(c) : toggleLayer(c))}
+																	title={`${isHidden ? t.toggleLayerShow : t.toggleLayerHide} (Alt+Klik: ${t.soloBtn})`}
 																	aria-label={`${isHidden ? t.toggleLayerShow : t.toggleLayerHide} ${c}`}
 																>
 																	<EyeIcon hidden={isHidden} />
@@ -2482,6 +2654,14 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 																<code>{c}</code>
 																{isOut && <span className="gamut-warn" title={t.outOfGamutTip} aria-label={t.outOfGamutTip}>⚠</span>}
 																{spot && <span className="spot-pill" title={`${t.spotBadgePrefix} ${spot}`}>{spot}</span>}
+																<button
+																	className="small"
+																	onClick={() => soloLayer(c)}
+																	title={t.soloTip}
+																	aria-label={`${t.soloBtn} ${c}`}
+																>
+																	{t.soloBtn}
+																</button>
 																<button
 																	className="small"
 																	aria-expanded={mergeSource === c}
@@ -2660,6 +2840,36 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										</div>
 									) : (
 										<>
+											{/* v1.8.0 Pre-Flight Vector Audit */}
+											{auditReport && (
+												<div className={`audit-box ${auditReport.ok ? "audit-ok" : "audit-warn"}`}>
+													<div className="audit-head">
+														<span className="field-title">{t.auditTitle}</span>
+														{auditReport.ok ? (
+															<span className="audit-pill-ok">✓ {t.auditReady}</span>
+														) : (
+															<button
+																className="small primary"
+																disabled={auditFixing}
+																onClick={() => void doAutoFixAudit()}
+															>
+																{t.auditAutoFixBtn}
+															</button>
+														)}
+													</div>
+													{!auditReport.ok && (
+														<ul className="audit-list">
+															{auditReport.issues.map(iss => (
+																<li key={iss.code}>
+																	<span className="audit-dot" />
+																	<span>{iss.detail}</span>
+																</li>
+															))}
+														</ul>
+													)}
+												</div>
+											)}
+
 											<div className="field-block">
 												<label className="field-label" style={{ marginTop: 0 }}>
 													<span className="label-with-tip">{t.colorSpaceLabel} <TipDot text={t.colorSpaceHintCmyk} /></span>
@@ -2819,6 +3029,10 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 												<button onClick={() => void exportAs("ase")}>{t.exportAse}{exp.colorSpace === "cmyk" ? " (CMYK)" : ""}</button>
 											</div>
 
+											<button className="primary brand-kit-btn" onClick={() => void doExportBrandKit()}>
+												{t.exportBrandKitBtn}
+											</button>
+
 											{opts.productionMode === "screenPrint" && (
 												<div className="sep-box" style={{ marginTop: 4 }}>
 													<label className="check" style={{ marginTop: 0 }}><input type="checkbox" checked={sepPdf} onChange={e => setSepPdf(e.target.checked)} /> {t.includeSepPdf}</label>
@@ -2875,6 +3089,40 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 						</div>
 					</aside>
 				</main>
+			)}
+
+			{mockupOpen && recoloredBaseSvg && (
+				<MockupModal
+					svg={recoloredBaseSvg}
+					baseName={(path ? path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") : "trasea") || "trasea"}
+					t={t}
+					onClose={() => setMockupOpen(false)}
+					onSaved={savedPath => setInfo(`${t.savedLabel} ${savedPath}`)}
+				/>
+			)}
+
+			{compareOpen && (
+				<CompareEngineModal
+					offline={offlineSnap}
+					ai={aiSnap}
+					activeSource={activeVectorSource}
+					busy={busy}
+					t={t}
+					onRunOffline={() => {
+						if (path) {
+							setCompareOpen(false);
+							void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }, "local");
+						}
+					}}
+					onRunAi={() => {
+						if (path) {
+							setCompareOpen(false);
+							void run(path, { ...opts, customPalette: palette, paletteMerges, targetNodes, brushStrokes: strokes, pathEdits, nodeEdits }, traceEngine === "local" ? "cli" : traceEngine);
+						}
+					}}
+					onPick={src => void doSwitchEngineSource(src)}
+					onClose={() => setCompareOpen(false)}
+				/>
 			)}
 
 			{cropOpen && path && (

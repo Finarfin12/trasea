@@ -532,3 +532,403 @@ button.danger { background: var(--danger-bg); border-color: var(--danger-border)
 		transform: none;
 	}
 }
+
+
+/* ================= v1.8.0: Smart Recolor, Pre-Flight Audit, Brand Kit, Mockup & Compare ================= */
+.tb-pill-btn {
+	font-weight: 500;
+	padding: 4px 10px !important;
+	white-space: nowrap;
+}
+
+.recolor-bar {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--border);
+}
+
+.seg4 {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 4px;
+}
+
+.duotone-pickers {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.duotone-pickers input[type="color"] {
+	width: 38px;
+	height: 28px;
+	padding: 2px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: var(--bg2);
+	cursor: pointer;
+}
+
+.audit-box {
+	border-radius: 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	background: var(--bg2);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.audit-box.audit-ok {
+	border-color: rgba(34, 197, 94, 0.35);
+	background: rgba(34, 197, 94, 0.08);
+}
+
+.audit-box.audit-warn {
+	border-color: rgba(242, 183, 5, 0.42);
+	background: rgba(242, 183, 5, 0.08);
+}
+
+.audit-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.audit-pill-ok {
+	font-size: 12px;
+	font-weight: 600;
+	color: #22c55e;
+}
+
+.audit-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--fg);
+}
+
+.audit-list li {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.audit-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: #f2b705;
+	flex-shrink: 0;
+}
+
+.brand-kit-btn {
+	width: 100%;
+	margin-top: 2px;
+}
+
+/* Mockup & Compare Modals — Centered Fixed Overlay */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 1200;
+	background: rgba(6, 8, 13, 0.76);
+	backdrop-filter: blur(6px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+}
+
+.modal-card {
+	background: var(--bg1, #14161a);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	padding: 20px 22px;
+	box-shadow: 0 32px 80px rgba(0, 0, 0, 0.72);
+	color: var(--fg);
+}
+
+.modal-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--border);
+}
+
+.modal-head h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.modal-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-top: 10px;
+	border-top: 1px solid var(--border);
+}
+
+.modal-card button.primary {
+	width: auto;
+	padding: 7px 14px;
+}
+
+.seg-group {
+	display: inline-flex;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.seg-group button {
+	border: none;
+	border-radius: 0;
+	padding: 6px 12px;
+}
+
+.seg-group button.active {
+	background: var(--accent);
+	color: #fff;
+}
+
+/* Mockup Modal */
+.mockup-modal {
+	width: min(920px, 92vw);
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.mockup-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.mockup-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.mockup-bar-right {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.mockup-scale {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.mockup-stage {
+	position: relative;
+	height: 440px;
+	border-radius: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	border: 1px solid var(--border);
+}
+
+.mockup-stage.surface-dark {
+	background: radial-gradient(circle at 50% 45%, #232938 0%, #10131a 78%);
+}
+
+.mockup-stage.surface-light {
+	background: radial-gradient(circle at 50% 45%, #ffffff 0%, #dde4f0 80%);
+}
+
+.mockup-object {
+	position: relative;
+	width: 560px;
+	height: 420px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.mockup-shell-svg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.35));
+}
+
+.mockup-sticker-base {
+	position: absolute;
+	width: 280px;
+	height: 280px;
+	border-radius: 46px;
+	background: #ffffff;
+	border: 2px dashed rgba(236, 0, 140, 0.4);
+	box-shadow: 0 20px 44px rgba(0, 0, 0, 0.35);
+}
+
+.mockup-card-base {
+	position: absolute;
+	width: 390px;
+	height: 235px;
+	border-radius: 16px;
+	box-shadow: 0 22px 48px rgba(0, 0, 0, 0.38);
+}
+
+.mockup-card-base.dark {
+	background: #181c24;
+	border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.mockup-card-base.light {
+	background: #ffffff;
+	border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.mockup-icon-base {
+	position: absolute;
+	width: 240px;
+	height: 240px;
+	border-radius: 56px;
+	box-shadow: 0 24px 52px rgba(0, 0, 0, 0.42);
+}
+
+.mockup-icon-base.dark {
+	background: #161a24;
+	border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.mockup-icon-base.light {
+	background: #ffffff;
+	border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.mockup-art-slot {
+	position: relative;
+	z-index: 2;
+	width: 185px;
+	height: 185px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: transform 0.08s ease-out;
+}
+
+.mockup-art-slot.slot-tote {
+	margin-top: 66px;
+}
+
+.mockup-art-slot img {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+
+/* Compare Engines Modal */
+.compare-modal {
+	width: min(980px, 94vw);
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.compare-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 14px;
+}
+
+.compare-col {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--bg2);
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.compare-col.is-active {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 1px rgba(109, 140, 255, 0.35);
+}
+
+.compare-col-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.compare-badge {
+	font-size: 12px;
+	font-weight: 700;
+	padding: 3px 9px;
+	border-radius: 999px;
+	background: rgba(109, 140, 255, 0.18);
+	color: var(--accent);
+}
+
+.compare-badge.ai {
+	background: rgba(0, 149, 217, 0.18);
+	color: #38bdf8;
+}
+
+.compare-metrics {
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.compare-preview {
+	height: 320px;
+	border-radius: 10px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	padding: 12px;
+}
+
+.compare-preview img {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+
+.compare-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.compare-col-foot {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.tabular {
+	font-variant-numeric: tabular-nums;
+}

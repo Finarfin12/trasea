@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0] "Studio Production, Brand Kit & Visual Audit"
+
+- **Pre-Flight Vector Audit & Auto Fix (`crates/trasea-core/src/audit.rs`, `src-tauri/src/main.rs`, `src/App.tsx`).** Added `audit_doc` and `auto_fix_doc` detecting strokes `< 0.5 pt`, high node counts (`> 3,000`), near-duplicate colors (`ΔE < 10`), and micro-path dust (`< 4 px²`), surfaced in the Export tab with 1-click **Auto fix** (`audit_active_vector` / `auto_fix_active_vector`).
+- **Smart Recolor (0 ms), Solo Color & 1-Click Brand Kit ZIP (`crates/trasea-core/src/brand_kit.rs`, `src/recolor.ts`, `src/App.tsx`).** Added instant non-destructive color variants (**Original**, **Black**, **White**, **Duotone** with custom pickers) that preserve `CutContour` (`#EC008C`) and `Registrasi` layers, per-color **Solo** isolation (`Alt+Click` eye icon), and 1-click **Export Brand Kit (.zip)** packing `color.svg`, `black.svg`, `white.svg`, `cutcontour.pdf`, and `palette.ase` (`export_brand_kit_zip`).
+- **Live Product Mockup Preview (`src/MockupModal.tsx`, `src-tauri/src/main.rs`).** Added 5 studio presets (**T-Shirt**, **Die-Cut Sticker**, **Tote Bag**, **Business Card**, **App Icon**), **Light / Dark** surface toggle, scale slider (`30%–100%`), and high-resolution `1600×1200` **Save PNG** (`save_mockup_png`).
+- **Side-by-Side Engine Comparison & Universal Copy SVG (`src/CompareEngineModal.tsx`, `src-tauri/src/main.rs`).** Added **Compare engines** (Offline vs AI side-by-side with `paths · nodes · KB` metrics and 0 ms source switching via `set_active_vector_source`), and upgraded `copy_svg_to_clipboard` (`Ctrl+Shift+C`) to support both Offline and AI Import results with active Smart Recolor applied.
+- **Documentation & Tests (`tests/core16.rs`, `docs/screenshots/*.png`, `README.md`, `README.id.md`).** Added 4 new integration tests (`t01..t04`, `122/122` workspace tests pass) and refreshed all 15 README screenshots using Trasea v1.8.0.
+
 ## [1.7.4] "Studio UI, Copywriting & Artboard Polish"
 
 - **Consistent copywriting & Indonesian register (`src/i18n/{id,en}.ts`, `src-tauri/src/ai_engine.rs`).** Unified header and welcome action labels (`Tempel gambar` / `Paste image`, `Batch folder`, `Preset kustom` / `Custom presets`), removed all formal `"Anda"` pronouns from Indonesian strings, and ensured zero `"dipboard"` typos across the codebase.

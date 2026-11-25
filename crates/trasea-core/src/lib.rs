@@ -5,7 +5,9 @@
 //! -> palette lock (Shading 12-32 Lab bands, or pure Centerline strokes) -> layer tracing (visioncortex)
 //! -> thin lines stacked on top -> non-destructive path edits -> optional Die-Cut Contour
 //! -> tidy + export (SVG, PDF w/ Named Spot Colors, EPS w/ CustomColors, DXF R12, ASE Spot; RGB or CMYK).
+pub mod audit;
 pub mod batch;
+pub mod brand_kit;
 pub mod brush;
 pub mod centerline;
 pub mod clean;
@@ -32,6 +34,10 @@ pub mod text_detect;
 pub mod trace;
 pub mod watch;
 
+pub use audit::{audit_doc, auto_fix_doc, AuditIssue, AuditReport};
+pub use brand_kit::{
+    build_brand_kit_zip, build_brand_kit_zip_from_svg, recolor_svg, RecolorMode,
+};
 pub use brush::{BrushKind, BrushStroke};
 pub use color::{
     is_out_of_cmyk_gamut, rgb_to_cmyk, rgb_to_soft_proof_rgb, sanitize_spot_name, ColorSpace,

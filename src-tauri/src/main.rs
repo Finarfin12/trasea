@@ -12,7 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
+use trasea_core::audit::{audit_doc, auto_fix_doc, AuditReport};
 use trasea_core::batch::{is_supported_image, run_batch as core_run_batch, scan_image_files, BatchConfig, BatchSummary};
+use trasea_core::brand_kit::{
+    build_brand_kit_zip, build_brand_kit_zip_from_svg, recolor_svg, RecolorMode,
+};
 use trasea_core::clean::plain_path;
 use trasea_core::color::{is_out_of_cmyk_gamut, rgb_to_soft_proof_rgb, ColorSpace, SpotColorMapping};
 use trasea_core::dxf::DxfUnit;
@@ -52,11 +56,56 @@ struct CachedAiImport {
     import: trasea_core::svg_import::SvgImport,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ActiveVectorSource {
+    #[default]
+    Offline,
+    Ai,
+}
+
 #[derive(Default)]
 struct Last {
     doc: Mutex<Option<Doc>>,
+    offline_doc: Mutex<Option<Doc>>,
+    ai_doc: Mutex<Option<Doc>>,
+    active_source: Mutex<ActiveVectorSource>,
     prepared: Mutex<Option<CachedPrep>>,
     ai_import: Mutex<Option<CachedAiImport>>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct RecolorSpec {
+    #[serde(default)]
+    mode: RecolorMode,
+    #[serde(default)]
+    primary: Option<String>,
+    #[serde(default)]
+    secondary: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoFixResult {
+    fixes: usize,
+    svg: String,
+    paths: usize,
+    nodes: usize,
+    bytes: usize,
+    palette: Vec<String>,
+    report: AuditReport,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SwitchSourceResult {
+    source: String,
+    svg: String,
+    paths: usize,
+    nodes: usize,
+    bytes: usize,
+    palette: Vec<String>,
+    report: AuditReport,
 }
 
 struct BatchControl {
@@ -672,10 +721,18 @@ async fn process(app: AppHandle, last: State<'_, Last>, path: String, params: Ui
     })
     .await
     .map_err(|e| format!("the conversion stopped unexpectedly: {e}"))??;
-    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
-    *last.ai_import.lock().map_err(|_| "internal error".to_string())? = None;
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1.clone());
+    *last.offline_doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.active_source.lock().map_err(|_| "internal error".to_string())? = ActiveVectorSource::Offline;
     if let Some(entry) = result.2 {
+        let new_path = entry.path.clone();
         *last.prepared.lock().map_err(|_| "internal error".to_string())? = Some(entry);
+        // Keep ai_import only if it belongs to the same source image (for side-by-side compare).
+        let mut ai_guard = last.ai_import.lock().map_err(|_| "internal error".to_string())?;
+        if ai_guard.as_ref().map(|a| a.source_path != new_path).unwrap_or(false) {
+            *ai_guard = None;
+            *last.ai_doc.lock().map_err(|_| "internal error".to_string())? = None;
+        }
     }
     Ok(result.0)
 }
@@ -886,21 +943,214 @@ fn paste_clipboard_image(app: AppHandle) -> Result<String, String> {
     Ok(plain_path(&dest).to_string_lossy().to_string())
 }
 
-/// Copy clean SVG markup of the last vectorized document to the system clipboard (open, no Pro key).
+/// Copy clean SVG markup of the active vectorized document (Offline or AI) to the system clipboard,
+/// with optional non-destructive Smart Recolor applied.
 #[tauri::command]
-fn copy_svg_to_clipboard(last: State<'_, Last>, options: UiExport) -> Result<usize, String> {
+fn copy_svg_to_clipboard(
+    last: State<'_, Last>,
+    options: UiExport,
+    recolor: Option<RecolorSpec>,
+) -> Result<usize, String> {
+    let opts = to_core_export(&options);
+    let doc_opt = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .or_else(|| {
+            last.ai_import
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.import.doc.clone()))
+        });
+    let doc = doc_opt.ok_or("Belum ada hasil vektor untuk disalin. Konversi gambar dulu.")?;
+    let mut svg = to_svg(&doc, &opts);
+    if let Some(rc) = recolor {
+        svg = recolor_svg(&svg, rc.mode, rc.primary.as_deref(), rc.secondary.as_deref());
+    }
+    let len = svg.len();
+    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Gagal mengakses clipboard sistem: {e}"))?;
+    cb.set_text(svg)
+        .map_err(|e| format!("Gagal menyalin SVG ke clipboard: {e}"))?;
+    Ok(len)
+}
+
+fn dedup_palette_hex(doc: &Doc) -> Vec<String> {
+    let mut out = Vec::new();
+    for c in palette_of(doc) {
+        let h = hex(c);
+        if !out.contains(&h) {
+            out.push(h);
+        }
+    }
+    out
+}
+
+/// Run pre-flight production audit on the active vector document (Offline or AI).
+#[tauri::command]
+fn audit_active_vector(last: State<'_, Last>) -> Result<AuditReport, String> {
     let doc = last
         .doc
         .lock()
         .map_err(|_| "internal error".to_string())?
         .clone()
-        .ok_or("Belum ada hasil vektor untuk disalin. Konversi gambar dulu.")?;
+        .or_else(|| {
+            last.ai_import
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.import.doc.clone()))
+        })
+        .ok_or("Belum ada hasil vektor untuk diaudit.")?;
+    Ok(audit_doc(&doc))
+}
+
+/// Apply safe automatic pre-flight fixes to the active vector document and return updated SVG + AuditReport.
+#[tauri::command]
+fn auto_fix_active_vector(
+    last: State<'_, Last>,
+    options: UiExport,
+) -> Result<AutoFixResult, String> {
+    let mut doc = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone()
+        .ok_or("Belum ada hasil vektor untuk diperbaiki.")?;
+    let fixes = auto_fix_doc(&mut doc);
     let opts = to_core_export(&options);
     let svg = to_svg(&doc, &opts);
-    let len = svg.len();
-    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Gagal mengakses clipboard sistem: {e}"))?;
-    cb.set_text(svg)
-        .map_err(|e| format!("Gagal menyalin SVG ke clipboard: {e}"))?;
+    let report = audit_doc(&doc);
+    let palette = dedup_palette_hex(&doc);
+    let bytes = svg.len();
+    let paths = report.total_paths;
+    let nodes = report.total_nodes;
+
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(doc.clone());
+    let src = *last.active_source.lock().map_err(|_| "internal error".to_string())?;
+    match src {
+        ActiveVectorSource::Offline => {
+            *last.offline_doc.lock().map_err(|_| "internal error".to_string())? = Some(doc);
+        }
+        ActiveVectorSource::Ai => {
+            *last.ai_doc.lock().map_err(|_| "internal error".to_string())? = Some(doc);
+        }
+    }
+
+    Ok(AutoFixResult {
+        fixes,
+        svg,
+        paths,
+        nodes,
+        bytes,
+        palette,
+        report,
+    })
+}
+
+/// Export a 1-click Brand Kit ZIP archive (color/black/white SVG + CutContour PDF + ASE palette).
+#[tauri::command]
+fn export_brand_kit_zip(
+    last: State<'_, Last>,
+    path: String,
+    base_name: String,
+    options: UiExport,
+) -> Result<usize, String> {
+    let opts = to_core_export(&options);
+    let doc_opt = last
+        .doc
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .clone();
+    let (zip_bytes, count) = if let Some(doc) = doc_opt {
+        let bytes = build_brand_kit_zip(&doc, &base_name, &opts).map_err(|e| e.to_string())?;
+        (bytes, 5usize)
+    } else if let Some(ai) = last
+        .ai_import
+        .lock()
+        .map_err(|_| "internal error".to_string())?
+        .as_ref()
+    {
+        let svg = to_svg(&ai.import.doc, &opts);
+        let bytes = build_brand_kit_zip_from_svg(&svg, &base_name).map_err(|e| e.to_string())?;
+        (bytes, 4usize)
+    } else {
+        return Err("Belum ada hasil vektor untuk diekspor sebagai Brand Kit.".into());
+    };
+    std::fs::write(&path, zip_bytes).map_err(|e| format!("Gagal menulis {path}: {e}"))?;
+    Ok(count)
+}
+
+/// Switch active vector source between "offline" and "ai" in 0 ms without re-tracing.
+#[tauri::command]
+fn set_active_vector_source(
+    last: State<'_, Last>,
+    source: String,
+    options: UiExport,
+) -> Result<SwitchSourceResult, String> {
+    let target = match source.to_ascii_lowercase().as_str() {
+        "offline" => ActiveVectorSource::Offline,
+        "ai" => ActiveVectorSource::Ai,
+        _ => return Err(format!("Sumber vektor tidak dikenal: {source}")),
+    };
+    let doc = match target {
+        ActiveVectorSource::Offline => last
+            .offline_doc
+            .lock()
+            .map_err(|_| "internal error".to_string())?
+            .clone()
+            .ok_or("Hasil Offline belum tersedia untuk gambar ini.")?,
+        ActiveVectorSource::Ai => last
+            .ai_doc
+            .lock()
+            .map_err(|_| "internal error".to_string())?
+            .clone()
+            .or_else(|| {
+                last.ai_import
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().map(|c| c.import.doc.clone()))
+            })
+            .ok_or("Hasil AI belum tersedia untuk gambar ini.")?,
+    };
+    let opts = to_core_export(&options);
+    let svg = to_svg(&doc, &opts);
+    let report = audit_doc(&doc);
+    let palette = dedup_palette_hex(&doc);
+    let bytes = svg.len();
+    let paths = report.total_paths;
+    let nodes = report.total_nodes;
+
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(doc);
+    *last.active_source.lock().map_err(|_| "internal error".to_string())? = target;
+
+    Ok(SwitchSourceResult {
+        source: if target == ActiveVectorSource::Ai {
+            "ai".into()
+        } else {
+            "offline".into()
+        },
+        svg,
+        paths,
+        nodes,
+        bytes,
+        palette,
+        report,
+    })
+}
+
+/// Save a high-resolution rendered mockup PNG (base64 data URL or raw base64) to disk.
+#[tauri::command]
+fn save_mockup_png(path: String, png_base64: String) -> Result<usize, String> {
+    let raw_b64 = png_base64
+        .split_once(',')
+        .map(|(_, b)| b)
+        .unwrap_or(&png_base64)
+        .trim();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw_b64)
+        .map_err(|e| format!("Data PNG mockup tidak valid: {e}"))?;
+    let len = bytes.len();
+    std::fs::write(&path, bytes).map_err(|e| format!("Gagal menulis {path}: {e}"))?;
     Ok(len)
 }
 
@@ -1431,8 +1681,9 @@ async fn vectorize_with_ai(
     .await
     .map_err(|e| format!("Proses AI terhenti tak terduga: {e}"))??;
 
-    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
-    *last.prepared.lock().map_err(|_| "internal error".to_string())? = None;
+    *last.doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1.clone());
+    *last.ai_doc.lock().map_err(|_| "internal error".to_string())? = Some(result.1);
+    *last.active_source.lock().map_err(|_| "internal error".to_string())? = ActiveVectorSource::Ai;
     *last.ai_import.lock().map_err(|_| "internal error".to_string())? = Some(result.2);
     Ok(result.0)
 }
@@ -1547,6 +1798,11 @@ fn main() {
             export_dxf,
             paste_clipboard_image,
             copy_svg_to_clipboard,
+            audit_active_vector,
+            auto_fix_active_vector,
+            export_brand_kit_zip,
+            set_active_vector_source,
+            save_mockup_png,
             save_separations,
             get_app_settings,
             save_app_settings,

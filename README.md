@@ -4,11 +4,19 @@
 
 *Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.7.4 ("Studio UI, Copywriting & Artboard Polish")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.0 ("Studio Production, Brand Kit & Visual Audit")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
-![Trasea 1.3.0 — Node Tool: anchors and Bézier handles on the canvas](docs/screenshots/app_node_edit.png)
+![Trasea 1.8.0 — Studio Editor: artboard dot-grid, node tools, and floating zoom bar](docs/screenshots/app_node_edit.png)
+
+| Live Product Mockup Preview (5 Presets + High-Res PNG) | Smart Recolor (0 ms) & Solo Color Isolation |
+| :---: | :---: |
+| ![Live Product Mockup Preview](docs/screenshots/app_mockup_preview.png) | ![Smart Recolor Duotone and Solo Color](docs/screenshots/app_brand_kit_recolor.png) |
+
+| Side-by-Side Engine Comparison (Offline vs AI) | Pre-Flight Vector Audit & 1-Click Brand Kit ZIP |
+| :---: | :---: |
+| ![Compare Offline vs AI Engines](docs/screenshots/app_compare_engines.png) | ![Pre-Flight Vector Audit and Brand Kit ZIP](docs/screenshots/app_preflight_audit.png) |
 
 | Node Inspect (square = Corner, circle = Smooth) | Simplify Path |
 | :---: | :---: |
@@ -22,9 +30,9 @@ A **local-first & private desktop vectorization app** that turns flat illustrati
 | :---: | :---: |
 | ![Centerline single-line vector mode](docs/screenshots/app_centerline.png) | ![Interactive Select Path bar and non-destructive editing](docs/screenshots/app_path_edit.png) |
 
-| CMYK Soft-Proof, Colour Code Inspector & Named Spot Ink | Unified 5-Tab App Settings & Privacy/Credits |
+| CMYK Soft-Proof, Colour Code Inspector & Named Spot Ink | Unified App Settings & Privacy/Credits |
 | :---: | :---: |
-| ![CMYK Soft-Proof and Colour Inspector popover](docs/screenshots/app_softproof_spot.png) | ![App Settings modal with 5 tabs](docs/screenshots/app_settings.png) |
+| ![CMYK Soft-Proof and Colour Inspector popover](docs/screenshots/app_softproof_spot.png) | ![App Settings modal](docs/screenshots/app_settings.png) |
 
 | Outline / Wireframe (Ctrl+Y) & Layer Toggles | Automatic Watch Folder & Live Processing Log |
 | :---: | :---: |
@@ -47,6 +55,14 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.8.0 ("Studio Production, Brand Kit & Visual Audit")
+
+- **Live Product Mockup Preview.** Preview active Offline or AI vectors directly on 5 studio presets (**T-Shirt**, **Die-Cut Sticker**, **Tote Bag**, **Business Card**, and **App Icon**) with **Light / Dark** surfaces, live scale control (`30%–100%`), and 1-click high-resolution **Save PNG** (`1600×1200 px`).
+- **Smart Recolor (0 ms) & 1-Click Brand Kit ZIP.** Instantly switch non-destructive color variants (**Original**, **Black**, **White**, **Duotone** with custom pickers) while keeping `CutContour` (`#EC008C`) and `Registrasi` intact, isolate any single color plate via **Solo** (`Alt+Click` eye icon), and export a complete 5-file **Brand Kit (.zip)** (`color.svg`, `black.svg`, `white.svg`, `cutcontour.pdf`, `palette.ase`).
+- **Side-by-Side Engine Comparison (Offline vs AI).** Compare Offline GPU and local AI CLI vector results side-by-side with live `paths · nodes · KB` metrics and switch the active vector source in 0 ms without re-tracing.
+- **Pre-Flight Vector Audit & Auto Fix.** Automatically detects thin strokes (`< 0.5 pt`), high node counts (`> 3,000`), near-duplicate colors (`ΔE < 10`), and micro-path dust (`< 4 px²`) right inside the Export tab with 1-click **Auto fix** (`audit_doc` / `auto_fix_doc`).
+- **Universal Copy SVG (`Ctrl+Shift+C`).** Works seamlessly across both Offline and AI Import results with active Smart Recolor applied.
 
 ### New in 1.7.4
 

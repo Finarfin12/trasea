@@ -4,11 +4,19 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.7.4 ("Polesan UI Studio, Copywriting & Artboard")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer Anda tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.8.0 ("Studio Production, Brand Kit & Visual Audit")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
-![Trasea 1.3.0 — Alat Node: titik jangkar dan handle Bézier di kanvas](docs/screenshots/app_node_edit.png)
+![Trasea 1.8.0 — Editor Studio: dot-grid artboard, alat node, dan bilah zoom mengambang](docs/screenshots/app_node_edit.png)
+
+| Pratinjau Mockup Produk Instan (5 Preset + PNG Resolusi Tinggi) | Smart Recolor (0 ms) & Isolasi Solo Warna |
+| :---: | :---: |
+| ![Pratinjau Mockup Produk](docs/screenshots/app_mockup_preview.png) | ![Smart Recolor Duotone dan Solo Warna](docs/screenshots/app_brand_kit_recolor.png) |
+
+| Bandingkan Mesin Berdampingan (Offline vs AI) | Audit Vektor Pra-Cetak & Brand Kit ZIP 1-Klik |
+| :---: | :---: |
+| ![Bandingkan Mesin Offline vs AI](docs/screenshots/app_compare_engines.png) | ![Audit Vektor dan Ekspor Brand Kit ZIP](docs/screenshots/app_preflight_audit.png) |
 
 | Inspeksi Node (kotak = Corner, lingkaran = Smooth) | Simplify Path |
 | :---: | :---: |
@@ -22,9 +30,9 @@
 | :---: | :---: |
 | ![Mode vektor garis tengah tunggal](docs/screenshots/app_centerline.png) | ![Bilah Pilih Path interaktif dan edit non-destruktif](docs/screenshots/app_path_edit.png) |
 
-| Soft-Proof CMYK, Inspektor Kode Warna & Tinta Spot | Pengaturan Aplikasi 5 Tab & Privasi/Kredit |
+| Soft-Proof CMYK, Inspektor Kode Warna & Tinta Spot | Pengaturan Aplikasi & Privasi/Kredit |
 | :---: | :---: |
-| ![Soft-Proof CMYK dan popover Inspektor Warna](docs/screenshots/app_softproof_spot.png) | ![Modal Pengaturan Aplikasi 5 tab](docs/screenshots/app_settings.png) |
+| ![Soft-Proof CMYK dan popover Inspektor Warna](docs/screenshots/app_softproof_spot.png) | ![Modal Pengaturan Aplikasi](docs/screenshots/app_settings.png) |
 
 | Pratinjau Outline (Ctrl+Y) & Toggle Layer | Pantau Folder Otomatis & Log Langsung |
 | :---: | :---: |
@@ -47,6 +55,14 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.8.0 ("Studio Production, Brand Kit & Visual Audit")
+
+- **Pratinjau Mockup Produk Instan.** Lihat hasil vektor Offline maupun AI langsung pada 5 preset produk (**Kaos**, **Stiker Die-Cut**, **Tote Bag**, **Kartu Nama**, dan **Ikon Aplikasi**) dengan permukaan **Terang / Gelap**, slider ukuran (`30%–100%`), dan tombol **Simpan PNG** resolusi tinggi (`1600×1200 px`).
+- **Smart Recolor (0 ms) & Ekspor Brand Kit (.zip) 1-Klik.** Ganti variasi warna non-destruktif (**Asli**, **Hitam**, **Putih**, **Duotone** dengan pemilih warna) tanpa mengubah layer `CutContour` (`#EC008C`) dan `Registrasi`, isolasi 1 pelat warna lewat tombol **Solo** (`Alt+Klik` ikon mata), serta ekspor 1 arsip **Brand Kit (.zip)** berisi `color.svg`, `black.svg`, `white.svg`, `cutcontour.pdf`, dan `palette.ase`.
+- **Bandingkan Mesin Berdampingan (Offline vs AI).** Bandingkan hasil Offline GPU dan CLI AI lokal secara langsung lengkap dengan metrik `path · node · KB`, lalu pilih sumber vektor aktif dalam 0 ms tanpa trace ulang.
+- **Audit Vektor Pra-Cetak & Perbaiki Otomatis.** Deteksi otomatis garis tipis (`< 0,5 pt`), node padat (`> 3.000`), warna mirip (`ΔE < 10`), dan path debu mikro (`< 4 px²`) langsung di tab Ekspor lengkap dengan tombol **Perbaiki otomatis**.
+- **Salin SVG Universal (`Ctrl+Shift+C`).** Mendukung hasil Offline maupun AI Import sekaligus menerapkan variasi Smart Recolor yang sedang aktif.
 
 ### Baru di 1.7.4
 
