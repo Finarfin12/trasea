@@ -77,7 +77,7 @@ Format keluaran yang didukung:
 
 - **Artboard Studio & Bilah Zoom Mengambang.** Menambahkan latar *dot-grid* 20 px halus serta bayangan elevasi *artboard* di tema gelap maupun terang, dilengkapi bilah zoom mengambang di kanan bawah kanvas (`25%`–`400%`, `−` / reset `%` / `+` / `Pas`).
 - **Layar Selamat Datang & Terakhir Dibuka.** Dropzone kini terpusat dengan logo Trasea v2, kontras teks bantu lebih jelas, *format pills* (`PNG`, `JPG`, `WebP`, `SVG`, `.trasea`), serta daftar **Terakhir dibuka** lokal (hingga 4 berkas gambar atau proyek `.trasea`).
-- **Konsistensi Copywriting & Inspektor Rapi.** Menyeragamkan label aksi header dan layar awal (`Tempel gambar`, `Batch folder`, `Preset kustom`), menghilangkan sapaan formal *"Anda"*, menyeragamkan tombol berbingkai di header, merapatkan seluruh ikon `?` tepat di sebelah labelnya, menambah pemisah grup inspektor, dan mengaktifkan `tabular-nums` pada angka slider.
+- **Konsistensi Copywriting & Inspektor Rapi.** Menyeragamkan label aksi header dan layar awal (`Tempel gambar`, `Batch folder`, `Preset kustom`), menghilangkan sapaan formal di antarmuka, menyeragamkan tombol berbingkai di header, merapatkan seluruh ikon `?` tepat di sebelah labelnya, menambah pemisah grup inspektor, dan mengaktifkan `tabular-nums` pada angka slider.
 
 ### Baru di 1.7.3
 
@@ -207,7 +207,7 @@ Baca [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) sebelum distribusi komer
 
 ## Pemrosesan Lokal, Privasi, & Kredit
 
-Seluruh pembersihan gambar, vektorisasi, dan ekspor berjalan langsung di komputer Anda tanpa mengunggah desain ke cloud, dan Trasea tetap bekerja tanpa koneksi internet. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Seluruh pembersihan gambar, vektorisasi, dan ekspor berjalan langsung di komputer tanpa mengunggah desain ke cloud, dan Trasea tetap bekerja tanpa koneksi internet. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Lisensi
 
