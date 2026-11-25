@@ -4,7 +4,7 @@
 
 *English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.8.0 ("Studio Production, Brand Kit & Visual Audit")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.8.1 ("Mockup Studio Fotorealistis")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -55,6 +55,11 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.8.1 ("Mockup Studio Fotorealistis")
+
+- **Pratinjau Mockup Studio Fotorealistis.** Meng-upgrade seluruh 5 preset di **Pratinjau Mockup** memakai foto studio lokal bebas lisensi (`tshirt-light`, `tshirt-dark`, `totebag-light`, `card-light`, `card-dark`, `sticker-surface`), *blending* tinta alami (`multiply`) di bahan terang agar lipatan kain/kertas menyatu nyata, overlay tekstur lembut di bahan gelap, pinggiran vinil putih tebal + kilau *glossy* diagonal pada Stiker Die-Cut, serta ubin *squircle* macOS/iOS berbayangan 3 lapis untuk Ikon Aplikasi.
+- **Seret Posisi Interaktif & Ekspor PNG 1600×1200 Identik.** Seret posisi vektor langsung di kanvas mockup 4:3, atur slider ukuran (`30%–100%`), klik **Reset posisi**, dan simpan PNG resolusi tinggi (`1600×1200 px`) yang identik dengan pratinjau fotorealistis.
 
 ### Baru di 1.8.0 ("Studio Production, Brand Kit & Visual Audit")
 

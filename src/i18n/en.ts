@@ -529,6 +529,8 @@ export const en: Record<keyof Dict, string> = {
 	mockupLight: "Light",
 	mockupDark: "Dark",
 	mockupScaleLabel: "Scale",
+	mockupResetPos: "Reset position",
+	mockupDragHint: "Drag to reposition",
 	mockupSavePng: "Save PNG",
 	savingLabel: "Saving…",
 	recolorTitle: "Color variants",
