@@ -170,6 +170,8 @@ struct UiParams {
     #[serde(default)]
     custom_palette: Option<Vec<String>>,
     #[serde(default)]
+    brand_palette_locked: bool,
+    #[serde(default)]
     palette_merges: Vec<(String, String)>,
     #[serde(default)]
     target_nodes: Option<usize>,
@@ -578,6 +580,7 @@ fn to_core_params(params: &UiParams, sidecar: Option<PathBuf>) -> Params {
         symmetry: SymmetryMode::parse(&params.symmetry).unwrap_or(SymmetryMode::Off),
         detect_text: params.detect_text,
         custom_palette,
+        brand_palette_locked: params.brand_palette_locked,
         palette_merges,
         target_nodes: params.target_nodes.filter(|&n| n > 0),
         brush_strokes: params.brush_strokes.clone(),
@@ -1533,6 +1536,40 @@ fn sidecar_available(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
+async fn download_and_launch_update(
+    app: tauri::AppHandle,
+    asset_url: String,
+    asset_name: String,
+    sha256_url: Option<String>,
+    is_portable: bool,
+) -> Result<updater::DownloadUpdateResult, String> {
+    let downloads = app.path().download_dir().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        updater::download_and_launch_update(&downloads, &asset_url, &asset_name, sha256_url.as_deref(), is_portable)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn import_swatch_palette(path: String) -> Result<Vec<String>, String> {
+    use std::io::Read;
+    const LIMIT: u64 = 2 * 1024 * 1024;
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(LIMIT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > LIMIT {
+        return Err("Swatch exceeds the 2 MB limit.".into());
+    }
+    trasea_core::palette_io::parse_swatch_bytes(&path, &bytes)
+        .map(|colors| colors.into_iter().map(trasea_core::hex).collect())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn parse_hex_palette(text: String) -> Vec<String> {
+    trasea_core::palette_io::parse_hex_list(&text).into_iter().map(trasea_core::hex).collect()
+}
+
+#[tauri::command]
 async fn check_for_update() -> Result<updater::UpdateInfo, String> {
     tauri::async_runtime::spawn_blocking(updater::check_latest_release)
         .await
@@ -1826,6 +1863,9 @@ fn main() {
             sidecar_available,
             third_party_licenses,
             check_for_update,
+            download_and_launch_update,
+            import_swatch_palette,
+            parse_hex_palette,
             get_app_mode,
             open_external_url,
             get_ai_config,

@@ -79,6 +79,7 @@ export interface Options {
 	symmetry: Symmetry;
 	detectText: boolean;
 	customPalette: string[] | null;
+	brandPaletteLocked?: boolean;
 	paletteMerges: Array<[string, string]>;
 	targetNodes: number | null;
 	brushStrokes: BrushStroke[];
@@ -461,14 +462,29 @@ export const onDrop = async (fn: (paths: string[]) => void, setOver: (over: bool
 		}
 	});
 
+export const parseHexPalette = (text: string): Promise<string[]> => invoke("parse_hex_palette", { text });
+export async function importSwatchPalette(title: string): Promise<string[] | null> {
+	const path = await open({ multiple: false, title, filters: [{ name: title, extensions: ["ase", "gpl", "json", "css", "txt"] }] });
+	return typeof path === "string" ? invoke("import_swatch_palette", { path }) : null;
+}
+
 export interface UpdateInfo {
 	currentVersion: string;
 	latestVersion: string;
 	hasUpdate: boolean;
 	releaseNotes: string;
 	downloadUrl: string;
+	assetName?: string | null;
+	assetUrl?: string | null;
+	assetSize?: number | null;
+	sha256Url?: string | null;
 	isPortable: boolean;
 }
+
+export const downloadAndLaunchUpdate = (info: UpdateInfo): Promise<{ savedPath: string; sha256Verified: boolean; launched: boolean }> =>
+	invoke("download_and_launch_update", {
+		assetUrl: info.assetUrl, assetName: info.assetName, sha256Url: info.sha256Url, isPortable: info.isPortable,
+	});
 
 export interface AppModeInfo {
 	isPortable: boolean;

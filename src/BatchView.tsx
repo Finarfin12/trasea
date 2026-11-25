@@ -22,11 +22,13 @@ import {
 	type WatchEvent,
 } from "./api";
 import { useI18n } from "./i18n";
+import { readBrandPalettes } from "./BrandPalette";
 
 interface Props {
 	opts: Options;
 	exp: ExportOptions;
 	initialFiles: string[];
+	activePalette: string[] | null;
 	presets: UserPreset[];
 	onApplyPreset: (preset: UserPreset) => void;
 	onChangeMode: (mode: ProductionMode) => void;
@@ -40,7 +42,7 @@ type SubTab = "batch" | "watch";
 const parentDir = (p: string): string => p.replace(/[\\/][^\\/]+$/, "");
 const joinPath = (a: string, b: string): string => `${a.replace(/[\\/]+$/, "")}\\${b}`;
 
-export default function BatchView({ opts, exp, initialFiles, presets, onApplyPreset, onChangeMode, onOpenInEditor, onBack }: Props) {
+export default function BatchView({ opts, exp, initialFiles, activePalette, presets, onApplyPreset, onChangeMode, onOpenInEditor, onBack }: Props) {
 	const { t, lang } = useI18n();
 	const errText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : t.unknownError);
 	const modeLabel = (m: ProductionMode): string =>
@@ -55,6 +57,9 @@ export default function BatchView({ opts, exp, initialFiles, presets, onApplyPre
 						: t.modeStandard;
 
 	const [subTab, setSubTab] = useState<SubTab>("batch");
+	const [brandPresets] = useState(readBrandPalettes);
+	const [brandChoice, setBrandChoice] = useState("");
+	const batchPalette = brandChoice === "active" ? activePalette : brandPresets.find(item => item.id === brandChoice)?.colors ?? null;
 
 	// Shared format/export toggles
 	const [writePdf, setWritePdf] = useState(false);
@@ -208,7 +213,7 @@ export default function BatchView({ opts, exp, initialFiles, presets, onApplyPre
 			const res = await runBatch({
 				inputs: files,
 				outputDir,
-				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
+				params: { ...opts, customPalette: batchPalette, brandPaletteLocked: batchPalette !== null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
 				export: effExport,
 				writePdf,
 				writeEps,
@@ -257,7 +262,7 @@ export default function BatchView({ opts, exp, initialFiles, presets, onApplyPre
 				inDir: watchInDir,
 				outDir: watchOutDir,
 				includeSubfolders: watchSubfolders,
-				params: { ...opts, customPalette: null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
+				params: { ...opts, customPalette: batchPalette, brandPaletteLocked: batchPalette !== null, paletteMerges: [], brushStrokes: [], pathEdits: [] },
 				export: effExport,
 				writePdf,
 				writeEps,
@@ -308,6 +313,14 @@ export default function BatchView({ opts, exp, initialFiles, presets, onApplyPre
 					</div>
 				</div>
 				<div className="row">
+					<label className="row">
+						{t.brandPalette}
+						<select className="batch-preset" disabled={busyAny} value={brandChoice} onChange={e => setBrandChoice(e.target.value)}>
+							<option value="">{t.brandAutomatic}</option>
+							<option value="active" disabled={!activePalette}>{t.brandActive}</option>
+							{brandPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+						</select>
+					</label>
 					{presets.length > 0 && (
 						<select
 							className="batch-preset"

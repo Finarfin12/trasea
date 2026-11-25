@@ -26,6 +26,7 @@ pub mod pipeline;
 pub mod preprocess;
 pub mod primitives;
 pub mod production;
+pub mod palette_io;
 pub mod project;
 pub mod stats;
 pub mod svg_import;

@@ -450,6 +450,7 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
         source_path: img_path.to_string_lossy().to_string(),
         source_sha256: sha,
         options: ProjectOptions {
+            brand_palette_locked: false,
             colors: 6,
             smooth: 60.0,
             keep_lines: true,
