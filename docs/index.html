@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trasea — Clean curves. Ready to cut. | Offline Desktop Vectorizer</title>
+  <meta name="description" content="Local-first, offline desktop vectorization studio turning logos, stickers, illustrations, and sketches into print-ready SVG, PDF (RGB/CMYK/Spot), EPS, and AutoCAD R12 DXF.">
+  <meta name="theme-color" content="#14161a">
+  <link rel="canonical" href="https://finarfin12.github.io/trasea/">
+  <link rel="icon" type="image/svg+xml" href="branding/trasea-icon-512.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://finarfin12.github.io/trasea/">
+  <meta property="og:title" content="Trasea — Clean curves. Ready to cut.">
+  <meta property="og:description" content="Free, open-source, 100% offline desktop vectorization studio for Windows and macOS. Export clean SVG, CMYK/Spot PDF, EPS, AutoCAD R12 DXF, and Brand Kit ZIP.">
+  <meta property="og:image" content="https://finarfin12.github.io/trasea/screenshots/app_node_edit.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Trasea — Clean curves. Ready to cut.">
+  <meta name="twitter:description" content="Local-first offline desktop vectorizer for graphic designers, screen printers, sticker makers, and laser/CNC shops.">
+  <meta name="twitter:image" content="https://finarfin12.github.io/trasea/screenshots/app_node_edit.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="a11y.skip">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="Trasea Home">
+        <img src="branding/trasea-icon-512.svg" alt="" width="28" height="28" class="brand-icon">
+        <span class="brand-name">Trasea</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#features" data-i18n="nav.features">Features</a>
+        <a href="#formats" data-i18n="nav.formats">Formats</a>
+        <a href="#download" data-i18n="nav.download">Download</a>
+        <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      </nav>
+
+      <div class="header-actions">
+        <div class="lang-switch" role="group" aria-label="Language" data-i18n-aria="a11y.langGroup">
+          <button type="button" class="lang-btn is-active" data-lang="en" aria-pressed="true">EN</button>
+          <button type="button" class="lang-btn" data-lang="id" aria-pressed="false">ID</button>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="https://github.com/Finarfin12/trasea" target="_blank" rel="noopener noreferrer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.84c.85 0 1.71.12 2.51.35 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.64 1.03 2.76 0 3.95-2.34 4.82-4.57 5.07.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.26 10.26 0 0 0 22 12.26C22 6.58 17.52 2 12 2z"/>
+          </svg>
+          <span>GitHub</span>
+        </a>
+        <a class="btn btn-primary btn-sm" href="#download" data-i18n="nav.getTrasea">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- 1. Hero Section -->
+    <section id="top" class="hero">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <div class="version-pill">
+            <span class="cmy-dots" aria-hidden="true">
+              <span class="dot dot-c"></span>
+              <span class="dot dot-m"></span>
+              <span class="dot dot-y"></span>
+            </span>
+            <span class="mono" id="hero-version">v1.8.2</span>
+            <span class="pill-sep" aria-hidden="true">·</span>
+            <span data-i18n="hero.badge">Free &amp; Open Source · MIT</span>
+          </div>
+
+          <h1 class="hero-title" data-i18n="hero.title">Clean curves. Ready to cut.</h1>
+          <p class="hero-subtitle" data-i18n="hero.subtitle">
+            Local-first, 100% offline desktop vectorization studio. Turn flat artwork, logos, stickers, and sketches into tidy SVG, CMYK/Spot PDF, EPS, and AutoCAD R12 DXF — with zero cloud uploads and zero subscriptions.
+          </p>
+
+          <div class="hero-cta-row">
+            <a id="primary-download-btn" class="btn btn-primary btn-lg" href="https://github.com/Finarfin12/trasea/releases/latest">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span id="primary-download-label" data-i18n="hero.ctaFallback">Download Trasea</span>
+            </a>
+            <a id="secondary-download-btn" class="btn btn-secondary btn-lg" href="#download" data-i18n="hero.allDownloads">All downloads</a>
+          </div>
+
+          <div class="hero-meta mono" id="hero-download-meta">
+            <span id="hero-asset-meta">v1.8.2 · Windows &amp; macOS</span>
+            <span class="meta-sep" aria-hidden="true">·</span>
+            <a id="hero-alt-link" href="#download" data-i18n="hero.altLinkDefault">See all 4 installers</a>
+          </div>
+        </div>
+
+        <div class="studio-frame hero-frame">
+          <div class="studio-chrome" aria-hidden="true">
+            <div class="chrome-dots">
+              <span class="dot dot-c"></span>
+              <span class="dot dot-m"></span>
+              <span class="dot dot-y"></span>
+            </div>
+            <div class="chrome-title mono">trasea-studio — <span id="chrome-version">v1.8.2</span> · 100% offline</div>
+            <div class="chrome-badge mono">SVG · PDF · EPS · DXF</div>
+          </div>
+          <div class="studio-viewport">
+            <img
+              src="screenshots/app_node_edit.png"
+              alt="Trasea desktop studio editor showing dot-grid artboard, vector node tools, color palette, and floating zoom bar"
+              width="1440"
+              height="900"
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Trust / Spec Strip -->
+    <section class="spec-strip" aria-label="Core specifications">
+      <div class="container spec-grid">
+        <div class="spec-item">
+          <div class="spec-kicker mono">01 · LOCAL-FIRST</div>
+          <h2 class="spec-title" data-i18n="trust.offlineTitle">100% Offline &amp; Private</h2>
+          <p class="spec-desc" data-i18n="trust.offlineDesc">All tracing, node editing, and exports run locally on your machine with zero cloud uploads.</p>
+        </div>
+        <div class="spec-item">
+          <div class="spec-kicker mono">02 · MIT LICENSE</div>
+          <h2 class="spec-title" data-i18n="trust.freeTitle">Zero Subscription</h2>
+          <p class="spec-desc" data-i18n="trust.freeDesc">Completely free and open source. Every pro print tool unlocked without accounts or watermarks.</p>
+        </div>
+        <div class="spec-item">
+          <div class="spec-kicker mono">03 · PRINT &amp; PLOTTER</div>
+          <h2 class="spec-title" data-i18n="trust.formatsTitle">RGB · CMYK · Spot · DXF</h2>
+          <p class="spec-desc" data-i18n="trust.formatsDesc">Built for Illustrator, Affinity, CorelDraw, Roland/Mimaki RIPs, screen printing, and laser/CNC.</p>
+        </div>
+        <div class="spec-item">
+          <div class="spec-kicker mono">04 · NATIVE RUST + TAURI</div>
+          <h2 class="spec-title" data-i18n="trust.osTitle">Windows &amp; macOS</h2>
+          <p class="spec-desc" data-i18n="trust.osDesc">Lightweight native binary for Windows 10/11 (Installer &amp; Portable) and macOS (Apple Silicon &amp; Intel).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Interactive Feature Tabs -->
+    <section id="features" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-eyebrow mono" data-i18n="features.eyebrow">STUDIO SHOWCASE</div>
+          <h2 class="section-title" data-i18n="features.title">Built for real production workflows</h2>
+          <p class="section-subtitle" data-i18n="features.subtitle">
+            Inspect every stage from pixel cleanup and node editing to photorealistic mockups, brand kits, and pre-flight print checks.
+          </p>
+        </div>
+
+        <div class="feature-tabs" role="tablist" aria-label="Trasea features" data-i18n-aria="a11y.featureTabs">
+          <button type="button" class="tab-btn is-active" role="tab" id="tab-studio" aria-selected="true" aria-controls="panel-studio" data-tab="studio" data-i18n="tabs.studio.label">Studio Editor &amp; Nodes</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-mockup" aria-selected="false" aria-controls="panel-mockup" data-tab="mockup" data-i18n="tabs.mockup.label">Photorealistic Mockups</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-recolor" aria-selected="false" aria-controls="panel-recolor" data-tab="recolor" data-i18n="tabs.recolor.label">Smart Recolor &amp; Brand Kit</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-audit" aria-selected="false" aria-controls="panel-audit" data-tab="audit" data-i18n="tabs.audit.label">Pre-Flight Audit</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-compare" aria-selected="false" aria-controls="panel-compare" data-tab="compare" data-i18n="tabs.compare.label">Compare Offline vs AI</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-production" aria-selected="false" aria-controls="panel-production" data-tab="production" data-i18n="tabs.production.label">Die-Cut, Centerline &amp; CMYK</button>
+        </div>
+
+        <!-- Tab 1: Studio Editor & Node Tools -->
+        <div class="tab-panel is-active" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.studio.title">Precision Node Editing &amp; Brush Corrections</h3>
+              <p class="panel-desc" data-i18n="tabs.studio.desc">
+                Fine-tune vector curves directly on an infinite dot-grid artboard. Inspect corner and smooth nodes, simplify paths, or paint Detail and Smooth brush corrections before exporting.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.studio.p1">Pen Tool node editing with Corner &amp; Smooth inspection overlay</li>
+              <li data-i18n="tabs.studio.p2">Detail Brush (+) and Smooth Brush for localized curve refinement</li>
+              <li data-i18n="tabs.studio.p3">Outline wireframe (Ctrl+Y), floating zoom bar, and layer toggles</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-2">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_node_edit.png" alt="Trasea Studio Editor with dot-grid artboard and Pen Tool node controls" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.studio.cap1">Studio Editor — Pen Tool, Detail/Smooth brushes, and live vector artboard</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_node_inspect.png" alt="Node inspection overlay highlighting corner squares and smooth circles" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.studio.cap2">Node Inspect — square corners and smooth curve handles at a glance</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Tab 2: Photorealistic Mockups -->
+        <div class="tab-panel" role="tabpanel" id="panel-mockup" aria-labelledby="tab-mockup" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.mockup.title">Instant Photorealistic Product Mockups</h3>
+              <p class="panel-desc" data-i18n="tabs.mockup.desc">
+                Preview your vector on real studio photography before sending files to clients or print shops. Drag to reposition, scale smoothly, switch light or dark surfaces, and save high-res PNGs.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.mockup.p1">5 built-in presets: T-Shirt, Die-Cut Sticker, Tote Bag, Business Card, App Icon</li>
+              <li data-i18n="tabs.mockup.p2">Natural fabric &amp; paper multiply blending with drag-to-reposition</li>
+              <li data-i18n="tabs.mockup.p3">1-click 1600×1200 PNG export for instant client sign-off</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-1">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_mockup_preview.png" alt="Trasea photorealistic T-Shirt mockup preview with size slider and PNG export" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.mockup.cap1">Photorealistic studio mockup — natural multiply blend and 1600×1200 PNG export</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Tab 3: Smart Recolor & Brand Kit ZIP -->
+        <div class="tab-panel" role="tabpanel" id="panel-recolor" aria-labelledby="tab-recolor" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.recolor.title">0 ms Smart Recolor &amp; 1-Click Brand Kit ZIP</h3>
+              <p class="panel-desc" data-i18n="tabs.recolor.desc">
+                Switch between Original, All-Black, All-White, and Duotone variations in zero milliseconds, isolate any ink with Solo view, and bundle the entire brand delivery into one structured ZIP archive.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.recolor.p1">Instant Original, Black, White, and Duotone colorways</li>
+              <li data-i18n="tabs.recolor.p2">Solo ink isolation (Alt+Click eye) without touching CutContour or Registration</li>
+              <li data-i18n="tabs.recolor.p3">1-click Brand Kit (.zip) containing all colorways, PNGs, and palettes</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-1">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_brand_kit_recolor.png" alt="Smart Recolor Duotone mode and Solo color isolation in Trasea" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.recolor.cap1">Smart Recolor &amp; Solo isolation — instant brand colorways ready to package</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Tab 4: Pre-Flight Vector Audit -->
+        <div class="tab-panel" role="tabpanel" id="panel-audit" aria-labelledby="tab-audit" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.audit.title">Automated Pre-Flight Vector Audit &amp; Auto-Fix</h3>
+              <p class="panel-desc" data-i18n="tabs.audit.desc">
+                Catch plotter and press headaches before export. Trasea scans for microscopic speckle paths, redundant nodes, and open shapes, then repairs them in a single click.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.audit.p1">Detects tiny micro-paths, excessive nodes, and unclosed geometry</li>
+              <li data-i18n="tabs.audit.p2">1-click Auto-Fix cleans output while preserving crisp artwork detail</li>
+              <li data-i18n="tabs.audit.p3">Integrated directly inside the Export panel alongside Brand Kit ZIP</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-1">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_preflight_audit.png" alt="Pre-Flight Vector Audit panel with Auto-Fix and Export Brand Kit ZIP buttons" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.audit.cap1">Pre-Flight Audit — inspect vector health and fix issues before cutting or printing</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Tab 5: Compare Offline vs AI -->
+        <div class="tab-panel" role="tabpanel" id="panel-compare" aria-labelledby="tab-compare" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.compare.title">Side-by-Side Engine Comparison (Offline vs AI)</h3>
+              <p class="panel-desc" data-i18n="tabs.compare.desc">
+                Compare Trasea's instant local Rust vector engine side-by-side against imported AI CLI vectors with real path, node, and file-size metrics — then pick the winner in one click.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.compare.p1">Synchronized split comparison with live paths · nodes · KB metrics</li>
+              <li data-i18n="tabs.compare.p2">Copy SVG (Ctrl+Shift+C) and Brand Kit ZIP work on both Offline and AI sources</li>
+              <li data-i18n="tabs.compare.p3">Offline engine stays 100% private with zero external calls required</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-1">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_compare_engines.png" alt="Side-by-side comparison of Offline vector engine and AI vector output with path and node metrics" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.compare.cap1">Compare Engines — inspect path count, node count, and SVG weight side by side</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Tab 6: Die-Cut, Centerline & CMYK Spot -->
+        <div class="tab-panel" role="tabpanel" id="panel-production" aria-labelledby="tab-production" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.production.title">Die-Cut Contours, Centerline Laser &amp; CMYK Spot Ink</h3>
+              <p class="panel-desc" data-i18n="tabs.production.desc">
+                Purpose-built tools for sticker shops, screen printers, and fabrication labs: 1-click background removal with CutContour bleed, single-line Centerline strokes for laser/CNC, and CMYK soft-proofing with named Spot separations.
+              </p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.production.p1">1-click Remove Background + offset CutContour (0.25 pt Spot)</li>
+              <li data-i18n="tabs.production.p2">Centerline mode outputs pure single-line open Bézier strokes for engraving</li>
+              <li data-i18n="tabs.production.p3">CMYK Soft-Proof, Color Code Inspector, and Named Spot /Separation PDFs</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-3">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_remove_bg_diecut.png" alt="1-click Remove Background and Die-Cut CutContour line in Trasea" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.production.cap1">Remove Background &amp; Die-Cut CutContour</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_centerline.png" alt="Centerline single-line vector mode for laser cutters and CNC routers" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.production.cap2">Centerline Single-Line (Laser / CNC)</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_softproof_spot.png" alt="CMYK Soft-Proof and Named Spot Ink inspector in Trasea" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.production.cap3">CMYK Soft-Proof &amp; Named Spot Ink</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Production Output Matrix -->
+    <section id="formats" class="section section-alt">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-eyebrow mono" data-i18n="formats.eyebrow">PRODUCTION OUTPUTS</div>
+          <h2 class="section-title" data-i18n="formats.title">Every vector format your shop expects</h2>
+          <p class="section-subtitle" data-i18n="formats.subtitle">
+            Clean pure-Rust generators — no Ghostscript, Inkscape, or external converters required.
+          </p>
+        </div>
+
+        <div class="format-grid">
+          <article class="format-card">
+            <div class="format-tag mono">SVG</div>
+            <h3 data-i18n="formats.svgTitle">Layered Vector &amp; Clipboard</h3>
+            <p data-i18n="formats.svgDesc">Named layers (Background, Colour Fields, Thin Lines, CutContour, Registration) plus 1-click Copy SVG (Ctrl+Shift+C).</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">PDF 1.4</div>
+            <h3 data-i18n="formats.pdfTitle">RGB, DeviceCMYK &amp; Spot</h3>
+            <p data-i18n="formats.pdfDesc">Pure K=100% black &amp; registration marks plus Named Spot /Separation inks including 0.25 pt CutContour.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">EPS</div>
+            <h3 data-i18n="formats.epsTitle">PostScript Level 2</h3>
+            <p data-i18n="formats.epsDesc">Native EPSF-3.0 output in RGB, CMYK, or Spot %%CMYKCustomColor for legacy print RIPs and vinyl software.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">DXF R12</div>
+            <h3 data-i18n="formats.dxfTitle">AutoCAD AC1009 CAD</h3>
+            <p data-i18n="formats.dxfDesc">Per-color layers, native CIRCLE entities, CAD Y-axis orientation, and mm (72/96/300 DPI or target width) / px units.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">.ASE · .GPL · .CSS</div>
+            <h3 data-i18n="formats.palTitle">Reusable Swatch Palettes</h3>
+            <p data-i18n="formats.palDesc">Export Adobe Swatch Exchange (.ase Global/Spot), GIMP/Inkscape (.gpl), JSON tokens, and CSS variables.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">BRAND KIT .ZIP</div>
+            <h3 data-i18n="formats.kitTitle">Client-Ready Delivery Bundle</h3>
+            <p data-i18n="formats.kitDesc">Packages Original, Black, White, and Duotone SVGs alongside high-res PNG previews and swatch files in one click.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">.TRASEA</div>
+            <h3 data-i18n="formats.projTitle">Non-Destructive Projects</h3>
+            <p data-i18n="formats.projDesc">Saves source SHA-256 link, crop/rotate/remove-bg state, brush strokes, node edits, spot inks, and export presets.</p>
+          </article>
+
+          <article class="format-card">
+            <div class="format-tag mono">SEPARATIONS</div>
+            <h3 data-i18n="formats.sepTitle">100%-K Screen Films</h3>
+            <p data-i18n="formats.sepDesc">Generate individual 100%-black / 100%-K separation films per ink color with registration marks ready for exposure.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Download Section (All Platforms) -->
+    <section id="download" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div class="section-eyebrow mono" data-i18n="download.eyebrow">DOWNLOAD</div>
+          <h2 class="section-title" data-i18n="download.title">Get Trasea for your desktop</h2>
+          <p class="section-subtitle">
+            <span data-i18n="download.subtitlePrefix">Latest release</span>
+            <span class="mono release-tag-inline" id="download-version">v1.8.2</span>
+            <span data-i18n="download.subtitleSuffix">· Free, open source, zero telemetry.</span>
+          </p>
+        </div>
+
+        <div class="download-grid">
+          <article class="dl-card" data-platform="win-setup">
+            <div class="dl-card-top">
+              <span class="dl-os mono">WINDOWS · 64-BIT</span>
+              <span class="dl-rec-badge" data-i18n="download.recommended" hidden>Recommended</span>
+            </div>
+            <h3 data-i18n="download.winSetupTitle">Windows Installer</h3>
+            <p data-i18n="download.winSetupDesc">Standard NSIS setup for Windows 10 and Windows 11 with Start Menu shortcut and clean uninstaller.</p>
+            <div class="dl-file mono" id="meta-win-setup">Trasea_1.8.2_x64-setup.exe · 14.5 MB</div>
+            <a id="link-win-setup" class="btn btn-primary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-setup.exe">
+              <span data-i18n="download.btnWinSetup">Download .exe</span>
+            </a>
+          </article>
+
+          <article class="dl-card" data-platform="win-portable">
+            <div class="dl-card-top">
+              <span class="dl-os mono">WINDOWS · PORTABLE</span>
+            </div>
+            <h3 data-i18n="download.winPortableTitle">Windows Portable</h3>
+            <p data-i18n="download.winPortableDesc">Standalone ZIP archive — extract anywhere and launch without administrator privileges.</p>
+            <div class="dl-file mono" id="meta-win-portable">Trasea_1.8.2_x64-portable.zip · 17.3 MB</div>
+            <a id="link-win-portable" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64-portable.zip">
+              <span data-i18n="download.btnWinPortable">Download .zip</span>
+            </a>
+          </article>
+
+          <article class="dl-card" data-platform="mac-arm">
+            <div class="dl-card-top">
+              <span class="dl-os mono">MACOS · APPLE SILICON</span>
+              <span class="dl-rec-badge" data-i18n="download.recommended" hidden>Recommended</span>
+            </div>
+            <h3 data-i18n="download.macArmTitle">macOS (M1 / M2 / M3 / M4)</h3>
+            <p data-i18n="download.macArmDesc">Native ARM64 disk image optimized for Apple Silicon Macs.</p>
+            <div class="dl-file mono" id="meta-mac-arm">Trasea_1.8.2_aarch64.dmg · 6.9 MB</div>
+            <a id="link-mac-arm" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_aarch64.dmg">
+              <span data-i18n="download.btnMacArm">Download Apple Silicon .dmg</span>
+            </a>
+          </article>
+
+          <article class="dl-card" data-platform="mac-intel">
+            <div class="dl-card-top">
+              <span class="dl-os mono">MACOS · INTEL X64</span>
+            </div>
+            <h3 data-i18n="download.macIntelTitle">macOS (Intel)</h3>
+            <p data-i18n="download.macIntelDesc">Native x86_64 disk image for Intel-based Mac computers.</p>
+            <div class="dl-file mono" id="meta-mac-intel">Trasea_1.8.2_x64.dmg · 7.3 MB</div>
+            <a id="link-mac-intel" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.8.2/Trasea_1.8.2_x64.dmg">
+              <span data-i18n="download.btnMacIntel">Download Intel .dmg</span>
+            </a>
+          </article>
+        </div>
+
+        <div class="install-note">
+          <div class="install-note-col">
+            <h4 data-i18n="download.noteWinTitle">Windows SmartScreen</h4>
+            <p data-i18n="download.noteWinDesc">Community builds are unsigned. If SmartScreen appears, choose More info → Run anyway.</p>
+          </div>
+          <div class="install-note-col">
+            <h4 data-i18n="download.noteMacTitle">macOS Gatekeeper</h4>
+            <p data-i18n="download.noteMacDesc">If macOS blocks the first launch, run <code>xattr -cr /Applications/Trasea.app</code> in Terminal or allow it in Privacy &amp; Security.</p>
+          </div>
+          <div class="install-note-col">
+            <h4 data-i18n="download.noteVerifyTitle">Checksums &amp; Releases</h4>
+            <p>
+              <a id="link-all-releases" href="https://github.com/Finarfin12/trasea/releases/latest" target="_blank" rel="noopener noreferrer" data-i18n="download.noteReleasesLink">GitHub Releases &amp; SHA-256</a>
+              ·
+              <a href="https://github.com/Finarfin12/trasea/blob/main/docs/RELEASE-SIGNING.md" target="_blank" rel="noopener noreferrer" data-i18n="download.noteSigningLink">Verification guide</a>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. FAQ Section -->
+    <section id="faq" class="section section-alt">
+      <div class="container faq-container">
+        <div class="section-head">
+          <div class="section-eyebrow mono">FAQ</div>
+          <h2 class="section-title" data-i18n="faq.title">Frequently asked questions</h2>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary data-i18n="faq.q1">Is Trasea completely free and open source?</summary>
+            <p data-i18n="faq.a1">Yes. Trasea is released under the MIT License. Every feature — including CMYK/Spot PDF, AutoCAD DXF, Photorealistic Mockups, Brand Kit ZIP, and Pre-Flight Audit — is unlocked with no account, watermark, or subscription.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary data-i18n="faq.q2">Does Trasea upload my artwork to any server?</summary>
+            <p data-i18n="faq.a2">No. Trasea is local-first and private. All image preprocessing, tracing, node edits, and exports happen directly on your computer and continue working with no internet connection.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary data-i18n="faq.q3">What is the difference between Offline Tracing and AI CLI Import?</summary>
+            <p data-i18n="faq.a3">Offline Tracing uses Trasea's built-in Rust/VTracer engine for instant, fully local vectorization. AI CLI Import lets you bring in SVG output from a local AI CLI tool and compare both results side-by-side with live path, node, and KB metrics.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary data-i18n="faq.q4">Which operating systems are supported?</summary>
+            <p data-i18n="faq.a4">Trasea provides native 64-bit builds for Windows 10/11 (NSIS Installer and Portable ZIP) as well as macOS (both Apple Silicon ARM64 and Intel x64 DMG packages).</p>
+          </details>
+
+          <details class="faq-item">
+            <summary data-i18n="faq.q5">How do I report a bug or request a feature?</summary>
+            <p data-i18n="faq.a5">Open an issue directly on GitHub at Finarfin12/trasea/issues with your OS version, steps to reproduce, or a sample file description.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="brand">
+          <img src="branding/trasea-icon-512.svg" alt="" width="24" height="24" class="brand-icon">
+          <span class="brand-name">Trasea</span>
+        </div>
+        <p class="footer-tagline" data-i18n="footer.tagline">Clean curves. Ready to cut. Local-first open-source vectorization studio.</p>
+      </div>
+
+      <div class="footer-links">
+        <a href="https://github.com/Finarfin12/trasea" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/Finarfin12/trasea/releases" target="_blank" rel="noopener noreferrer" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/Finarfin12/trasea/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" data-i18n="footer.changelog">Changelog</a>
+        <a href="https://github.com/Finarfin12/trasea/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="footer.license">MIT License</a>
+        <a href="https://github.com/Finarfin12/trasea/issues" target="_blank" rel="noopener noreferrer" data-i18n="footer.issues">Report Issue</a>
+      </div>
+    </div>
+    <div class="container footer-bottom mono">
+      <span data-i18n="footer.meta">MIT License · Rust + Tauri · Zero telemetry</span>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

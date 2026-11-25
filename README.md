@@ -2,7 +2,7 @@
 
 # Trasea
 
-*Indonesian documentation: [README.id.md](README.id.md)*
+*Website & Download: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · Indonesian documentation: [README.id.md](README.id.md)*
 
 A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.8.2 ("Toolbar Brush Icons Polish")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 

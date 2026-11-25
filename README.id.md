@@ -2,7 +2,7 @@
 
 # Trasea
 
-*English: [README.md](README.md)*
+*Situs Web & Unduhan: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · English: [README.md](README.md)*
 
 **Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.8.2 ("Penyempurnaan Ikon Kuas Toolbar")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
