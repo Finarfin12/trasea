@@ -3,6 +3,30 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
+export interface StockMetadata {
+	filename: string;
+	title: string;
+	keywords: string[];
+	categoryId: number;
+	releases: string;
+}
+
+export function getStockMetadataOptions(): Promise<{ categories: string[]; provider: string | null }> {
+	return invoke("stock_metadata_options");
+}
+
+export function generateStockMetadata(filename: string, provider: string): Promise<StockMetadata> {
+	return invoke("generate_stock_metadata", { filename, provider });
+}
+
+export function pickStockCsvPath(suggested: string): Promise<string | null> {
+	return save({ defaultPath: suggested, filters: [{ name: "CSV", extensions: ["csv"] }] });
+}
+
+export function exportStockCsv(rows: StockMetadata[], outPath: string): Promise<void> {
+	return invoke("export_stock_csv", { rows, outPath });
+}
+
 export type ProductionMode = "standard" | "screenPrint" | "cutEmbroidery" | "shading" | "centerline";
 export type ColorSpace = "rgb" | "cmyk";
 export type DxfUnit = "mm" | "px";

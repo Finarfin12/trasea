@@ -4,7 +4,7 @@
 
 *Situs Web & Unduhan: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.10.0 ("Roda Warna Studio, Swatch & Siap Microstock")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.11.0 ("Asisten AI Metadata Stock")**. Alur lokal memproses gambar dan vektor langsung di komputer dan tetap berjalan offline, dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -55,6 +55,14 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.11.0
+
+- Buka **Ekspor → Metadata Stock** untuk mengedit judul, mengurutkan hingga 49 kata kunci berdasarkan relevansi, memilih kategori Adobe Stock, dan menyalin judul atau kata kunci. Gunakan nama file aset persis seperti hasil ekspor (hingga 30 karakter) dan judul teks biasa hingga 70 karakter untuk **CSV Adobe Stock**.
+- Tombol **Buat dengan AI** mengirim pratinjau PNG vektor aktif dengan sisi terpanjang maksimal 512 px ke provider yang tertera. Fitur ini memakai API key Claude, OpenAI, atau Gemini, atau CLI Claude, Codex, Gemini, atau OpenCode yang sudah disetel. Pengisian manual, penyalinan, dan ekspor CSV bisa dilakukan offline.
+- Untuk Shutterstock, salin judul dan kata kunci bahasa Inggris, lalu pilih kategori Shutterstock di situs kontributor. [Ketentuan CSV Adobe Stock](https://helpx.adobe.com/stock/contributor/manage-your-portfolio/csv-requirements-content.html) · [Ketentuan metadata Shutterstock](https://submit.shutterstock.com/help/en/articles/10617427-content-publishing-standards-contextual-metadata)
+
+![Editor Metadata Stock di tab Ekspor](docs/screenshots/app_stock_metadata.png)
 
 ### Baru di 1.10.0
 
@@ -228,7 +236,7 @@ Baca [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) sebelum distribusi komer
 
 ## Pemrosesan Lokal, Privasi, & Kredit
 
-Seluruh pembersihan gambar, vektorisasi, dan ekspor berjalan langsung di komputer tanpa mengunggah desain ke cloud, dan Trasea tetap bekerja tanpa koneksi internet. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Pembersihan gambar lokal, vektorisasi lokal, pengisian metadata manual, dan ekspor tetap bisa dilakukan offline. Fitur AI eksternal mengirim input ke provider yang tertera saat fitur itu dipilih. Crate inti `trasea-core` tidak menautkan crate HTTP/jaringan maupun crate GPL/AGPL apa pun (terverifikasi otomatis oleh `V7`, `N-01`, `F-09`, dan `G12-10`), serta WebView menerapkan CSP ketat ke IPC lokal. Lihat [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) dan [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Lisensi
 

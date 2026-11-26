@@ -15,6 +15,7 @@ import { MockupModal } from "./MockupModal";
 import { NodeOverlay, type NodeSelection } from "./NodeOverlay";
 import { applyClientRecolor } from "./recolor";
 import SettingsModal, { type SettingsTab } from "./SettingsModal";
+import StockMetadataModal from "./StockMetadataModal";
 import {
 	IconChecker,
 	IconCrop,
@@ -414,6 +415,8 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
 	const [auditFixing, setAuditFixing] = useState(false);
 	const [cropOpen, setCropOpen] = useState(false);
+	const [stockMetadataOpen, setStockMetadataOpen] = useState(false);
+	const [lastStockAsset, setLastStockAsset] = useState<{ source: string; filename: string }>();
 	const [settingsModal, setSettingsModal] = useState<{
 		tab: SettingsTab;
 		licenseSubTab?: "privacy" | "thirdParty";
@@ -1588,6 +1591,10 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				await exportDxf(target, effExp);
 			} else {
 				await saveFile(kind, target, effExp);
+			}
+			if (kind === "svg" || kind === "eps") {
+				const filename = target.split(/[\\/]/).pop();
+				if (filename) setLastStockAsset({ source: path, filename });
 			}
 			let msg = `${t.savedLabel} ${target}`;
 			if (kind !== "ase" && kind !== "dxf" && withAse) {
@@ -2973,6 +2980,8 @@ aria-haspopup="dialog"
 												<small>{t.microstockHint}</small>
 											</>}
 										</label>
+										<button type="button" className="stock-open" disabled={busy}
+											onClick={() => setStockMetadataOpen(true)}>{t.stockMetadata}</button>
 										{/* v1.8.0 Pre-Flight Vector Audit */}
 											{auditReport && (
 												<div className={`audit-box ${auditReport.ok ? "audit-ok" : "audit-warn"}`}>
@@ -3285,6 +3294,13 @@ aria-haspopup="dialog"
 						applyPathEditImmediate({ kind: "reassignLayerColor", fromHex: wheel.color, toHex: hex }, t.pathRecolorLabel + " " + hex);
 					} else if (wheel.mode === "add") addColor(hex);
 				}}
+			/>}
+			{path && result && <StockMetadataModal
+				key={path}
+				open={stockMetadataOpen}
+				suggestedFilename={lastStockAsset?.source === path ? lastStockAsset.filename : baseName(path) + ".svg"}
+				onClose={() => setStockMetadataOpen(false)}
+				onSettings={() => { setStockMetadataOpen(false); setSettingsModal({ tab: "ai" }); }}
 			/>}
 			{settingsModal !== null && (
 				<SettingsModal

@@ -29,6 +29,7 @@ pub mod production;
 pub mod palette_io;
 pub mod project;
 pub mod stats;
+pub mod stock_meta;
 pub mod svg_import;
 pub mod symmetry;
 pub mod text_detect;

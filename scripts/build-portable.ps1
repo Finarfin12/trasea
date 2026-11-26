@@ -17,6 +17,10 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 try {
     Copy-Item $exe (Join-Path $stage "trasea.exe") -Force
+    $webViewLoader = Join-Path $TargetDir "WebView2Loader.dll"
+    if (Test-Path -LiteralPath $webViewLoader) {
+        Copy-Item -LiteralPath $webViewLoader -Destination $stage
+    }
     Set-Content -Path (Join-Path $stage "portable.flag") -Value "portable=true" -Encoding ASCII
     Copy-Item (Join-Path $repoRoot "src-tauri\resources\realesrgan") (Join-Path $stage "realesrgan") -Recurse -Force
     Copy-Item (Join-Path $repoRoot "src-tauri\resources\sample") (Join-Path $stage "sample") -Recurse -Force
