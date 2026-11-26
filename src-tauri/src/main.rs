@@ -294,6 +294,8 @@ struct UiExport {
     sticker_backing_color: String,
     #[serde(default)]
     sticker_bleed_mm: f64,
+    #[serde(default)]
+    microstock_ready: bool,
 }
 
 #[derive(Deserialize)]
@@ -629,6 +631,7 @@ fn to_core_export(options: &UiExport) -> ExportOptions {
         } else {
             options.sticker_backing_color.trim().to_string()
         },
+        microstock_ready: options.microstock_ready,
         sticker_bleed_mm: if options.sticker_bleed_mm.is_finite() {
             options.sticker_bleed_mm.clamp(0.0, 3.0)
         } else {
@@ -910,13 +913,14 @@ fn pick_color(last: State<'_, Last>, x: u32, y: u32) -> Result<String, String> {
 /// Render a fast preview SVG from the last vectorized `Doc` with current export/contour options
 /// (e.g. live `CutContour` preview without re-running vectorization).
 #[tauri::command]
-fn render_preview_svg(last: State<'_, Last>, options: UiExport) -> Result<String, String> {
+fn render_preview_svg(last: State<'_, Last>, mut options: UiExport) -> Result<String, String> {
     let doc = last
         .doc
         .lock()
         .map_err(|_| "internal error".to_string())?
         .clone()
         .ok_or("Belum ada hasil vektor untuk dipratinjau.")?;
+    options.microstock_ready = false;
     let opts = to_core_export(&options);
     Ok(to_svg(&doc, &opts))
 }
@@ -1056,6 +1060,12 @@ fn dedup_palette_hex(doc: &Doc) -> Vec<String> {
 }
 
 /// Run pre-flight production audit on the active vector document (Offline or AI).
+#[tauri::command]
+fn check_cmyk_gamut(hex_color: String) -> bool {
+    trasea_core::color::parse_hex_rgb(&hex_color)
+        .is_some_and(|[r, g, b]| is_out_of_cmyk_gamut(r, g, b))
+}
+
 #[tauri::command]
 fn audit_active_vector(last: State<'_, Last>) -> Result<AuditReport, String> {
     let doc = last
@@ -1902,6 +1912,7 @@ fn main() {
             paste_clipboard_image,
             copy_svg_to_clipboard,
             audit_active_vector,
+            check_cmyk_gamut,
             auto_fix_active_vector,
             export_brand_kit_zip,
             set_active_vector_source,

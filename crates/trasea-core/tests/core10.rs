@@ -195,6 +195,7 @@ fn p01_project_file_roundtrip_preserves_all_fields_and_sha256() {
             edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
+            microstock_ready: false,
             lines_as: "stroke".into(),
             trap_pt: 0.5,
             registration_marks: true,
@@ -261,6 +262,7 @@ fn p02_project_load_handles_missing_or_modified_source_gracefully() {
             edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
+            microstock_ready: false,
             lines_as: "shape".into(),
             trap_pt: 0.0,
             registration_marks: false,

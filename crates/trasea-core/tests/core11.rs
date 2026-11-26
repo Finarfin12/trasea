@@ -475,6 +475,7 @@ fn f06_project_10_backward_compat_and_11_roundtrip() {
             edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
+            microstock_ready: false,
             lines_as: "stroke".into(),
             trap_pt: 0.5,
             registration_marks: true,

@@ -4,7 +4,7 @@
 
 *Website & Download: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.9.1 ("Real-Time Vector Editing & Recolor Fixes")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.10.0 ("Studio Color Wheel, Swatches & Microstock Ready")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -55,6 +55,13 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.10.0
+
+- Use the Studio Color Wheel to preview shape colors, type HEX, and choose document, recent, or saved swatches. Open it from Select Path or the Colors tab.
+- Use Microstock Ready to export pure-vector RGB SVG and EPS at 16–65 MP. The pre-flight audit flags small artboards, stray paths, and dense contours.
+
+![Studio Color Wheel and Microstock Ready export](docs/screenshots/app_color_wheel_microstock.png)
 
 ### New in 1.9.1
 

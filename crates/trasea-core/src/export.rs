@@ -140,6 +140,8 @@ pub struct ExportOptions {
     /// Additional bleed outside `CutContour` in mm (`0.0..=3.0`, default `0.0`).
     #[serde(default)]
     pub sticker_bleed_mm: f64,
+    #[serde(default)]
+    pub microstock_ready: bool,
 }
 
 impl Default for ExportOptions {
@@ -160,6 +162,7 @@ impl Default for ExportOptions {
             sticker_backing: false,
             sticker_backing_color: default_sticker_backing_color(),
             sticker_bleed_mm: 0.0,
+            microstock_ready: false,
         }
     }
 }
@@ -369,7 +372,47 @@ fn sanitize_svg_id(name: &str) -> String {
     }
 }
 
+pub fn microstock_scale_factor(w: f64, h: f64) -> f64 {
+    let area = w * h;
+    if !area.is_finite() || w <= 0.0 || h <= 0.0 || area == 0.0 {
+        return 1.0;
+    }
+    if area < 16_000_000.0 {
+        (16_000_000.0 / area).sqrt()
+    } else if area > 65_000_000.0 || w.ceil() * h.ceil() > 65_000_000.0 {
+        (60_000_000.0 / area).sqrt()
+    } else {
+        1.0
+    }
+}
+
+fn microstock_options(opts: &ExportOptions) -> ExportOptions {
+    ExportOptions {
+        microstock_ready: false,
+        color_space: ColorSpace::Rgb,
+        spot_colors: Vec::new(),
+        registration_marks: false,
+        die_cut_contour: false,
+        sticker_backing: false,
+        ..opts.clone()
+    }
+}
+
 pub fn to_svg(doc: &Doc, opts: &ExportOptions) -> String {
+    if opts.microstock_ready {
+        let svg = to_svg(doc, &microstock_options(opts));
+        let scale = microstock_scale_factor(doc.width as f64, doc.height as f64);
+        if scale == 1.0 {
+            return svg;
+        }
+        let w = (doc.width as f64 * scale).ceil();
+        let h = (doc.height as f64 * scale).ceil();
+        let (header, body) = svg.split_once("viewBox=").expect("generated SVG has a viewBox");
+        let body = body.split_once(">\n").expect("generated SVG has an opening tag").1;
+        let body = body.rsplit_once("</svg>").expect("generated SVG has a closing tag").0;
+        let prefix = header.split_once(" width=").expect("generated SVG has dimensions").0;
+        return format!("{prefix} width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n<g transform=\"scale({scale})\">\n{body}</g>\n</svg>\n");
+    }
     let k = doc.scale;
     let die_cut_contours = if opts.die_cut_contour {
         build_die_cut_contours(doc, opts)
@@ -791,6 +834,7 @@ pub fn svg_to_pdf(svg: &str) -> Result<Vec<u8>> {
 /// - `ColorSpace::Cmyk` or when Named Spot Colors / `CutContour` are active: emits a pure PDF 1.4
 ///   document with `/Separation /<SpotName> /DeviceCMYK` colour space resources and `CS`/`SCN`/`cs`/`scn`.
 pub fn to_pdf(doc: &Doc, opts: &ExportOptions) -> Result<Vec<u8>> {
+    let opts = &ExportOptions { microstock_ready: false, ..opts.clone() };
     if opts.color_space == ColorSpace::Rgb && opts.spot_colors.is_empty() && !opts.die_cut_contour {
         svg_to_pdf(&to_svg(doc, opts))
     } else {
@@ -1379,6 +1423,18 @@ pub(crate) fn primitive_to_contour(p: &Primitive) -> Contour {
 /// Named Spot Colors (`%%DocumentCustomColors:`, `%%CMYKCustomColor:`, Level-2 Separation `/SPOT`),
 /// and `CutContour` die-cut layers.
 pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
+    let scale = if opts.microstock_ready {
+        microstock_scale_factor(doc.width as f64, doc.height as f64)
+    } else {
+        1.0
+    };
+    let stock;
+    let opts = if opts.microstock_ready {
+        stock = microstock_options(opts);
+        &stock
+    } else {
+        opts
+    };
     let k = if doc.scale.is_finite() && doc.scale > 0.0 { doc.scale } else { 1.0 };
     let m = if opts.registration_marks { REG_MARGIN } else { 0.0 };
 
@@ -1404,8 +1460,8 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
     let content_h = dc_max_y - dc_min_y;
     let total_w = content_w + 2.0 * m;
     let total_h = content_h + 2.0 * m;
-    let bb_w = total_w.ceil() as u32;
-    let bb_h = total_h.ceil() as u32;
+    let bb_w = (total_w * scale).ceil() as u32;
+    let bb_h = (total_h * scale).ceil() as u32;
     let cs = opts.color_space;
     let spots = SpotRegistry::build(opts, !die_cut_contours.is_empty());
 
@@ -1413,7 +1469,7 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
     s.push_str("%!PS-Adobe-3.0 EPSF-3.0\n");
     s.push_str("%%Creator: Trasea\n");
     s.push_str(&format!("%%BoundingBox: 0 0 {bb_w} {bb_h}\n"));
-    s.push_str(&format!("%%HiResBoundingBox: 0 0 {:.2} {:.2}\n", total_w, total_h));
+    s.push_str(&format!("%%HiResBoundingBox: 0 0 {:.2} {:.2}\n", total_w * scale, total_h * scale));
     s.push_str("%%LanguageLevel: 2\n");
     s.push_str("%%Pages: 1\n");
     if !spots.entries.is_empty() {
@@ -1451,6 +1507,9 @@ pub fn to_eps(doc: &Doc, opts: &ExportOptions) -> String {
     }
     s.push_str("%%EndProlog\n");
     s.push_str("gsave\n");
+    if scale != 1.0 {
+        s.push_str(&format!("{scale} {scale} scale\n"));
+    }
 
     let map_svg = |sx: f64, sy: f64| -> (f64, f64) { (sx + shift_x, total_h - (sy + shift_y)) };
     let map_work = |p: (f64, f64)| -> (f64, f64) { map_svg(p.0 / k + m, p.1 / k + m) };

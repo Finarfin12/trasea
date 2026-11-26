@@ -109,7 +109,8 @@ import {
 } from "./colorUtils";
 import { emptyHistory, pushSnapshot, stepRedo, stepUndo, type EditorSnapshot, type HistoryState, type TargetChoice } from "./history";
 import { I18nProvider, useI18n, type Lang } from "./i18n";
-import { BrandPalette } from "./BrandPalette";
+import { BrandPalette, readBrandPalettes } from "./BrandPalette";
+import { ColorWheelPopover } from "./ColorWheelPopover";
 import { UpdateActions } from "./UpdateActions";
 
 const DEFAULTS: Options = {
@@ -153,6 +154,7 @@ const DEFAULT_EXP: ExportOptions = {
 	stickerBacking: false,
 	stickerBackingColor: "#FFFFFF",
 	stickerBleedMm: 0.0,
+	microstockReady: false,
 };
 
 type View = "editor" | "batch";
@@ -222,6 +224,16 @@ function buildSignature({ editFingerprint: _fingerprint, ...options }: Options):
 		}, {}));
 }
 
+function formatStockDimensions(width: number, height: number, lang: string): string {
+	const area = width * height;
+	const scale = area < 16_000_000 ? Math.sqrt(16_000_000 / area)
+		: area > 65_000_000 ? Math.sqrt(60_000_000 / area) : 1;
+	const w = Math.ceil(width * scale);
+	const h = Math.ceil(height * scale);
+	const mp = new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(w * h / 1_000_000);
+	return `${w} × ${h} px · ${mp} MP`;
+}
+
 const normalizeOptions = (po: Partial<Options>): Options => ({
 	...DEFAULTS,
 	...po,
@@ -256,6 +268,7 @@ const normalizeExport = (pe: Partial<ExportOptions>): ExportOptions => ({
 	stickerBacking: pe.stickerBacking ?? false,
 	stickerBackingColor: pe.stickerBackingColor ?? "#FFFFFF",
 	stickerBleedMm: pe.stickerBleedMm ?? 0.0,
+	microstockReady: pe.microstockReady ?? false,
 });
 
 function applySoftProofToSvg(svg: string, proofMap: Map<string, string>): string {
@@ -453,6 +466,25 @@ function TraseaApp({ appSettings, onUpdateSettings }: TraseaAppProps) {
 	const [history, setHistory] = useState<HistoryState>(emptyHistory);
 	const [appliedSig, setAppliedSig] = useState("");
 	const svgStageRef = useRef<HTMLDivElement>(null);
+	const [wheel, setWheel] = useState<{ anchor: HTMLElement; mode: "path" | "layer" | "add"; color: string; pathId: string | null } | null>(null);
+	const liveColor = useRef<{ node: SVGElement; attribute: string; original: string | null; style: string | null } | null>(null);
+	const updateLiveColor = (id: string | null, color: string | null) => {
+		if (!color || !id) {
+			const old = liveColor.current;
+			if (old?.original != null) old.node.setAttribute(old.attribute, old.original);
+			else if (old) old.node.removeAttribute(old.attribute);
+			if (old?.style != null) old.node.setAttribute("style", old.style);
+			else if (old) old.node.removeAttribute("style");
+			liveColor.current = null;
+			return;
+		}
+		const node = svgStageRef.current?.querySelector<SVGElement>(`[data-trasea-id="${CSS.escape(id)}"]`);
+		if (!node) return;
+		const attribute = node.getAttribute("fill") === "none" ? "stroke" : "fill";
+		if (liveColor.current?.node !== node) liveColor.current = { node, attribute, original: node.getAttribute(attribute), style: node.getAttribute("style") };
+		node.setAttribute(attribute, color);
+		if (attribute === "stroke") node.style.setProperty("stroke", color, "important");
+	};
 	const livePathRef = useRef<{ id: string; path: SVGPathElement; restore: () => void } | null>(null);
 	const onLivePathD = useCallback((id: string, d: string | null) => {
 		let live = livePathRef.current;
@@ -1752,7 +1784,11 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 		}
 	};
 
-	const currentPalette = (): string[] => palette ?? result?.palette ?? [];
+	const currentPalette = (): string[] => {
+		const colors = palette ?? result?.palette ?? [];
+		return [...new Set(colors.map(color => pathEdits.reduce((hex, edit) =>
+			edit.kind === "reassignLayerColor" && edit.fromHex.toUpperCase() === hex.toUpperCase() ? edit.toHex : hex, color)))];
+	};
 	const removeColor = (hex: string) => {
 		if (brandLocked) return;
 		const base = currentPalette();
@@ -2168,20 +2204,14 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										<button className="small danger" onClick={deleteSelectedPath}>{t.pathDeleteBtn}</button>
 										<span className="muted">{t.pathRecolorLabel}</span>
 										<div className="recolor-row">
-											<input
-												className="recolor-chip"
-												type="color"
-												aria-label={t.pathRecolorLabel}
-												title={t.pathRecolorLabel}
-												defaultValue="#6d8cff"
-												key={selectedPathId}
-												ref={input => {
-													if (!input) return;
-													const commit = () => recolorSelectedPath(input.value);
-													input.addEventListener("change", commit);
-													return () => input.removeEventListener("change", commit);
-												}}
-											/>
+											<button type="button" className="recolor-chip wheel-trigger" aria-label={t.colorWheelTitle}
+												aria-haspopup="dialog" aria-expanded={wheel?.mode === "path"}
+												onClick={event => {
+													const node = svgStageRef.current?.querySelector(`[data-trasea-id="${CSS.escape(selectedPathId)}"]`);
+													const fill = node?.getAttribute("fill");
+													const color = (fill === "none" ? node?.getAttribute("stroke") : fill) ?? "#6D8CFF";
+													setWheel({ anchor: event.currentTarget, mode: "path", color, pathId: selectedPathId });
+												}} />
 											{currentPalette().map(hex => (
 												<button
 													key={hex}
@@ -2707,6 +2737,8 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 														<button className="small" onClick={() => setHiddenLayers(new Set())}>{t.showAllLayers}</button>
 													)}
 													<button className="small" aria-pressed={tool === "pipet"} onClick={() => setTool(tl => (tl === "pipet" ? "pan" : "pipet"))}>{t.pipetBtn}</button>
+												<button className="small" disabled={brandLocked || busy} aria-haspopup="dialog"
+													onClick={e => setWheel({ anchor: e.currentTarget, mode: "add", color: "#6D8CFF", pathId: null })}>{t.addWheelColor}</button>
 													<button className="small" onClick={resetPalette} disabled={palette === null && !(result.palette.length > 0 && appliedSig.includes('"customPalette":["'))}>{t.resetPalette}</button>
 												</div>
 											</div>
@@ -2733,15 +2765,17 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 																<button
 																	className={`chip-btn ${isInspected ? "active" : ""}`}
 																	style={{ background: softProof ? (proofMap.get(upper) ?? c) : c }}
-																	onClick={() => {
-																		setMergeSource(null);
-																		setInspectedColor(cur => (cur === c ? null : c));
-																	}}
-																	title={t.inspectColorTip}
-																	aria-label={`${t.inspectColorTip} ${c}`}
-																	aria-expanded={isInspected}
+																	onClick={e => {
+  if (brandLocked) { setInspectedColor(cur => cur === c ? null : c); return; }
+  setWheel({ anchor: e.currentTarget, mode: "layer", color: c, pathId: null });
+}}
+title={t.colorWheelTitle}
+aria-label={`${t.colorWheelTitle} ${c}`}
+aria-haspopup="dialog"
 																/>
-																<code>{c}</code>
+																<button type="button" className="small wheel-inspect" title={t.inspectColorTip}
+														onClick={() => { setMergeSource(null); setInspectedColor(cur => cur === c ? null : c); }}
+														aria-expanded={isInspected}><code>{c}</code></button>
 																{isOut && <span className="gamut-warn" title={t.outOfGamutTip} aria-label={t.outOfGamutTip}>⚠</span>}
 																{spot && <span className="spot-pill" title={`${t.spotBadgePrefix} ${spot}`}>{spot}</span>}
 																<button
@@ -2930,7 +2964,16 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 										</div>
 									) : (
 										<>
-											{/* v1.8.0 Pre-Flight Vector Audit */}
+											<label className="mode-box microstock-option">
+											<input type="checkbox" checked={exp.microstockReady ?? false}
+												onChange={e => setExp(previous => ({ ...previous, microstockReady: e.target.checked }))} />
+											<span>{t.microstockReady}</span>
+											{exp.microstockReady && <>
+												<small>{formatStockDimensions(result.width, result.height, lang)} · SVG / EPS</small>
+												<small>{t.microstockHint}</small>
+											</>}
+										</label>
+										{/* v1.8.0 Pre-Flight Vector Audit */}
 											{auditReport && (
 												<div className={`audit-box ${auditReport.ok ? "audit-ok" : "audit-warn"}`}>
 													<div className="audit-head">
@@ -2947,12 +2990,15 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 															</button>
 														)}
 													</div>
-													{!auditReport.ok && (
+													{auditReport.issues.length > 0 && (
 														<ul className="audit-list">
 															{auditReport.issues.map(iss => (
 																<li key={iss.code}>
 																	<span className="audit-dot" />
-																	<span>{iss.detail}</span>
+																	<span>{iss.code === "artboard_below_15mp" ? t.stockSmallBoard
+													: iss.code === "degenerate_paths" ? `${iss.count} · ${t.stockDegenerate}`
+													: iss.code === "dense_jagged_paths" ? `${iss.count} · ${t.stockDense}`
+													: iss.detail}</span>
 																</li>
 															))}
 														</ul>
@@ -3224,6 +3270,22 @@ setChecker((po.productionMode === "cutEmbroidery" && po.stripBackground) || po.p
 				/>
 			)}
 
+			{wheel && <ColorWheelPopover
+				key={wheel.mode + wheel.color + wheel.pathId}
+				anchor={wheel.anchor} value={wheel.color} documentPalette={currentPalette()} brandPalettes={readBrandPalettes()} lang={lang}
+				onLiveChange={hex => updateLiveColor(wheel.pathId, hex)}
+				onClose={() => setWheel(null)}
+				onAddToPalette={brandLocked ? undefined : hex => { addColor(hex); setWheel(null); }}
+				onCommit={hex => {
+					if (wheel.color.toUpperCase() === hex && wheel.mode !== "add") return;
+					setWheel(null);
+					if (wheel.mode === "path" && wheel.pathId) {
+						applyPathEditImmediate({ kind: "reassignColor", targetId: wheel.pathId, toHex: hex }, t.pathRecolorLabel + " " + hex);
+					} else if (wheel.mode === "layer" && !brandLocked) {
+						applyPathEditImmediate({ kind: "reassignLayerColor", fromHex: wheel.color, toHex: hex }, t.pathRecolorLabel + " " + hex);
+					} else if (wheel.mode === "add") addColor(hex);
+				}}
+			/>}
 			{settingsModal !== null && (
 				<SettingsModal
 					settings={appSettings}

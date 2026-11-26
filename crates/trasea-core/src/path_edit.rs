@@ -18,6 +18,12 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PathEdit {
+    ReassignLayerColor {
+        #[serde(rename = "fromHex")]
+        from_hex: String,
+        #[serde(rename = "toHex")]
+        to_hex: String,
+    },
     Delete {
         #[serde(rename = "targetId", alias = "target_id")]
         target_id: String,
@@ -189,6 +195,19 @@ pub fn apply_path_edits(doc: &Doc, edits: &[PathEdit]) -> Doc {
 }
 
 fn apply_single_path_edit(doc: &Doc, edit: &PathEdit) -> Doc {
+    if let PathEdit::ReassignLayerColor { from_hex, to_hex } = edit {
+        let mut out = doc.clone();
+        if let (Some(from), Some(to)) = (parse_hex_rgb(from_hex), parse_hex_rgb(to_hex)) {
+            for color in out.fields.iter_mut().chain(&mut out.line_shapes)
+                .chain(&mut out.line_fallback).map(|layer| &mut layer.color)
+                .chain(out.strokes.iter_mut().map(|layer| &mut layer.color)) {
+                if *color == from {
+                    *color = to;
+                }
+            }
+        }
+        return out;
+    }
     let edits = std::slice::from_ref(edit);
     if edits.is_empty() {
         return doc.clone();
@@ -199,6 +218,7 @@ fn apply_single_path_edit(doc: &Doc, edit: &PathEdit) -> Doc {
 
     for edit in edits {
         match edit {
+            PathEdit::ReassignLayerColor { .. } => unreachable!("layer edits are handled first"),
             PathEdit::Delete { target_id } => {
                 let id = target_id.trim().to_string();
                 if !id.is_empty() {

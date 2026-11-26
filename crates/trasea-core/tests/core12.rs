@@ -539,6 +539,7 @@ fn g12_09_project_compat_and_roundtrip_120() {
             edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
+            microstock_ready: false,
             lines_as: "stroke".to_string(),
             trap_pt: 0.5,
             registration_marks: false,

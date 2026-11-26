@@ -1,6 +1,29 @@
 import { APP_VERSION } from "./version";
 import { DEFAULT_SHORTCUTS, type ShortcutAction, type SpotColorMapping } from "./api";
 
+export function normalizeHexInput(raw: string): string | null {
+	const hex = raw.trim().replace(/^#/, "");
+	if (/^[0-9a-f]{3}$/i.test(hex)) return "#" + [...hex.toUpperCase()].map(c => c + c).join("");
+	return /^[0-9a-f]{6}$/i.test(hex) ? "#" + hex.toUpperCase() : null;
+}
+
+export function hexToHsl(hex: string): { h: number; s: number; l: number } {
+	const [h, s, l] = rgbToHsl(...parseHex(normalizeHexInput(hex) ?? "#000000"), false);
+	return { h, s, l };
+}
+
+export function hslToHex(h: number, s: number, l: number): string {
+	h = ((h % 360) + 360) % 360;
+	s = Math.min(100, Math.max(0, s)) / 100;
+	l = Math.min(100, Math.max(0, l)) / 100;
+	const a = s * Math.min(l, 1 - l);
+	return "#" + [0, 8, 4].map(n => {
+		const k = (n + h / 30) % 12;
+		const channel = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+		return Math.round(channel * 255).toString(16).padStart(2, "0").toUpperCase();
+	}).join("");
+}
+
 export function parseHex(hex: string): [number, number, number] {
 	const clean = hex.trim().replace(/^#/, "");
 	if (clean.length !== 6) return [0, 0, 0];
@@ -29,7 +52,7 @@ export function rgbToCmykPct(r: number, g: number, b: number): [number, number, 
 	return [Math.round(c * 100), Math.round(m * 100), Math.round(y * 100), Math.round(k * 100)];
 }
 
-export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number, round = true): [number, number, number] {
 	const rf = r / 255;
 	const gf = g / 255;
 	const bf = b / 255;
@@ -37,13 +60,13 @@ export function rgbToHsl(r: number, g: number, b: number): [number, number, numb
 	const min = Math.min(rf, gf, bf);
 	const l = (max + min) / 2;
 	const d = max - min;
-	if (d === 0) return [0, 0, Math.round(l * 100)];
+	if (d === 0) return [0, 0, round ? Math.round(l * 100) : l * 100];
 	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
 	let h = 0;
 	if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) / 6;
 	else if (max === gf) h = ((bf - rf) / d + 2) / 6;
 	else h = ((rf - gf) / d + 4) / 6;
-	return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
+	return round ? [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)] : [h * 360, s * 100, l * 100];
 }
 
 export interface ColorCodes {
