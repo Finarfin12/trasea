@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.11.0] "AI Stock Metadata Helper"
+
+- Add a bilingual Stock Metadata editor with editable titles, ordered keywords, Adobe Stock categories, and individual copy actions.
+- Add opt-in metadata suggestions using the configured vision API or supported AI CLI with a preview up to 512 px.
+- Export Adobe Stock CSV locally, including without an AI provider.
+
 ## [1.10.0] "Studio Color Wheel, Swatches & Microstock Ready"
 
 - Add the Studio Color Wheel, HEX input, recent colors, and preset and brand swatches to Select Path and Colors.

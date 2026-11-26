@@ -31,6 +31,7 @@ use trasea_core::project::{
     load_project as core_load_project, save_project as core_save_project, sha256_file, LoadedProject,
     ProjectExportOptions, ProjectFile, ProjectOptions, PROJECT_SCHEMA_VERSION,
 };
+use trasea_core::stock_meta::{to_adobe_stock_csv, validate_adobe_stock_rows, StockMetadata, ADOBE_STOCK_CATEGORIES};
 use trasea_core::svg_import::load_svg_doc;
 use trasea_core::watch::{watch_folder, WatchConfig};
 use trasea_core::{
@@ -1665,6 +1666,80 @@ fn open_external_url(url: String) -> Result<(), String> {
     updater::open_download_url(&url)
 }
 
+fn stock_preview(doc: &Doc) -> Result<Vec<u8>, String> {
+    let width = doc.width as f64;
+    let height = doc.height as f64;
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("metadata_preview_failed".into());
+    }
+    let scale = (512.0 / width.max(height)).min(1.0);
+    let width = (width * scale).round().clamp(1.0, 512.0) as u32;
+    let height = (height * scale).round().clamp(1.0, 512.0) as u32;
+    let svg = to_svg(doc, &ExportOptions::default());
+    let image = trasea_core::stats::render_svg(&svg, width, height)
+        .map_err(|_| "metadata_preview_failed".to_string())?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|_| "metadata_preview_failed".to_string())?;
+    Ok(png.into_inner())
+}
+
+#[cfg(test)]
+mod stock_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn preview_rasterizes_active_vector_with_a_512px_long_edge() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024"><rect width="2048" height="1024" fill="#346595"/></svg>"##;
+        let doc = trasea_core::svg_import::parse_svg_doc(svg).unwrap().doc;
+        let preview = image::load_from_memory(&stock_preview(&doc).unwrap()).unwrap().into_rgb8();
+        assert_eq!(preview.dimensions(), (512, 256));
+        assert_eq!(preview.get_pixel(256, 128).0, [52, 101, 149]);
+    }
+}
+
+#[derive(Serialize)]
+struct StockMetadataOptions {
+    categories: [&'static str; 21],
+    provider: Option<String>,
+}
+
+#[tauri::command]
+fn stock_metadata_options(app: AppHandle) -> Result<StockMetadataOptions, String> {
+    Ok(StockMetadataOptions {
+        categories: ADOBE_STOCK_CATEGORIES,
+        provider: config_dir(&app).ok().and_then(|dir| ai_engine::get_stock_metadata_provider(&dir)),
+    })
+}
+
+#[tauri::command]
+async fn generate_stock_metadata(
+    app: AppHandle, last: State<'_, Last>, filename: String, provider: String,
+) -> Result<StockMetadata, String> {
+    let dir = config_dir(&app).map_err(|_| "metadata_provider_unavailable")?;
+    let doc = last.doc.lock().map_err(|_| "metadata_preview_failed")?
+        .clone().ok_or("metadata_preview_failed")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let png = stock_preview(&doc)?;
+        // Only the PNG pixels are sent to the provider. The filename is used locally.
+        ai_engine::generate_stock_metadata(&dir, &png, &filename, &provider)
+    }).await.map_err(|_| "metadata_provider_failed".to_string())?
+}
+
+#[tauri::command]
+fn export_stock_csv(rows: Vec<StockMetadata>, out_path: String) -> Result<(), String> {
+    validate_adobe_stock_rows(&rows)?;
+    let path = Path::new(&out_path);
+    if !path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("csv")) {
+        return Err("metadata_csv_extension".into());
+    }
+    let csv = to_adobe_stock_csv(&rows);
+    if csv.len() > 1_000_000 {
+        return Err("metadata_csv_size".into());
+    }
+    std::fs::write(path, csv).map_err(|_| "metadata_csv_write_failed".into())
+}
+
 #[tauri::command]
 fn get_ai_config(app: AppHandle) -> Result<ai_engine::AiConfigPublic, String> {
     let dir = config_dir(&app)?;
@@ -1945,6 +2020,9 @@ fn main() {
             parse_hex_palette,
             get_app_mode,
             open_external_url,
+            stock_metadata_options,
+            generate_stock_metadata,
+            export_stock_csv,
             get_ai_config,
             save_ai_config,
             fetch_ai_models,

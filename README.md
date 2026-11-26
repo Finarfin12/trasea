@@ -4,7 +4,7 @@
 
 *Website & Download: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · Indonesian documentation: [README.id.md](README.id.md)*
 
-A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.10.0 ("Studio Color Wheel, Swatches & Microstock Ready")**. Local-first & private (all images and vectors are processed directly on your computer with no cloud uploads and continue working without an internet connection), bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
+A **local-first & private desktop vectorization app** that turns flat illustrations, logos, stickers, line sketches, and cel-shaded artwork (PNG/JPG/WEBP/BMP, or existing SVG files) into clean **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), and AutoCAD R12 DXF** vectors with tidy nodes — ready for Affinity Designer, Adobe Illustrator, CorelDraw, Roland/Mimaki/Summa RIPs, screen printing, laser cutters, CNC routers, and vinyl plotters. Version **1.11.0 ("AI Stock Metadata Helper")**. The local workflow processes images and vectors on your computer and works offline, bilingual (English & Indonesian), no account required, and completely free: every feature is open to everyone, with no activation or sign-up.
 
 ## Screenshots
 
@@ -55,6 +55,14 @@ Supported outputs:
 - **Palette exports:** **`.ase`** (Adobe Swatch Exchange in RGB/CMYK with Global & Spot `0x0001` swatches), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, and **`.css`** custom properties
 - **100%-black / 100%-K separation films** (`<name>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** project files (JSON `schemaVersion: 1`, backwards-compatible with 1.0.0 and 1.1.0) preserving source link + SHA-256, crop/rotate/remove-bg preprocess, brush strokes, path edits, manual palette, merges, die-cut contour, named spots, and export settings
+
+### New in 1.11.0
+
+- Open **Export → Stock Metadata** to edit the title, enter up to 49 keywords in relevance order, choose an Adobe Stock category, and copy the title or keywords. Use the **Adobe Stock CSV** export with the exact asset filename (up to 30 characters) and a plain title up to 70 characters.
+- **Generate with AI** sends a PNG preview of the current vector with a long edge of at most 512 px to the displayed provider when clicked. It reuses a configured Claude, OpenAI, or Gemini API key or the configured Claude, Codex, Gemini, or OpenCode CLI. Manual entry, copy, and CSV export work offline.
+- For Shutterstock, copy the English title and keywords and select Shutterstock's category on the contributor site. [Adobe Stock CSV requirements](https://helpx.adobe.com/stock/contributor/manage-your-portfolio/csv-requirements-content.html) · [Shutterstock metadata requirements](https://submit.shutterstock.com/help/en/articles/10617427-content-publishing-standards-contextual-metadata)
+
+![Stock Metadata editor in the Export tab](docs/screenshots/app_stock_metadata.png)
 
 ### New in 1.10.0
 
@@ -228,7 +236,7 @@ See [docs/RELEASE-SIGNING.md](docs/RELEASE-SIGNING.md) for Windows/macOS code si
 
 ## Local-First, Privacy, & Credits
 
-All image cleaning, vectorization, and exports run locally on your computer without uploading designs to any cloud service, and Trasea continues to work without an internet connection. The core `trasea-core` crate links zero HTTP/network crates and zero GPL/AGPL crates (verified automatically by `V7`, `N-01`, `F-09`, and `G12-10`), and the WebView enforces a strict local-IPC CSP. See [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Local image cleaning, vectorization, manual metadata editing, and exports work offline. Opt-in external AI operations send input to the AI provider selected in the app. The core `trasea-core` crate links zero HTTP/network crates and zero GPL/AGPL crates (verified automatically by `V7`, `N-01`, `F-09`, and `G12-10`), and the WebView enforces a strict local-IPC CSP. See [docs/LICENSE-AUDIT-1.4.0.md](docs/LICENSE-AUDIT-1.4.0.md) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## License
 

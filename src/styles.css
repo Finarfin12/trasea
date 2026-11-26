@@ -681,6 +681,39 @@ button.danger { background: var(--danger-bg); border-color: var(--danger-border)
 	border-top: 1px solid var(--border);
 }
 
+.stock-open { width: 100%; margin-top: 6px; }
+.stock-dialog {
+	width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px);
+	background: var(--panel); color: var(--ink); border-color: var(--line); margin: auto;
+}
+.stock-dialog::backdrop { background: #06080dc2; backdrop-filter: blur(4px); }
+.stock-dialog .modal-head, .stock-dialog .modal-foot { border-color: var(--line); }
+.stock-dialog .modal-head button { min-width: 38px; }
+.stock-ai {
+	display: flex; justify-content: space-between; align-items: center; gap: 14px;
+	padding: 11px 13px; margin: 15px 0; background: var(--surface-box);
+	border: 1px solid var(--line); border-radius: 8px;
+}
+.stock-ai p { margin: 3px 0 0; }
+.stock-ai-actions { display: grid; gap: 6px; flex: none; }
+.stock-ai button, .stock-copy-field button, .stock-dialog .modal-foot button { flex: none; }
+.stock-inputs { min-width: 0; border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+.stock-inputs > label:not(:first-child), .stock-input-head { margin-top: 8px; }
+.stock-input-head, .stock-copy-field { display: flex; justify-content: space-between; gap: 8px; }
+.stock-copy-field { align-items: flex-start; }
+.stock-inputs input, .stock-inputs select, .stock-inputs textarea {
+	width: 100%; min-width: 0; padding: 8px 10px; color: var(--ink);
+	background: var(--surface-inset); border: 1px solid var(--line); border-radius: 6px;
+	font: inherit;
+}
+.stock-inputs textarea { resize: vertical; }
+.stock-dialog small, .stock-ai p { color: var(--muted); }
+.stock-error { color: var(--bad); margin: 12px 0 0; }
+.stock-dialog .modal-foot { margin-top: 16px; }
+@media (max-width: 520px) {
+	.stock-ai, .stock-dialog .modal-foot { align-items: flex-start; flex-direction: column; }
+}
+
 .modal-card button.primary {
 	width: auto;
 	padding: 7px 14px;
