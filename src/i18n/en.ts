@@ -2,6 +2,13 @@ import type { Dict } from "./id";
 import { APP_VERSION } from "../version";
 
 export const en: Record<keyof Dict, string> = {
+	colorWheelTitle: "Color wheel",
+	addWheelColor: "+ Add color",
+	microstockReady: "Microstock / Adobe Stock Ready (≥ 16 MP RGB)",
+	microstockHint: "SVG and EPS omit print marks and spot inks in this mode.",
+	stockSmallBoard: "Source artboard below 15 MP. Microstock Ready scales the export.",
+	stockDegenerate: "Stray or degenerate paths",
+	stockDense: "Dense paths over 120 segments. Try Simplify or Smooth Brush.",
 	langCode: "en",
 	// Header
 	headerOffline: `v${APP_VERSION}`,

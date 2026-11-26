@@ -104,12 +104,44 @@ fn count_similar_color_pairs(doc: &Doc) -> usize {
     pairs
 }
 
+fn is_degenerate(contour: &Contour, scale: f64) -> bool {
+    contour.curves.is_empty() || contour_bbox_area_src(contour, scale) < 0.25
+}
+
 /// Run a non-destructive pre-flight production audit on `doc`.
 pub fn audit_doc(doc: &Doc) -> AuditReport {
     let scale = if doc.scale > 0.0 { doc.scale } else { 1.0 };
     let (total_paths, total_nodes) = count_paths_and_nodes(doc);
     let total_colors = unique_colors(doc).len();
     let mut issues = Vec::new();
+
+    let area = doc.width as f64 * doc.height as f64;
+    if area < 15_000_000.0 {
+        issues.push(AuditIssue {
+            code: "artboard_below_15mp".into(), severity: "info".into(), count: 1,
+            detail: format!("Artboard: {:.1} MP. Enable Microstock Ready to scale the export.", area / 1_000_000.0),
+            fixable: false,
+        });
+    }
+
+    let contours = || doc.fields.iter().filter(|layer| !layer.canvas)
+        .chain(&doc.line_shapes).chain(&doc.line_fallback).flat_map(|layer| &layer.contours);
+    let degenerate = contours().filter(|c| is_degenerate(c, scale)).count()
+        + doc.strokes.iter().flat_map(|layer| &layer.strokes).filter(|s| s.curves.is_empty()).count();
+    let dense = contours().filter(|c| c.curves.len() > 120 && !is_degenerate(c, scale)).count();
+    if degenerate > 0 {
+        issues.push(AuditIssue {
+            code: "degenerate_paths".into(), severity: "warn".into(), count: degenerate,
+            detail: format!("{degenerate} stray or degenerate path(s)"), fixable: true,
+        });
+    }
+    if dense > 0 {
+        issues.push(AuditIssue {
+            code: "dense_jagged_paths".into(), severity: "warn".into(), count: dense,
+            detail: format!("{dense} dense path(s) exceed 120 segments. Try Simplify or Smooth Brush."),
+            fixable: false,
+        });
+    }
 
     // 1. Thin strokes (< 0.5 pt, where 1 px at 96 DPI = 0.75 pt)
     let mut thin_strokes = 0usize;
@@ -177,7 +209,7 @@ pub fn audit_doc(doc: &Doc) -> AuditReport {
     }
 
     AuditReport {
-        ok: issues.is_empty(),
+        ok: !issues.iter().any(|issue| issue.code != "artboard_below_15mp"),
         total_paths,
         total_nodes,
         total_colors,
@@ -195,6 +227,20 @@ pub fn audit_doc(doc: &Doc) -> AuditReport {
 pub fn auto_fix_doc(doc: &mut Doc) -> usize {
     let scale = if doc.scale > 0.0 { doc.scale } else { 1.0 };
     let mut fixes = 0usize;
+    for layer in doc.fields.iter_mut().filter(|layer| !layer.canvas)
+        .chain(&mut doc.line_shapes).chain(&mut doc.line_fallback) {
+        let before = layer.contours.len();
+        layer.contours.retain(|c| !is_degenerate(c, scale));
+        fixes += before - layer.contours.len();
+    }
+    for layer in &mut doc.strokes {
+        let before = layer.strokes.len();
+        layer.strokes.retain(|stroke| !stroke.curves.is_empty());
+        fixes += before - layer.strokes.len();
+    }
+    doc.line_shapes.retain(|layer| !layer.contours.is_empty());
+    doc.line_fallback.retain(|layer| !layer.contours.is_empty());
+    doc.strokes.retain(|layer| !layer.strokes.is_empty());
 
     // 1. Raise thin strokes to 0.5 pt (= 0.5 / 0.75 px in source coords)
     let min_width_work = (MIN_STROKE_PT / 0.75) * scale;

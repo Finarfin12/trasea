@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.10.0] "Studio Color Wheel, Swatches & Microstock Ready"
+
+- Add the Studio Color Wheel, HEX input, recent colors, and preset and brand swatches to Select Path and Colors.
+- Scale RGB SVG and EPS exports to the Microstock Ready artboard range. Flag small artboards, stray paths, and dense contours in the pre-flight audit.
+
 ## [1.9.1] "Real-Time Vector Editing & Recolor Fixes"
 
 - Update vector fills during node and handle drags. Reuse the last traced vector for edits, undo, redo, and resets.

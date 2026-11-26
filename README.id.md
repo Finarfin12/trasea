@@ -4,7 +4,7 @@
 
 *Situs Web & Unduhan: [finarfin12.github.io/trasea](https://finarfin12.github.io/trasea/) · English: [README.md](README.md)*
 
-**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.9.1 ("Edit Vektor Langsung & Perbaikan Warna")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
+**Aplikasi desktop vektorisasi lokal & privat** (*Local-First & Private*) yang mengubah ilustrasi flat, logo, stiker, garis sketsa, dan karya *cel-shading* (PNG/JPG/WEBP/BMP, atau file SVG yang sudah ada) menjadi **SVG, PDF (RGB/CMYK/Spot), EPS (RGB/CMYK/Spot), dan AutoCAD R12 DXF** bersih dengan node rapi — siap untuk Affinity Designer, Adobe Illustrator, CorelDraw, RIP Roland/Mimaki/Summa, sablon, laser cutter, CNC router, dan mesin cutting/bordir. Versi **1.10.0 ("Roda Warna Studio, Swatch & Siap Microstock")**. Pemrosesan lokal & privat (gambar dan vektor diproses langsung di komputer tanpa unggah ke cloud dan tetap berjalan tanpa koneksi internet), dwibahasa (Indonesia & Inggris), tanpa akun, dan sepenuhnya gratis: semua fitur terbuka untuk semua orang tanpa aktivasi atau pendaftaran.
 
 ## Tangkapan Layar
 
@@ -55,6 +55,13 @@ Format keluaran yang didukung:
 - **Ekspor palet:** **`.ase`** (Adobe Swatch Exchange RGB/CMYK dengan swatch Global & Spot `0x0001`), **`.gpl`** (GIMP/Inkscape/Krita/Blender), **`.json`**, dan variabel **`.css`**
 - **Film separasi hitam 100% / K=100%** (`<nama>_film01_RRGGBB.svg`/`.pdf`)
 - **`.trasea`** file proyek (JSON `schemaVersion: 1`, kompatibel penuh dengan 1.0.0 & 1.1.0) menyimpan tautan gambar sumber + SHA-256, potong/putar/hapus latar, goresan kuas, edit path, palet manual, daftar gabung warna, kontur potong, tinta spot, dan setelan ekspor
+
+### Baru di 1.10.0
+
+- Buka Roda Warna Studio dari Pilih Path atau tab Warna untuk melihat perubahan warna, mengetik HEX, dan memilih swatch dokumen, warna terakhir, atau palet tersimpan.
+- Aktifkan Siap Microstock untuk mengekspor SVG dan EPS vektor murni dalam RGB pada 16–65 MP. Audit Pra-Cetak menandai artboard kecil, path liar, dan kontur padat.
+
+![Roda Warna Studio dan ekspor Siap Microstock](docs/screenshots/app_color_wheel_microstock.png)
 
 ### Baru di 1.9.1
 

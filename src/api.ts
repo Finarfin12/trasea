@@ -26,6 +26,7 @@ export const DEFAULT_PREPROCESS: PreprocessOptions = {
 };
 
 export type PathEdit =
+	| { kind: "reassignLayerColor"; fromHex: string; toHex: string }
 	| { kind: "delete"; targetId: string }
 	| { kind: "reassignColor"; targetId: string; toHex: string };
 
@@ -171,6 +172,7 @@ export interface ExportOptions {
 	stickerBacking: boolean;
 	stickerBackingColor: string;
 	stickerBleedMm: number;
+	microstockReady?: boolean;
 }
 
 export type BatchStatus = "ok" | "failed" | "cancelled";
@@ -348,6 +350,8 @@ export interface UserPreset {
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 /** Single-file open also accepts vector .svg (1.3.0); batch stays raster-only. */
 export const OPEN_EXTENSIONS = [...IMAGE_EXTENSIONS, "svg"];
+
+export const checkCmykGamut = (hexColor: string): Promise<boolean> => invoke("check_cmyk_gamut", { hexColor });
 
 export const applyLocalVectorEdits = (path: string, params: Options): Promise<Processed | null> =>
 	invoke("apply_local_vector_edits", { path, params });

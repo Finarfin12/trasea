@@ -116,6 +116,8 @@ pub struct ProjectExportOptions {
     pub sticker_backing_color: String,
     #[serde(default)]
     pub sticker_bleed_mm: f64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub microstock_ready: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

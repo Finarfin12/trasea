@@ -485,6 +485,7 @@ fn g13_06_project_roundtrip_and_export_propagation() {
             edit_fingerprint: None,
         },
         export_options: ProjectExportOptions {
+            microstock_ready: false,
             lines_as: "stroke".into(),
             trap_pt: 0.0,
             registration_marks: false,

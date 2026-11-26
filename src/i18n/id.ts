@@ -1,6 +1,13 @@
 import { APP_VERSION } from "../version";
 
 export const id = {
+	colorWheelTitle: "Roda warna",
+	addWheelColor: "+ Tambah warna",
+	microstockReady: "Siap Microstock / Adobe Stock (≥ 16 MP RGB)",
+	microstockHint: "SVG dan EPS dalam mode ini dibuat tanpa tanda cetak dan tinta spot.",
+	stockSmallBoard: "Artboard sumber di bawah 15 MP. Siap Microstock menyesuaikan skala ekspor.",
+	stockDegenerate: "Path liar atau rusak",
+	stockDense: "Path padat dengan lebih dari 120 segmen. Coba Simplify atau Kuas Halus.",
 	langCode: "id" as const,
 	// Header
 	headerOffline: `v${APP_VERSION}`,
