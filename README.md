@@ -8,7 +8,11 @@ A **local-first & private desktop vectorization app** that turns flat illustrati
 
 ## Screenshots
 
-![Trasea 1.8.2 — Studio Editor: artboard dot-grid, node tools, and floating zoom bar](docs/screenshots/app_node_edit.png)
+![Trasea 1.11.0 — Studio Editor: artboard dot-grid, node tools, and floating zoom bar](docs/screenshots/app_node_edit.png)
+
+| Studio Color Wheel & Microstock Ready | AI Stock Metadata Helper |
+| :---: | :---: |
+| ![Studio Color Wheel & Microstock Ready](docs/screenshots/app_color_wheel_microstock.png) | ![AI Stock Metadata Helper](docs/screenshots/app_stock_metadata.png) |
 
 | Live Product Mockup Preview (5 Presets + High-Res PNG) | Smart Recolor (0 ms) & Solo Color Isolation |
 | :---: | :---: |

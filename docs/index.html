@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1.2">
+  <link rel="stylesheet" href="styles.css?v=1.3">
 </head>
 <body>
   <a class="skip-link" href="#main" data-i18n="a11y.skip">Skip to main content</a>
@@ -70,7 +70,7 @@
               <span class="dot dot-m"></span>
               <span class="dot dot-y"></span>
             </span>
-            <span class="mono" id="hero-version">v1.9.0</span>
+            <span class="mono" id="hero-version">v1.11.0</span>
             <span class="pill-sep" aria-hidden="true">·</span>
             <span data-i18n="hero.badge">Free &amp; Open Source · MIT</span>
           </div>
@@ -93,13 +93,14 @@
           </div>
 
           <div class="hero-meta mono" id="hero-download-meta">
-            <span id="hero-asset-meta">v1.9.0 · Windows &amp; macOS</span>
+            <span id="hero-asset-meta">v1.11.0 · Windows &amp; macOS</span>
             <span class="meta-sep" aria-hidden="true">·</span>
             <a id="hero-alt-link" href="#download" data-i18n="hero.altLinkDefault">See all 4 installers</a>
           </div>
 
-          <div class="hero-proof-strip mono" id="hero-proof-strip" data-i18n="hero.proof">
-            17 public releases · 129 automated Rust tests · 8 export formats · MIT open source
+          <div class="hero-proof-strip mono">
+            <span id="hero-proof-strip">20 public releases · 141 automated Rust tests · 9 export formats · MIT open source</span>
+            <span class="download-count" id="hero-download-count" hidden></span>
           </div>
         </div>
 
@@ -110,7 +111,7 @@
               <span class="dot dot-m"></span>
               <span class="dot dot-y"></span>
             </div>
-            <div class="chrome-title mono">trasea-studio — <span id="chrome-version">v1.9.0</span> · 100% offline</div>
+            <div class="chrome-title mono">trasea-studio — <span id="chrome-version">v1.11.0</span> · 100% offline</div>
             <div class="chrome-badge mono">SVG · PDF · EPS · DXF</div>
           </div>
           <div class="studio-viewport">
@@ -165,25 +166,24 @@
         <div class="feature-tabs" role="tablist" aria-label="Trasea features" data-i18n-aria="a11y.featureTabs">
           <button type="button" class="tab-btn is-active" role="tab" id="tab-studio" aria-selected="true" aria-controls="panel-studio" data-tab="studio" data-i18n="tabs.studio.label">Studio Editor &amp; Nodes</button>
           <button type="button" class="tab-btn" role="tab" id="tab-mockup" aria-selected="false" aria-controls="panel-mockup" data-tab="mockup" data-i18n="tabs.mockup.label">Photorealistic Mockups</button>
-          <button type="button" class="tab-btn" role="tab" id="tab-recolor" aria-selected="false" aria-controls="panel-recolor" data-tab="recolor" data-i18n="tabs.recolor.label">Brand Palette Lock &amp; Brand Kit</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-recolor" aria-selected="false" aria-controls="panel-recolor" data-tab="recolor" data-i18n="tabs.recolor.label">Studio Color Wheel, Brand Lock &amp; Kit</button>
           <button type="button" class="tab-btn" role="tab" id="tab-audit" aria-selected="false" aria-controls="panel-audit" data-tab="audit" data-i18n="tabs.audit.label">Pre-Flight Audit</button>
           <button type="button" class="tab-btn" role="tab" id="tab-compare" aria-selected="false" aria-controls="panel-compare" data-tab="compare" data-i18n="tabs.compare.label">Compare Offline vs AI</button>
           <button type="button" class="tab-btn" role="tab" id="tab-production" aria-selected="false" aria-controls="panel-production" data-tab="production" data-i18n="tabs.production.label">Die-Cut, Centerline &amp; CMYK</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-microstock" aria-selected="false" aria-controls="panel-microstock" data-tab="microstock" data-i18n="tabs.microstock.label">Microstock &amp; Stock Metadata</button>
         </div>
 
         <!-- Tab 1: Studio Editor & Node Tools -->
         <div class="tab-panel is-active" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio">
           <div class="panel-header">
             <div>
-              <h3 class="panel-title" data-i18n="tabs.studio.title">Precision Node Editing &amp; Brush Corrections</h3>
-              <p class="panel-desc" data-i18n="tabs.studio.desc">
-                Fine-tune vector curves directly on an infinite dot-grid artboard. Inspect corner and smooth nodes, simplify paths, or paint Detail and Smooth brush corrections before exporting.
-              </p>
+              <h3 class="panel-title" data-i18n="tabs.studio.title">Real-Time Node Editing &amp; Brush Corrections</h3>
+              <p class="panel-desc" data-i18n="tabs.studio.desc">Drag Bézier nodes and handles on the artboard and see filled paths change as you move. Undo or redo edits immediately with Ctrl+Z and Ctrl+Y.</p>
             </div>
             <ul class="panel-points">
-              <li data-i18n="tabs.studio.p1">Pen Tool node editing with Corner &amp; Smooth inspection overlay</li>
-              <li data-i18n="tabs.studio.p2">Detail Brush (+) and Smooth Brush for localized curve refinement</li>
-              <li data-i18n="tabs.studio.p3">Outline wireframe (Ctrl+Y), floating zoom bar, and layer toggles</li>
+              <li data-i18n="tabs.studio.p1">Inspect corner and smooth nodes as you edit curves</li>
+              <li data-i18n="tabs.studio.p2">Refine individual curves with the Detail and Smooth brushes</li>
+              <li data-i18n="tabs.studio.p3">Recolor the same shape repeatedly without losing the selection target</li>
             </ul>
           </div>
           <div class="panel-gallery gallery-2">
@@ -231,15 +231,13 @@
         <div class="tab-panel" role="tabpanel" id="panel-recolor" aria-labelledby="tab-recolor" hidden>
           <div class="panel-header">
             <div>
-              <h3 class="panel-title" data-i18n="tabs.recolor.title">Brand Palette Lock &amp; Brand Kit</h3>
-              <p class="panel-desc" data-i18n="tabs.recolor.desc">
-                Lock tracing to a brand palette, create color variants with 0 ms Smart Recolor, and package the results as a Brand Kit ZIP.
-              </p>
+              <h3 class="panel-title" data-i18n="tabs.recolor.title">Studio Color Wheel, Brand Lock &amp; Kit</h3>
+              <p class="panel-desc" data-i18n="tabs.recolor.desc">Preview HSL changes on the canvas, enter a HEX value, or choose document, recent, and saved swatches.</p>
             </div>
             <ul class="panel-points">
-              <li data-i18n="tabs.recolor.p1">Paste HEX or import .ase, .gpl, .json, or .css swatches</li>
-              <li data-i18n="tabs.recolor.p2">Save named brand palette presets and reuse them across a Batch Folder</li>
-              <li data-i18n="tabs.recolor.p3">Create instant color variants, isolate inks with Solo, and export a Brand Kit ZIP</li>
+              <li data-i18n="tabs.recolor.p1">Lock tracing to exact brand colors by pasting HEX or importing .ase, .gpl, .json, or .css</li>
+              <li data-i18n="tabs.recolor.p2">Save named brand palettes and reuse them across a Batch Folder</li>
+              <li data-i18n="tabs.recolor.p3">Create color variants, isolate inks with Solo, and export a Brand Kit ZIP</li>
             </ul>
           </div>
           <div class="panel-gallery gallery-2">
@@ -344,6 +342,33 @@
             </figure>
           </div>
         </div>
+        <div class="tab-panel" role="tabpanel" id="panel-microstock" aria-labelledby="tab-microstock" hidden>
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title" data-i18n="tabs.microstock.title">Prepare Stock Vectors &amp; Metadata</h3>
+              <p class="panel-desc" data-i18n="tabs.microstock.desc">Export pure RGB SVG or EPS at 16–65 MP. Pre-Flight Audit flags undersized artboards, stray paths, and dense, jagged outlines.</p>
+            </div>
+            <ul class="panel-points">
+              <li data-i18n="tabs.microstock.p1">Edit a title, up to 49 English keywords ranked by relevance, and one of 21 Adobe Stock categories</li>
+              <li data-i18n="tabs.microstock.p2">Choose Generate with AI to use your own Claude, OpenAI, or Gemini API key, or a local CLI</li>
+              <li data-i18n="tabs.microstock.p3">Enter metadata manually, copy it for Shutterstock, or export an Adobe Stock CSV offline</li>
+            </ul>
+          </div>
+          <div class="panel-gallery gallery-2">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_color_wheel_microstock.png" alt="Studio Color Wheel &amp; Microstock Ready" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.microstock.cap1">Studio Color Wheel &amp; Microstock Ready</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <img src="screenshots/app_stock_metadata.png" alt="AI Stock Metadata Helper" width="1440" height="900">
+              </div>
+              <figcaption data-i18n="tabs.microstock.cap2">AI Stock Metadata Helper</figcaption>
+            </figure>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -406,6 +431,11 @@
             <h3 data-i18n="formats.sepTitle">100%-K Screen Films</h3>
             <p data-i18n="formats.sepDesc">Generate individual 100%-black / 100%-K separation films per ink color with registration marks ready for exposure.</p>
           </article>
+          <article class="format-card">
+            <div class="format-tag mono">ADOBE STOCK .CSV</div>
+            <h3 data-i18n="formats.csvTitle">Stock Submission Metadata</h3>
+            <p data-i18n="formats.csvDesc">Export titles, keywords, and categories for Adobe Stock. Pair the CSV with pure RGB vectors in Microstock mode (16–65 MP SVG or EPS).</p>
+          </article>
         </div>
       </div>
     </section>
@@ -418,7 +448,8 @@
           <h2 class="section-title" data-i18n="download.title">Install natively on Windows or macOS.</h2>
           <p class="section-subtitle">
             <span data-i18n="download.subtitlePrefix">Latest release</span>
-            <span class="mono release-tag-inline" id="download-version">v1.9.0</span>
+            <span class="mono release-tag-inline" id="download-version">v1.11.0</span>
+            <span class="mono download-count" id="download-total-count" hidden></span>
             <span data-i18n="download.subtitleSuffix">· Free, open source, zero telemetry.</span>
           </p>
         </div>
@@ -431,8 +462,8 @@
             </div>
             <h3 data-i18n="download.winSetupTitle">Windows Installer</h3>
             <p data-i18n="download.winSetupDesc">Standard NSIS setup for Windows 10 and Windows 11 with Start Menu shortcut and clean uninstaller.</p>
-            <div class="dl-file mono" id="meta-win-setup">Trasea_1.9.0_x64-setup.exe · 14.5 MB</div>
-            <a id="link-win-setup" class="btn btn-primary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-setup.exe">
+            <div class="dl-file mono" id="meta-win-setup">Trasea_1.11.0_x64-setup.exe · 14.6 MB</div>
+            <a id="link-win-setup" class="btn btn-primary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64-setup.exe">
               <span data-i18n="download.btnWinSetup">Download .exe</span>
             </a>
           </article>
@@ -443,8 +474,8 @@
             </div>
             <h3 data-i18n="download.winPortableTitle">Windows Portable</h3>
             <p data-i18n="download.winPortableDesc">Standalone ZIP archive — extract anywhere and launch without administrator privileges.</p>
-            <div class="dl-file mono" id="meta-win-portable">Trasea_1.9.0_x64-portable.zip · 17.3 MB</div>
-            <a id="link-win-portable" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-portable.zip">
+            <div class="dl-file mono" id="meta-win-portable">Trasea_1.11.0_x64-portable.zip · 17.5 MB</div>
+            <a id="link-win-portable" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64-portable.zip">
               <span data-i18n="download.btnWinPortable">Download .zip</span>
             </a>
           </article>
@@ -456,8 +487,8 @@
             </div>
             <h3 data-i18n="download.macArmTitle">macOS (M1 / M2 / M3 / M4)</h3>
             <p data-i18n="download.macArmDesc">Native ARM64 disk image optimized for Apple Silicon Macs.</p>
-            <div class="dl-file mono" id="meta-mac-arm">Trasea_1.9.0_aarch64.dmg · 7.0 MB</div>
-            <a id="link-mac-arm" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_aarch64.dmg">
+            <div class="dl-file mono" id="meta-mac-arm">Trasea_1.11.0_aarch64.dmg · 7.1 MB</div>
+            <a id="link-mac-arm" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_aarch64.dmg">
               <span data-i18n="download.btnMacArm">Download Apple Silicon .dmg</span>
             </a>
           </article>
@@ -468,8 +499,8 @@
             </div>
             <h3 data-i18n="download.macIntelTitle">macOS (Intel)</h3>
             <p data-i18n="download.macIntelDesc">Native x86_64 disk image for Intel-based Mac computers.</p>
-            <div class="dl-file mono" id="meta-mac-intel">Trasea_1.9.0_x64.dmg · 7.4 MB</div>
-            <a id="link-mac-intel" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64.dmg">
+            <div class="dl-file mono" id="meta-mac-intel">Trasea_1.11.0_x64.dmg · 7.5 MB</div>
+            <a id="link-mac-intel" class="btn btn-secondary btn-block" href="https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64.dmg">
               <span data-i18n="download.btnMacIntel">Download Intel .dmg</span>
             </a>
           </article>
@@ -561,6 +592,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=1.2" defer></script>
+  <script src="app.js?v=1.3" defer></script>
 </body>
 </html>

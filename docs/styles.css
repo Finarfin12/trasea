@@ -528,6 +528,17 @@ a:hover {
   font-weight: 600;
 }
 
+.download-count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.download-count:not([hidden])::before {
+  content: "·";
+  padding-inline: 0.4em;
+  color: var(--text-muted);
+}
+
 /* Interactive Feature Tabs */
 .feature-tabs {
   display: flex;
@@ -665,7 +676,7 @@ a:hover {
 /* Format Matrix */
 .format-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 

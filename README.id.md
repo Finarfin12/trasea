@@ -8,7 +8,11 @@
 
 ## Tangkapan Layar
 
-![Trasea 1.8.2 — Editor Studio: dot-grid artboard, alat node, dan bilah zoom mengambang](docs/screenshots/app_node_edit.png)
+![Trasea 1.11.0 — Editor Studio: dot-grid artboard, alat node, dan bilah zoom mengambang](docs/screenshots/app_node_edit.png)
+
+| Studio Color Wheel & Siap Microstock | Asisten AI Metadata Stock |
+| :---: | :---: |
+| ![Studio Color Wheel & Siap Microstock](docs/screenshots/app_color_wheel_microstock.png) | ![Asisten AI Metadata Stock](docs/screenshots/app_stock_metadata.png) |
 
 | Pratinjau Mockup Produk Instan (5 Preset + PNG Resolusi Tinggi) | Smart Recolor (0 ms) & Isolasi Solo Warna |
 | :---: | :---: |

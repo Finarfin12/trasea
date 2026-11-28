@@ -2,36 +2,36 @@
 (function () {
   "use strict";
 
-  var RELEASE_API = "https://api.github.com/repos/Finarfin12/trasea/releases/latest";
+  var RELEASE_API = "https://api.github.com/repos/Finarfin12/trasea/releases?per_page=100";
   var REPO_API = "https://api.github.com/repos/Finarfin12/trasea";
-  var CACHE_KEY = "trasea_latest_release_v1";
+  var CACHE_KEY = "trasea_release_cache_v13";
   var REPO_CACHE_KEY = "trasea_repo_meta_v1";
   var CACHE_TTL_MS = 15 * 60 * 1000;
   var LANG_KEY = "trasea_lang";
 
   var FALLBACK_RELEASE = {
-    tag: "v1.9.0",
-    htmlUrl: "https://github.com/Finarfin12/trasea/releases/tag/v1.9.0",
+    tag: "v1.11.0",
+    htmlUrl: "https://github.com/Finarfin12/trasea/releases/tag/v1.11.0",
     assets: {
       winSetup: {
-        name: "Trasea_1.9.0_x64-setup.exe",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-setup.exe",
-        size: 15217727
+        name: "Trasea_1.11.0_x64-setup.exe",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64-setup.exe",
+        size: 15280171
       },
       winPortable: {
-        name: "Trasea_1.9.0_x64-portable.zip",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64-portable.zip",
-        size: 18162887
+        name: "Trasea_1.11.0_x64-portable.zip",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64-portable.zip",
+        size: 18334947
       },
       macArm: {
-        name: "Trasea_1.9.0_aarch64.dmg",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_aarch64.dmg",
-        size: 7314564
+        name: "Trasea_1.11.0_aarch64.dmg",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_aarch64.dmg",
+        size: 7406221
       },
       macIntel: {
-        name: "Trasea_1.9.0_x64.dmg",
-        url: "https://github.com/Finarfin12/trasea/releases/download/v1.9.0/Trasea_1.9.0_x64.dmg",
-        size: 7726884
+        name: "Trasea_1.11.0_x64.dmg",
+        url: "https://github.com/Finarfin12/trasea/releases/download/v1.11.0/Trasea_1.11.0_x64.dmg",
+        size: 7835907
       }
     }
   };
@@ -56,7 +56,19 @@
       "hero.altWin": "Portable (.zip) & macOS",
       "hero.altMac": "Intel Mac (.dmg)",
       "hero.altLinkDefault": "See all 4 installers",
-      "hero.proof": "17 public releases · 129 automated Rust tests · 8 export formats · MIT open source",
+      "hero.proof": "{releases} public releases · 141 automated Rust tests · 9 export formats · MIT open source",
+      "hero.downloadsSuffix": "downloads",
+      "download.totalDownloads": "{count} installer downloads",
+      "tabs.microstock.label": "Microstock & Stock Metadata",
+      "tabs.microstock.title": "Prepare Stock Vectors & Metadata",
+      "tabs.microstock.desc": "Export pure RGB SVG or EPS at 16–65 MP. Pre-Flight Audit flags undersized artboards, stray paths, and dense, jagged outlines.",
+      "tabs.microstock.p1": "Edit a title, up to 49 English keywords ranked by relevance, and one of 21 Adobe Stock categories",
+      "tabs.microstock.p2": "Choose Generate with AI to use your own Claude, OpenAI, or Gemini API key, or a local CLI",
+      "tabs.microstock.p3": "Enter metadata manually, copy it for Shutterstock, or export an Adobe Stock CSV offline",
+      "tabs.microstock.cap1": "Studio Color Wheel & Microstock Ready",
+      "tabs.microstock.cap2": "AI Stock Metadata Helper",
+      "formats.csvTitle": "Stock Submission Metadata",
+      "formats.csvDesc": "Export titles, keywords, and categories for Adobe Stock. Pair the CSV with pure RGB vectors in Microstock mode (16–65 MP SVG or EPS).",
       "hero.proofStars": "GitHub stars",
       "github.starFallback": "★ Star",
       "trust.offlineTitle": "Your artwork stays on disk",
@@ -71,11 +83,11 @@
       "features.title": "Edit nodes, preview mockups, and audit before export.",
       "features.subtitle": "Inspect every stage from pixel cleanup and node editing to photorealistic mockups, brand kits, and pre-flight print checks.",
       "tabs.studio.label": "Studio Editor & Nodes",
-      "tabs.studio.title": "Precision Node Editing & Brush Corrections",
-      "tabs.studio.desc": "Fine-tune vector curves directly on an infinite dot-grid artboard. Inspect corner and smooth nodes, simplify paths, or paint Detail and Smooth brush corrections before exporting.",
-      "tabs.studio.p1": "Pen Tool node editing with Corner & Smooth inspection overlay",
-      "tabs.studio.p2": "Detail Brush (+) and Smooth Brush for localized curve refinement",
-      "tabs.studio.p3": "Outline wireframe (Ctrl+Y), floating zoom bar, and layer toggles",
+      "tabs.studio.title": "Real-Time Node Editing & Brush Corrections",
+      "tabs.studio.desc": "Drag Bézier nodes and handles on the artboard and see filled paths change as you move. Undo or redo edits immediately with Ctrl+Z and Ctrl+Y.",
+      "tabs.studio.p1": "Inspect corner and smooth nodes as you edit curves",
+      "tabs.studio.p2": "Refine individual curves with the Detail and Smooth brushes",
+      "tabs.studio.p3": "Recolor the same shape repeatedly without losing the selection target",
       "tabs.studio.cap1": "Studio Editor — Pen Tool, Detail/Smooth brushes, and live vector artboard",
       "tabs.studio.cap2": "Node Inspect — square corners and smooth curve handles at a glance",
       "tabs.mockup.label": "Photorealistic Mockups",
@@ -85,12 +97,12 @@
       "tabs.mockup.p2": "Natural fabric & paper multiply blending with drag-to-reposition",
       "tabs.mockup.p3": "1-click 1600×1200 PNG export for instant client sign-off",
       "tabs.mockup.cap1": "Photorealistic studio mockup — natural multiply blend and 1600×1200 PNG export",
-      "tabs.recolor.label": "Brand Palette Lock & Brand Kit",
-      "tabs.recolor.title": "Brand Palette Lock & Brand Kit",
-      "tabs.recolor.desc": "Lock tracing to a brand palette, create color variants with 0 ms Smart Recolor, and package the results as a Brand Kit ZIP.",
-      "tabs.recolor.p1": "Paste HEX or import .ase, .gpl, .json, or .css swatches",
-      "tabs.recolor.p2": "Save named brand palette presets and reuse them across a Batch Folder",
-      "tabs.recolor.p3": "Create instant color variants, isolate inks with Solo, and export a Brand Kit ZIP",
+      "tabs.recolor.label": "Studio Color Wheel, Brand Lock & Kit",
+      "tabs.recolor.title": "Studio Color Wheel, Brand Lock & Kit",
+      "tabs.recolor.desc": "Preview HSL changes on the canvas, enter a HEX value, or choose document, recent, and saved swatches.",
+      "tabs.recolor.p1": "Lock tracing to exact brand colors by pasting HEX or importing .ase, .gpl, .json, or .css",
+      "tabs.recolor.p2": "Save named brand palettes and reuse them across a Batch Folder",
+      "tabs.recolor.p3": "Create color variants, isolate inks with Solo, and export a Brand Kit ZIP",
       "tabs.recolor.capLock": "Brand Palette Lock with three exact colors and a named preset",
       "tabs.recolor.cap1": "Smart Recolor & Solo isolation — instant brand colorways ready to package",
       "tabs.audit.label": "Pre-Flight Audit",
@@ -198,7 +210,19 @@
       "hero.altWin": "Versi Portabel (.zip) & macOS",
       "hero.altMac": "macOS Intel (.dmg)",
       "hero.altLinkDefault": "Lihat semua 4 installer",
-      "hero.proof": "17 rilis publik · 129 uji otomatis Rust · 8 format ekspor · Open source MIT",
+      "hero.proof": "{releases} rilis publik · 141 uji otomatis Rust · 9 format ekspor · Open source MIT",
+      "hero.downloadsSuffix": "unduhan",
+      "download.totalDownloads": "{count} unduhan installer",
+      "tabs.microstock.label": "Microstock & Metadata Stock",
+      "tabs.microstock.title": "Siapkan Vektor & Metadata Stock",
+      "tabs.microstock.desc": "Ekspor SVG atau EPS vektor murni dalam RGB pada ukuran 16–65 MP. Pre-Flight Audit menandai artboard kecil, path lepas, dan kontur bergerigi yang padat.",
+      "tabs.microstock.p1": "Edit judul, hingga 49 kata kunci bahasa Inggris yang diurutkan menurut relevansi, dan satu dari 21 kategori Adobe Stock",
+      "tabs.microstock.p2": "Pilih Buat dengan AI untuk memakai API key Claude, OpenAI, atau Gemini sendiri, atau CLI lokal",
+      "tabs.microstock.p3": "Isi metadata secara manual, salin untuk Shutterstock, atau ekspor CSV Adobe Stock secara offline",
+      "tabs.microstock.cap1": "Studio Color Wheel & Siap Microstock",
+      "tabs.microstock.cap2": "Asisten AI Metadata Stock",
+      "formats.csvTitle": "Metadata Pengajuan Stock",
+      "formats.csvDesc": "Ekspor judul, kata kunci, dan kategori untuk Adobe Stock. Pasangkan CSV dengan vektor RGB murni dari mode Microstock (SVG atau EPS 16–65 MP).",
       "hero.proofStars": "bintang GitHub",
       "github.starFallback": "★ Bintang",
       "trust.offlineTitle": "Karya tetap di komputermu",
@@ -213,11 +237,11 @@
       "features.title": "Edit node, cek mockup, dan audit vektor sebelum ekspor.",
       "features.subtitle": "Lihat setiap tahap mulai dari pembersihan gambar dan edit node hingga mockup fotorealistis, Brand Kit ZIP, dan audit pra-cetak.",
       "tabs.studio.label": "Editor Studio & Node",
-      "tabs.studio.title": "Edit Node Presisi & Koreksi Kuas",
-      "tabs.studio.desc": "Sempurnakan kurva vektor langsung di atas artboard dot-grid. Periksa titik sudut dan lengkung, sederhanakan path, atau sapukan Kuas Detail dan Kuas Halus sebelum ekspor.",
-      "tabs.studio.p1": "Alat Node (Pen Tool) dengan overlay inspeksi titik sudut dan lengkung",
-      "tabs.studio.p2": "Kuas Detail (+) dan Kuas Halus untuk perbaikan kurva di area tertentu",
-      "tabs.studio.p3": "Mode Outline (Ctrl+Y), bilah zoom mengambang, dan toggle layer",
+      "tabs.studio.title": "Edit Node Real-Time & Koreksi Kuas",
+      "tabs.studio.desc": "Geser node dan handle Bézier di artboard untuk melihat bentuk terisi mengikuti gerakan. Batalkan atau ulangi edit langsung dengan Ctrl+Z dan Ctrl+Y.",
+      "tabs.studio.p1": "Periksa node sudut dan lengkung sambil mengedit kurva",
+      "tabs.studio.p2": "Rapikan kurva tertentu dengan Kuas Detail dan Kuas Halus",
+      "tabs.studio.p3": "Ganti warna bentuk yang sama berulang kali dengan target yang tetap tepat",
       "tabs.studio.cap1": "Editor Studio — Pen Tool, Kuas Detail/Halus, dan artboard vektor langsung",
       "tabs.studio.cap2": "Inspeksi Node — titik sudut kotak dan kurva halus lingkaran terlihat jelas",
       "tabs.mockup.label": "Mockup Fotorealistis",
@@ -227,12 +251,12 @@
       "tabs.mockup.p2": "Blending multiply alami menyatu dengan tekstur kain & kertas plus seret posisi",
       "tabs.mockup.p3": "Ekspor PNG 1600×1200 sekali klik untuk persetujuan klien lebih cepat",
       "tabs.mockup.cap1": "Mockup studio fotorealistis — tekstur kain menyatu alami dan ekspor PNG 1600×1200",
-      "tabs.recolor.label": "Kunci Palet Brand & Brand Kit",
-      "tabs.recolor.title": "Kunci Palet Brand & Brand Kit",
-      "tabs.recolor.desc": "Kunci hasil trace ke palet brand, buat variasi warna dengan Smart Recolor 0 ms, lalu kemas hasilnya sebagai Brand Kit ZIP.",
-      "tabs.recolor.p1": "Tempel HEX atau impor swatch .ase, .gpl, .json, atau .css",
-      "tabs.recolor.p2": "Simpan preset palet brand bernama dan pakai lagi di Batch Folder",
-      "tabs.recolor.p3": "Buat variasi warna instan, isolasi tinta dengan Solo, dan ekspor Brand Kit ZIP",
+      "tabs.recolor.label": "Studio Color Wheel, Kunci Palet & Brand Kit",
+      "tabs.recolor.title": "Studio Color Wheel, Kunci Palet & Brand Kit",
+      "tabs.recolor.desc": "Lihat perubahan HSL langsung di kanvas, masukkan nilai HEX, atau pilih dari swatch dokumen, warna terbaru, dan palet tersimpan.",
+      "tabs.recolor.p1": "Kunci hasil trace ke warna brand dengan menempel HEX atau mengimpor .ase, .gpl, .json, atau .css",
+      "tabs.recolor.p2": "Simpan palet brand dengan nama pilihan dan pakai lagi di Batch Folder",
+      "tabs.recolor.p3": "Buat variasi warna, isolasi tinta dengan Solo, dan ekspor Brand Kit ZIP",
       "tabs.recolor.capLock": "Kunci Palet Brand dengan tiga warna dan preset bernama",
       "tabs.recolor.cap1": "Smart Recolor & isolasi Solo — variasi warna brand instan siap kemas",
       "tabs.audit.label": "Audit Pra-Cetak",
@@ -327,6 +351,8 @@
     lang: "en",
     os: "other",
     release: FALLBACK_RELEASE,
+    releaseCount: 20,
+    downloadCount: null,
     stars: null
   };
 
@@ -379,42 +405,82 @@
     return mapped;
   }
 
+  function parseReleaseList(payload) {
+    if (!Array.isArray(payload)) return null;
+    var publicReleases = payload.filter(function (release) { return release && !release.draft; });
+    var stable = publicReleases.find(function (release) { return !release.prerelease; });
+    var release = parseReleasePayload(stable);
+    if (!release || publicReleases.some(function (item) { return !Array.isArray(item.assets); })) return null;
+
+    var downloads = 0;
+    publicReleases.forEach(function (item) {
+      item.assets.forEach(function (asset) {
+        if (/\.(exe|zip|dmg)$/i.test(asset.name) && Number.isSafeInteger(asset.download_count) && asset.download_count >= 0) {
+          downloads += asset.download_count;
+        }
+      });
+    });
+    return { release: release, releaseCount: publicReleases.length, downloadCount: downloads };
+  }
+
+  function renderReleaseData(data) {
+    state.release = data.release;
+    state.releaseCount = data.releaseCount;
+    state.downloadCount = data.downloadCount;
+    applyReleaseUI();
+    applyRepoMetaUI();
+  }
+
   function loadLatestRelease() {
     try {
-      var raw = sessionStorage.getItem(CACHE_KEY);
-      if (raw) {
-        var cached = JSON.parse(raw);
-        if (cached && cached.ts && Date.now() - cached.ts < CACHE_TTL_MS && cached.release) {
-          state.release = cached.release;
-          applyReleaseUI();
-          return;
-        }
+      var cached = JSON.parse(localStorage.getItem(CACHE_KEY));
+      if (cached && cached.ts <= Date.now() && Date.now() - cached.ts < CACHE_TTL_MS &&
+          cached.release && cached.release.assets && Number.isSafeInteger(cached.releaseCount) &&
+          cached.releaseCount > 0 && Number.isSafeInteger(cached.downloadCount) && cached.downloadCount >= 0) {
+        renderReleaseData(cached);
+        return;
       }
     } catch (_) {
-      // Ignore storage errors
+      // Storage may be unavailable.
     }
 
     if (typeof fetch !== "function") return;
-
     fetch(RELEASE_API, { headers: { Accept: "application/vnd.github+json" } })
       .then(function (res) {
         if (!res.ok) throw new Error("GitHub API status " + res.status);
         return res.json();
       })
       .then(function (json) {
-        var parsed = parseReleasePayload(json);
-        if (!parsed) return;
-        state.release = parsed;
+        var data = parseReleaseList(json);
+        if (!data) return;
+        renderReleaseData(data);
         try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), release: parsed }));
+          data.ts = Date.now();
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
         } catch (_) {
-          // Ignore storage quota errors
+          // Keep rendering the live data if storage is unavailable.
         }
-        applyReleaseUI();
       })
       .catch(function () {
-        // Silent fallback to FALLBACK_RELEASE (v1.9.0)
+        // Keep the built-in release links and the download counters hidden.
       });
+  }
+
+  function renderDownloadCount() {
+    var available = Number.isSafeInteger(state.downloadCount) && state.downloadCount > 0;
+    var count = available
+      ? new Intl.NumberFormat(state.lang === "id" ? "id-ID" : "en-US").format(state.downloadCount)
+      : "";
+    var hero = document.getElementById("hero-download-count");
+    var download = document.getElementById("download-total-count");
+    if (hero) {
+      hero.textContent = available ? count + " " + t("hero.downloadsSuffix") : "";
+      hero.hidden = !available;
+    }
+    if (download) {
+      download.textContent = available ? t("download.totalDownloads").replace("{count}", count) : "";
+      download.hidden = !available;
+    }
   }
 
   function applyRepoMetaUI() {
@@ -427,7 +493,7 @@
     }
 
     if (proofStrip) {
-      var baseProof = t("hero.proof");
+      var baseProof = t("hero.proof").replace("{releases}", state.releaseCount);
       proofStrip.textContent = hasStars
         ? baseProof + " · ★ " + state.stars + " " + t("hero.proofStars")
         : baseProof;
@@ -477,6 +543,7 @@
   }
 
   function applyReleaseUI() {
+    renderDownloadCount();
     var rel = state.release || FALLBACK_RELEASE;
     var tag = rel.tag || FALLBACK_RELEASE.tag;
 
